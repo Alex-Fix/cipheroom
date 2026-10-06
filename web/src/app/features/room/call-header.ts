@@ -109,14 +109,16 @@ const STATUS_TEXT: Record<CallStatus, string> = {
 
       <span class="divider" aria-hidden="true"></span>
 
-      <span
+      <button
+        type="button"
         class="count"
         nz-tooltip
-        nzTooltipTitle="Participants"
-        [attr.aria-label]="participants() + ' participants'"
+        nzTooltipTitle="People"
+        [attr.aria-label]="'Show people (' + participants() + ')'"
+        (click)="showParticipants.emit()"
       >
         <nz-icon nzType="team" /> {{ participants() }}
-      </span>
+      </button>
     </div>
   `,
   styleUrl: './call-header.scss',
@@ -134,6 +136,7 @@ export class CallHeader {
   readonly copyLink = output();
   readonly manualCopyClosed = output();
   readonly rejoin = output();
+  readonly showParticipants = output();
 
   protected readonly statusText = computed(() => STATUS_TEXT[this.status()]);
 }

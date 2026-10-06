@@ -4,6 +4,7 @@ import {
   OnDestroy,
   OnInit,
   computed,
+  effect,
   inject,
   input,
   signal,
@@ -12,7 +13,7 @@ import { Router } from '@angular/router';
 import { NzButtonModule } from 'ng-zorro-antd/button';
 import { NzIconModule } from 'ng-zorro-antd/icon';
 import { NzMessageService } from 'ng-zorro-antd/message';
-import { LiveKitService } from '../../core/livekit/livekit.service';
+import { CallParticipant, LiveKitService } from '../../core/livekit/livekit.service';
 import { SignalingService } from '../../core/signaling/signaling.service';
 import { ThemeService } from '../../core/ui/theme.service';
 import { loadDisplayName } from '../home/home';
@@ -21,11 +22,21 @@ import { CallHeader, callStatus } from './call-header';
 import { CallTile } from './call-tile';
 import { Device, deviceErrorMessage } from './device-error';
 import { DiagnosticsDrawer } from './diagnostics-drawer';
+import { participantChanges } from './participant-changes';
+import { ParticipantsPanel } from './participants-panel';
 
 /** Call screen container: owns the join/leave lifecycle and is the only place that talks to LiveKitService. */
 @Component({
   selector: 'app-room',
-  imports: [CallControls, CallHeader, CallTile, DiagnosticsDrawer, NzButtonModule, NzIconModule],
+  imports: [
+    CallControls,
+    CallHeader,
+    CallTile,
+    DiagnosticsDrawer,
+    NzButtonModule,
+    NzIconModule,
+    ParticipantsPanel,
+  ],
   providers: [LiveKitService],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './room.html',
@@ -43,6 +54,9 @@ export class Room implements OnInit, OnDestroy {
 
   protected readonly error = signal<string | undefined>(undefined);
   protected readonly showDiagnostics = signal(false);
+  protected readonly showParticipants = signal(false);
+  /** "Bob joined" / "Bob left". Rendered by interpolation only — names never go through nz-message (HTML). */
+  protected readonly notices = signal<{ id: number; text: string }[]>([]);
   protected readonly manualCopy = signal(false);
   private readonly joined = signal(false);
 
@@ -51,9 +65,28 @@ export class Room implements OnInit, OnDestroy {
   protected readonly status = computed(() =>
     callStatus(this.livekit.state(), this.joined(), !!this.error()),
   );
-  protected readonly participants = computed(
-    () => this.livekit.tiles().filter((t) => !t.isScreen).length,
-  );
+  protected readonly participantCount = computed(() => this.livekit.participants().length);
+
+  private baseline?: readonly CallParticipant[];
+  private noticeId = 0;
+
+  constructor() {
+    // Every join and leave is announced (ghost-participant defence, docs/architecture.md). The first snapshot after
+    // joining is the baseline — people already in the room aren't "joining".
+    effect(() => {
+      const participants = this.livekit.participants();
+      if (!this.joined()) {
+        this.baseline = undefined;
+        return;
+      }
+      if (this.baseline) {
+        const { joined, left } = participantChanges(this.baseline, participants);
+        joined.forEach((p) => this.notify(`${p.name} joined`));
+        left.forEach((p) => this.notify(`${p.name} left`));
+      }
+      this.baseline = participants;
+    });
+  }
 
   async ngOnInit(): Promise<void> {
     this.theme.setForcedDark(true);
@@ -98,6 +131,12 @@ export class Room implements OnInit, OnDestroy {
 
   protected leave(): void {
     void this.router.navigate(['/']);
+  }
+
+  private notify(text: string): void {
+    const id = ++this.noticeId;
+    this.notices.update((list) => [...list, { id, text }].slice(-3));
+    setTimeout(() => this.notices.update((list) => list.filter((n) => n.id !== id)), 4000);
   }
 
   private async join(): Promise<void> {

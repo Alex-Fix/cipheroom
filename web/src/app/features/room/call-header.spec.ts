@@ -73,4 +73,12 @@ describe('CallHeader', () => {
     el.querySelector<HTMLButtonElement>('.copy')!.click();
     expect(copy).toHaveBeenCalledOnce();
   });
+
+  it('opens the people list from the count', () => {
+    const { fixture, el } = render('connected');
+    const show = vi.fn();
+    fixture.componentInstance.showParticipants.subscribe(show);
+    el.querySelector<HTMLButtonElement>('button.count')!.click();
+    expect(show).toHaveBeenCalledOnce();
+  });
 });

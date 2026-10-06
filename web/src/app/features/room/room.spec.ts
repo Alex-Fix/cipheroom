@@ -4,7 +4,7 @@ import { provideRouter, Router } from '@angular/router';
 import { ConnectionState } from 'livekit-client';
 import { provideNzIcons } from 'ng-zorro-antd/icon';
 import { NzMessageService } from 'ng-zorro-antd/message';
-import { LiveKitService } from '../../core/livekit/livekit.service';
+import { CallParticipant, LiveKitService } from '../../core/livekit/livekit.service';
 import { SignalingService } from '../../core/signaling/signaling.service';
 import { APP_ICONS } from '../../core/ui/icons';
 import { DISPLAY_NAME_KEY } from '../home/home';
@@ -14,6 +14,7 @@ function fakeLiveKit() {
   return {
     state: signal(ConnectionState.Disconnected),
     tiles: signal([]),
+    participants: signal<CallParticipant[]>([]),
     micEnabled: signal(false),
     cameraEnabled: signal(false),
     screenShareEnabled: signal(false),
@@ -131,5 +132,34 @@ describe('Room', () => {
 
     el.querySelector<HTMLButtonElement>('.audio-blocked button')!.click();
     expect(livekit.startAudio).toHaveBeenCalledOnce();
+  });
+
+  it('announces people joining and leaving after you are in, not those already there', async () => {
+    const person = (identity: string, isLocal = false): CallParticipant => ({
+      identity,
+      name: identity,
+      isLocal,
+      isSpeaking: false,
+      micMuted: false,
+      cameraOn: false,
+      sharingScreen: false,
+    });
+    const { el, fixture, livekit } = await setup({
+      tweak: (lk) =>
+        lk.connect.mockImplementation(async () =>
+          lk.participants.set([person('Alex', true), person('Bob')]),
+        ),
+    });
+    const notices = () => [...el.querySelectorAll('.notice')].map((n) => n.textContent!.trim());
+    expect(notices()).toEqual([]);
+
+    livekit.participants.set([person('Alex', true), person('Bob'), person('<b>Eve</b>')]);
+    fixture.detectChanges();
+    expect(notices()).toEqual(['<b>Eve</b> joined']);
+    expect(el.querySelector('.notice b')).toBeNull();
+
+    livekit.participants.set([person('Alex', true), person('<b>Eve</b>')]);
+    fixture.detectChanges();
+    expect(notices()).toContain('Bob left');
   });
 });

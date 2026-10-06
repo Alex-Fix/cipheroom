@@ -3,12 +3,19 @@
     [roomId]="roomId()"
     [link]="link"
     [status]="status()"
-    [participants]="participants()"
+    [participants]="participantCount()"
     [manualCopy]="manualCopy()"
     (copyLink)="copyLink()"
     (manualCopyClosed)="manualCopy.set(false)"
     (rejoin)="retry()"
+    (showParticipants)="showParticipants.set(true)"
   />
+
+  <div class="notices" aria-live="polite">
+    @for (notice of notices(); track notice.id) {
+      <div class="notice glass">{{ notice.text }}</div>
+    }
+  </div>
 
   @if (error(); as message) {
     <section class="join-error" role="alert">
@@ -67,6 +74,12 @@
       (leave)="leave()"
     />
   }
+
+  <app-participants-panel
+    [open]="showParticipants()"
+    [participants]="livekit.participants()"
+    (closed)="showParticipants.set(false)"
+  />
 
   <app-diagnostics-drawer
     [open]="showDiagnostics()"

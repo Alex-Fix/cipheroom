@@ -17,6 +17,17 @@ export interface Tile {
   micMuted: boolean;
 }
 
+/** One person in the media room — i.e. someone who can receive your audio and video. */
+export interface CallParticipant {
+  identity: string;
+  name: string;
+  isLocal: boolean;
+  isSpeaking: boolean;
+  micMuted: boolean;
+  cameraOn: boolean;
+  sharingScreen: boolean;
+}
+
 export interface Diagnostics {
   forceRelay: boolean;
   publisher?: IcePath;
@@ -34,6 +45,7 @@ export class LiveKitService implements OnDestroy {
 
   readonly state = signal<ConnectionState>(ConnectionState.Disconnected);
   readonly tiles = signal<Tile[]>([]);
+  readonly participants = signal<CallParticipant[]>([]);
   readonly micEnabled = signal(false);
   readonly cameraEnabled = signal(false);
   readonly screenShareEnabled = signal(false);
@@ -47,7 +59,9 @@ export class LiveKitService implements OnDestroy {
 
     room
       .on(RoomEvent.ConnectionStateChanged, (s) => this.state.set(s))
-      .on(RoomEvent.AudioPlaybackStatusChanged, () => this.canPlaybackAudio.set(room.canPlaybackAudio))
+      .on(RoomEvent.AudioPlaybackStatusChanged, () =>
+        this.canPlaybackAudio.set(room.canPlaybackAudio),
+      )
       .on(RoomEvent.ParticipantConnected, () => this.refresh())
       .on(RoomEvent.ParticipantDisconnected, () => this.refresh())
       .on(RoomEvent.TrackSubscribed, () => this.refresh())
@@ -108,6 +122,7 @@ export class LiveKitService implements OnDestroy {
     this.room = undefined;
     await room?.disconnect();
     this.tiles.set([]);
+    this.participants.set([]);
   }
 
   ngOnDestroy(): void {
@@ -125,6 +140,22 @@ export class LiveKitService implements OnDestroy {
 
     const participants: Participant[] = [local, ...room.remoteParticipants.values()];
     this.tiles.set(participants.flatMap((p) => this.tilesFor(p, p === local)));
+    this.participants.set(participants.map((p) => this.participantFor(p, p === local)));
+  }
+
+  private participantFor(p: Participant, isLocal: boolean): CallParticipant {
+    const mic = p.getTrackPublication(Track.Source.Microphone);
+    const camera = p.getTrackPublication(Track.Source.Camera);
+    const screen = p.getTrackPublication(Track.Source.ScreenShare);
+    return {
+      identity: p.identity,
+      name: p.name || p.identity,
+      isLocal,
+      isSpeaking: p.isSpeaking,
+      micMuted: !mic || mic.isMuted,
+      cameraOn: !!camera && !camera.isMuted,
+      sharingScreen: !!screen && !screen.isMuted,
+    };
   }
 
   private tilesFor(p: Participant, isLocal: boolean): Tile[] {
