@@ -4,6 +4,8 @@
     <Project Path="src/server/Cipheroom.Api/Cipheroom.Api.csproj" />
     <Project Path="src/server/Cipheroom.Api.FunctionalTests/Cipheroom.Api.FunctionalTests.csproj" />
     <Project Path="src/server/Cipheroom.Domain/Cipheroom.Domain.csproj" />
+    <Project Path="src/server/Cipheroom.Application.UnitTests/Cipheroom.Application.UnitTests.csproj" />
+    <Project Path="src/server/Cipheroom.Application/Cipheroom.Application.csproj" />
     <Project Path="src/server/Cipheroom.Domain.UnitTests/Cipheroom.Domain.UnitTests.csproj" />
   </Folder>
 </Solution>
