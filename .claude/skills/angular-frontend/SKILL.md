@@ -59,6 +59,9 @@ Design: `docs/plans/2026-10-06-ngzorro-ui-design.md` (see "Revision: Apple-style
   `media="(prefers-color-scheme: …)"` (no flash, no JS needed). Both share `_components.less` (**only the
   `<component>/style/entry.less` files we use** — add one when using a new component) and `_apple.less` (shared
   Less variable overrides). Their file names are unhashed, so nginx serves them with `expires -1`.
+- App logo / favicons: masters in `src/assets-src/logo{,-small}.svg` (CC BY-SA 4.0, `LICENSE-ASSETS.md`); edit those,
+  then run `scripts/icons.sh` and commit the regenerated files in `public/`. Masters must stay static SVG (no
+  scripts, images, styles or external refs — the generator rejects them).
 - Icons: add to `core/ui/icons.ts`. **Never** enable dynamic icon loading (`NzIconService` fetch / CDN): CSP
   `connect-src 'self'` blocks it and a third-party fetch would leak who uses the app.
 - `NzMessageService` renders string content with `[innerHTML]`: only pass **constant strings** — never display names,
