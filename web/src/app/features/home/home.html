@@ -1,0 +1,69 @@
+<main class="home">
+  <nz-card class="card" [nzBordered]="false">
+    <h1 class="title">Cipheroom</h1>
+    <p class="tagline">Video calls on your own server.</p>
+    <p class="e2ee"><nz-icon nzType="lock" /> End-to-end encrypted · self-hosted</p>
+
+    <form nz-form nzLayout="vertical" (ngSubmit)="join()">
+      <nz-form-item>
+        <nz-form-label nzFor="name" nzRequired>Your name</nz-form-label>
+        <nz-form-control nzErrorTip="Enter a name others will see">
+          <nz-input-wrapper>
+            <nz-icon nzInputPrefix nzType="user" />
+            <input
+              nz-input
+              id="name"
+              name="name"
+              [(ngModel)]="name"
+              maxlength="64"
+              required
+              autocomplete="nickname"
+              placeholder="e.g. Alex"
+            />
+          </nz-input-wrapper>
+        </nz-form-control>
+      </nz-form-item>
+
+      <nz-form-item>
+        <nz-form-label nzFor="room" nzRequired>Room</nz-form-label>
+        <nz-form-control nzErrorTip="3–64 characters: lowercase letters, digits and dashes">
+          <nz-input-wrapper>
+            <input
+              nz-input
+              id="room"
+              name="room"
+              [(ngModel)]="roomId"
+              pattern="[a-z0-9-]{3,64}"
+              required
+            />
+            <button
+              nzInputSuffix
+              type="button"
+              class="regenerate"
+              nz-button
+              nzType="text"
+              nzSize="small"
+              nz-tooltip
+              nzTooltipTitle="New random room"
+              aria-label="New random room"
+              (click)="regenerateRoom()"
+            >
+              <nz-icon nzType="reload" />
+            </button>
+          </nz-input-wrapper>
+        </nz-form-control>
+      </nz-form-item>
+
+      <button
+        nz-button
+        nzType="primary"
+        nzBlock
+        nzSize="large"
+        type="submit"
+        [disabled]="!name().trim() || !validRoom()"
+      >
+        Join
+      </button>
+    </form>
+  </nz-card>
+</main>

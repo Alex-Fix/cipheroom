@@ -1,0 +1,35 @@
+.home {
+  display: grid;
+  place-items: center;
+  min-height: 100dvh;
+  padding: 16px;
+  box-sizing: border-box;
+}
+
+.card {
+  width: min(100%, 400px);
+}
+
+.title {
+  margin: 0;
+  font-size: 1.75rem;
+  font-weight: 600;
+}
+
+.tagline {
+  margin: 0.25rem 0 0.5rem;
+  color: var(--muted);
+}
+
+.e2ee {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 1.5rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.regenerate {
+  margin-right: -6px;
+}

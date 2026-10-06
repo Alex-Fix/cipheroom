@@ -1,3 +1,19 @@
+// Legacy controls — replaced by ng-zorro in call-controls/call-header.
+button {
+  font: inherit;
+  color: var(--text);
+  background: var(--accent);
+  border: 0;
+  border-radius: 8px;
+  padding: 0.5rem 1rem;
+  cursor: pointer;
+
+  &:disabled { opacity: 0.5; cursor: default; }
+  &.ghost { background: transparent; border: 1px solid var(--border); }
+  &.off { background: var(--surface); border: 1px solid var(--border); }
+  &.danger { background: var(--danger); }
+}
+
 .room {
   display: grid;
   grid-template-rows: auto auto 1fr auto;
