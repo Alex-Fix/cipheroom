@@ -28,7 +28,7 @@ deploy/
   docker-compose.yml             api, web (nginx), livekit, cloudflared
   livekit/ nginx/ cloudflared/   service config
 scripts/                         dev/ops scripts (bash, run from repo root)
-docs/                            architecture + protocol docs
+docs/                            architecture + protocol docs; plans/ holds approved feature designs
 ```
 
 ## Commands
@@ -42,6 +42,7 @@ All scripts run from the repo root.
 - `scripts/up.sh` / `scripts/down.sh` — docker compose stack in `deploy/`
 - `scripts/logs.sh [service]` — follow compose logs
 - `scripts/secrets.sh` — create `deploy/.env`, generate LiveKit API key/secret
+- `scripts/security-check.sh [url]` — secret scan, `.env` hygiene, NuGet/npm audit, live security headers
 - `scripts/certs.sh` — local HTTPS certs via mkcert (needed to test cameras from another LAN device)
 
 ## Non-negotiable rules
@@ -61,6 +62,8 @@ All scripts run from the repo root.
 
 ## Skills in this repo
 
+- `security` — threat model, per-layer hardening rules, review checklist (use with `e2ee-media` for crypto)
+- `brainstorming` — turn a feature idea into an approved design doc in `docs/plans/` before coding
 - `livekit-media` — LiveKit client/server integration, tokens, ICE/TURN modes, connectivity spike
 - `e2ee-media` — identities, sender keys, envelopes, rotation, key provider, review checklist
 - `signaling-protocol` — how to add/change SignalR messages end to end

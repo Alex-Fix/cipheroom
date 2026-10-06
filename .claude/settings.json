@@ -3,6 +3,7 @@
   "permissions": {
     "allow": [
       "Bash(scripts/doctor.sh)",
+      "Bash(scripts/security-check.sh:*)",
       "Bash(scripts/test.sh:*)",
       "Bash(scripts/lint.sh:*)",
       "Bash(dotnet build:*)",
