@@ -9,7 +9,7 @@ description: Conventions and scaffolding for the Cipheroom .NET 10 backend (ASP.
 ```bash
 dotnet new web    -n Cipheroom.Api       -o src/server/Cipheroom.Api       -f net10.0
 dotnet new xunit  -n Cipheroom.Api.Tests -o src/server/Cipheroom.Api.Tests -f net10.0
-dotnet sln Cipheroom.sln add src/server/Cipheroom.Api src/server/Cipheroom.Api.Tests
+dotnet sln Cipheroom.slnx add src/server/Cipheroom.Api src/server/Cipheroom.Api.Tests
 dotnet add src/server/Cipheroom.Api.Tests reference src/server/Cipheroom.Api
 dotnet add src/server/Cipheroom.Api.Tests package Microsoft.AspNetCore.Mvc.Testing
 dotnet add src/server/Cipheroom.Api.Tests package Microsoft.AspNetCore.SignalR.Client

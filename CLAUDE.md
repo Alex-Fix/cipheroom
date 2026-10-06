@@ -19,7 +19,7 @@ Hard constraints: runs at home, **no public IP**, **$0 running cost** (free tier
 ## Layout (target — create projects here, don't invent new top-level dirs)
 
 ```
-Cipheroom.sln
+Cipheroom.slnx
 src/
   server/Cipheroom.Api/          ASP.NET Core host, SignalR hubs, REST endpoints
   server/Cipheroom.Api.Tests/    xUnit tests (incl. hub integration tests via WebApplicationFactory)
