@@ -12,6 +12,9 @@ services:
       Turn__Cloudflare__KeyId: ${CF_TURN_KEY_ID:-}
       Turn__Cloudflare__ApiToken: ${CF_TURN_API_TOKEN:-}
       Turn__CredentialTtlSeconds: ${TURN_CREDENTIAL_TTL_SECONDS:-14400}
+      # Trust X-Forwarded-* from our proxies only (cloudflared → nginx → api). The api publishes no ports, so only
+      # containers on the compose network (Docker's 172.16.0.0/12 range) can reach it.
+      ForwardedHeaders__KnownNetworks__0: 172.16.0.0/12
     restart: unless-stopped
 
   web:

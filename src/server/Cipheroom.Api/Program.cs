@@ -1,3 +1,4 @@
+using Cipheroom.Api.Hosting;
 using Cipheroom.Api.Hubs;
 using Cipheroom.Api.Hubs.Filters;
 using Cipheroom.Application;
@@ -25,16 +26,22 @@ builder.Services.AddMediator((MediatorOptions options) =>
     ];
 });
 
+builder.Services.AddOptions<HubRateLimitOptions>().BindConfiguration(HubRateLimitOptions.Section).ValidateDataAnnotations().ValidateOnStart();
+builder.Services.AddSingleton<HubRateLimitFilter>();
 builder.Services.AddSignalR(o =>
 {
     o.MaximumReceiveMessageSize = 64 * 1024;
+    // Outermost first: reject floods before doing any work.
+    o.AddFilter<HubRateLimitFilter>();
     o.AddFilter<HubExceptionFilter>();
 });
+builder.Services.AddTrustedForwardedHeaders(builder.Configuration);
 builder.Services.AddProblemDetails();
 builder.Services.AddHealthChecks();
 
 var app = builder.Build();
 
+app.UseForwardedHeaders();
 app.UseExceptionHandler();
 app.UseStatusCodePages();
 
