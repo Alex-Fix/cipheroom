@@ -1,0 +1,169 @@
+using System.Net;
+using System.Threading.Channels;
+using Cipheroom.Api.Hubs.Contracts;
+using Microsoft.AspNetCore.Http.Connections;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.SignalR;
+using Microsoft.AspNetCore.SignalR.Client;
+
+namespace Cipheroom.Api.FunctionalTests;
+
+/// <summary>
+/// The SignalR contract as clients see it. These tests pin today's behaviour, including exact error messages,
+/// so internal restructuring can't change the protocol (docs/signaling-protocol.md).
+/// </summary>
+public sealed class RoomHubTests(WebApplicationFactory<Program> factory) : IClassFixture<WebApplicationFactory<Program>>
+{
+    private readonly WebApplicationFactory<Program> _factory = factory.WithWebHostBuilder(b => b
+        .UseSetting("LiveKit:Url", "ws://livekit.test")
+        .UseSetting("LiveKit:ApiKey", "testkey")
+        .UseSetting("LiveKit:ApiSecret", "test-secret-that-is-at-least-32-bytes-long")
+        .UseSetting("Turn:Cloudflare:KeyId", "")
+        .UseSetting("Turn:Cloudflare:ApiToken", ""));
+
+    private static CancellationToken Ct => TestContext.Current.CancellationToken;
+
+    [Fact]
+    public async Task Participants_are_notified_of_joins_and_leaves()
+    {
+        await using var alice = await ConnectAsync();
+        var joined = Channel.CreateUnbounded<ParticipantDto>();
+        var left = Channel.CreateUnbounded<string>();
+        alice.On<ParticipantDto>("ParticipantJoined", p => joined.Writer.TryWrite(p));
+        alice.On<string>("ParticipantLeft", id => left.Writer.TryWrite(id));
+
+        var aliceJoin = await alice.InvokeAsync<JoinResult>("JoinRoom", "room-1", "Alice", Ct);
+        Assert.Empty(aliceJoin.Participants);
+
+        var bob = await ConnectAsync();
+        var bobJoin = await bob.InvokeAsync<JoinResult>("JoinRoom", "room-1", "  Bob ", Ct);
+
+        var bobAsSeenByAlice = await joined.Reader.ReadAsync(Timeout());
+        Assert.Equal(new ParticipantDto(bobJoin.SelfId, "Bob"), bobAsSeenByAlice);
+        Assert.Equal([new ParticipantDto(aliceJoin.SelfId, "Alice")], bobJoin.Participants);
+
+        await bob.DisposeAsync();
+        Assert.Equal(bobJoin.SelfId, await left.Reader.ReadAsync(Timeout()));
+    }
+
+    [Fact]
+    public async Task LeaveRoom_notifies_others_and_allows_joining_again()
+    {
+        await using var alice = await ConnectAsync();
+        await using var bob = await ConnectAsync();
+        var left = Channel.CreateUnbounded<string>();
+        alice.On<string>("ParticipantLeft", id => left.Writer.TryWrite(id));
+
+        await alice.InvokeAsync<JoinResult>("JoinRoom", "room-leave", "Alice", Ct);
+        var bobJoin = await bob.InvokeAsync<JoinResult>("JoinRoom", "room-leave", "Bob", Ct);
+
+        await bob.InvokeAsync("LeaveRoom", Ct);
+        Assert.Equal(bobJoin.SelfId, await left.Reader.ReadAsync(Timeout()));
+
+        var rejoin = await bob.InvokeAsync<JoinResult>("JoinRoom", "room-leave-2", "Bob", Ct);
+        Assert.Empty(rejoin.Participants);
+    }
+
+    [Fact]
+    public async Task Participant_ids_are_random_hex_not_connection_ids()
+    {
+        await using var connection = await ConnectAsync();
+        var join = await connection.InvokeAsync<JoinResult>("JoinRoom", "room-ids", "Alice", Ct);
+
+        Assert.Matches("^[0-9a-f]{16}$", join.SelfId);
+        Assert.NotEqual(connection.ConnectionId, join.SelfId);
+    }
+
+    [Fact]
+    public async Task Rtc_config_requires_joining_and_returns_token_without_relay_when_turn_unconfigured()
+    {
+        await using var connection = await ConnectAsync();
+
+        await AssertHubErrorAsync("Join a room first.", () => connection.InvokeAsync<RtcConfig>("GetRtcConfig", Ct));
+
+        await connection.InvokeAsync<JoinResult>("JoinRoom", "room-2", "Carol", Ct);
+        var config = await connection.InvokeAsync<RtcConfig>("GetRtcConfig", Ct);
+
+        Assert.Equal("ws://livekit.test", config.LivekitUrl);
+        Assert.NotEmpty(config.Token);
+        Assert.Empty(config.IceServers);
+        Assert.False(config.ForceRelay);
+    }
+
+    [Theory]
+    [InlineData("UPPER")]
+    [InlineData("ab")]
+    [InlineData("room id")]
+    [InlineData(null)]
+    public async Task Invalid_room_id_is_rejected(string? roomId)
+    {
+        await using var connection = await ConnectAsync();
+        await AssertHubErrorAsync(
+            "Invalid room id.",
+            () => connection.InvokeAsync<JoinResult>("JoinRoom", roomId, "Dave", Ct));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData(null)]
+    public async Task Invalid_display_name_is_rejected(string? displayName)
+    {
+        await using var connection = await ConnectAsync();
+        await AssertHubErrorAsync(
+            "Display name must be 1-64 characters.",
+            () => connection.InvokeAsync<JoinResult>("JoinRoom", "room-3", displayName, Ct));
+    }
+
+    [Fact]
+    public async Task Display_name_longer_than_64_characters_is_rejected()
+    {
+        await using var connection = await ConnectAsync();
+        await AssertHubErrorAsync(
+            "Display name must be 1-64 characters.",
+            () => connection.InvokeAsync<JoinResult>("JoinRoom", "room-3", new string('a', 65), Ct));
+    }
+
+    [Fact]
+    public async Task Joining_twice_is_rejected()
+    {
+        await using var connection = await ConnectAsync();
+        await connection.InvokeAsync<JoinResult>("JoinRoom", "room-4", "Eve", Ct);
+        await AssertHubErrorAsync(
+            "Already in a room.",
+            () => connection.InvokeAsync<JoinResult>("JoinRoom", "room-5", "Eve", Ct));
+    }
+
+    [Fact]
+    public async Task Health_endpoint_reports_healthy()
+    {
+        using var client = _factory.CreateClient();
+        var response = await client.GetAsync(new Uri("/healthz", UriKind.Relative), Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("Healthy", await response.Content.ReadAsStringAsync(Ct));
+    }
+
+    /// <summary>SignalR surfaces server HubExceptions as "...HubException: {message}" on the client.</summary>
+    private static async Task AssertHubErrorAsync(string expectedMessage, Func<Task> call)
+    {
+        var error = await Assert.ThrowsAsync<HubException>(call);
+        Assert.EndsWith($"HubException: {expectedMessage}", error.Message, StringComparison.Ordinal);
+    }
+
+    private async Task<HubConnection> ConnectAsync()
+    {
+        var connection = new HubConnectionBuilder()
+            .WithUrl(new Uri(_factory.Server.BaseAddress, "hubs/room"), o =>
+            {
+                o.Transports = HttpTransportType.LongPolling;
+                o.HttpMessageHandlerFactory = _ => _factory.Server.CreateHandler();
+            })
+            .Build();
+        await connection.StartAsync(Ct);
+        return connection;
+    }
+
+    private static CancellationToken Timeout() =>
+        CancellationTokenSource.CreateLinkedTokenSource(Ct, new CancellationTokenSource(TimeSpan.FromSeconds(5)).Token).Token;
+}

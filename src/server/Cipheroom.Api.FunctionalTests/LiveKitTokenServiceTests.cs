@@ -6,7 +6,7 @@ using Microsoft.Extensions.Time.Testing;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 
-namespace Cipheroom.Api.Tests;
+namespace Cipheroom.Api.FunctionalTests;
 
 public sealed class LiveKitTokenServiceTests
 {
