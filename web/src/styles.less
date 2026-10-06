@@ -1,0 +1,93 @@
+// ng-zorro dark theme, per-component (see docs/plans/2026-10-06-ngzorro-ui-design.md).
+// Only import styles for components the app actually uses — keeps the initial bundle small.
+@import 'ng-zorro-antd/style/dark.less';
+@import 'ng-zorro-antd/style/entry.less';
+@import 'ng-zorro-antd/alert/style/entry.less';
+@import 'ng-zorro-antd/avatar/style/entry.less';
+@import 'ng-zorro-antd/badge/style/entry.less';
+@import 'ng-zorro-antd/button/style/entry.less';
+@import 'ng-zorro-antd/card/style/entry.less';
+@import 'ng-zorro-antd/drawer/style/entry.less';
+@import 'ng-zorro-antd/dropdown/style/entry.less';
+@import 'ng-zorro-antd/form/style/entry.less';
+@import 'ng-zorro-antd/grid/style/entry.less';
+@import 'ng-zorro-antd/input/style/entry.less';
+@import 'ng-zorro-antd/menu/style/entry.less';
+@import 'ng-zorro-antd/message/style/entry.less';
+@import 'ng-zorro-antd/popover/style/entry.less';
+@import 'ng-zorro-antd/result/style/entry.less';
+@import 'ng-zorro-antd/tag/style/entry.less';
+@import 'ng-zorro-antd/tooltip/style/entry.less';
+
+// Theme overrides (Less variables are lazy: last definition wins everywhere).
+@blue-base: #4f8cff;
+@body-background: #0f1115;
+@component-background: #1a1d24;
+@popover-background: #222630;
+@border-radius-base: 8px;
+@font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+
+:root {
+  color-scheme: dark;
+  --bg: #0f1115;
+  --surface: #1a1d24;
+  --border: #2a2f3a;
+  --text: #e6e8ee;
+  --muted: #8a92a6;
+  --accent: #4f8cff;
+  --danger: #e5484d;
+  --warn: #f5a524;
+}
+
+html,
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.4 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+
+button {
+  font: inherit;
+  color: var(--text);
+  background: var(--accent);
+  border: 0;
+  border-radius: 8px;
+  padding: 0.5rem 1rem;
+  cursor: pointer;
+
+  &:disabled { opacity: 0.5; cursor: default; }
+  &.ghost { background: transparent; border: 1px solid var(--border); }
+  &.off { background: var(--surface); border: 1px solid var(--border); }
+  &.danger { background: var(--danger); }
+}
+
+input {
+  font: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.5rem 0.75rem;
+}
+
+.muted { color: var(--muted); }
+
+.home {
+  max-width: 420px;
+  margin: 12vh auto 0;
+  padding: 0 1rem;
+
+  h1 { margin-bottom: 0.25rem; }
+}
+
+.card {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1.5rem;
+  padding: 1.25rem;
+  background: var(--surface);
+  border-radius: 12px;
+
+  label { display: grid; gap: 0.35rem; }
+}

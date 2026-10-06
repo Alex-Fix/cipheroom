@@ -30,8 +30,11 @@
               }
             ],
             "styles": [
-              "src/styles.scss"
-            ]
+              "src/styles.less"
+            ],
+            "stylePreprocessorOptions": {
+              "includePaths": ["node_modules"]
+            }
           },
           "configurations": {
             "production": {
