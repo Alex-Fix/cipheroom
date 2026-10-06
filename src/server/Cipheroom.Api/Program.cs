@@ -7,6 +7,9 @@ using Cipheroom.Infrastructure;
 using Mediator;
 using Microsoft.AspNetCore.SignalR;
 
+if (args is [HealthProbe.Argument])
+    return await HealthProbe.RunAsync();
+
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddApplication();
@@ -48,6 +51,7 @@ app.UseStatusCodePages();
 app.MapHealthChecks("/healthz");
 app.MapHub<RoomHub>("/hubs/room");
 
-app.Run();
+await app.RunAsync();
+return 0;
 
 public partial class Program;
