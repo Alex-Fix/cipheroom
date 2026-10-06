@@ -33,6 +33,10 @@ public sealed class TurnOptions
 
 public sealed class CloudflareTurnOptions
 {
+    /// <summary>Cloudflare Realtime TURN API, ending in a slash (key id is appended).</summary>
+    [Url]
+    public string ApiBaseUrl { get; set; } = "https://rtc.live.cloudflare.com/v1/turn/keys/";
+
     public string KeyId { get; set; } = "";
 
     public string ApiToken { get; set; } = "";

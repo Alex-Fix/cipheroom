@@ -21,6 +21,7 @@ src/server/
     DependencyInjection.cs   AddApplication() (validators)
   Cipheroom.Infrastructure/  → Application. Adapters + options; AddInfrastructure()
     Rooms/InMemoryRoomStore.cs   Rtc/LiveKitTokenIssuer.cs  Rtc/IceServerProviders.cs  Rtc/RtcOptions.cs
+    Rtc/Cloudflare/CloudflareTurnClient.cs   typed HttpClient + source-generated JSON
   Cipheroom.Api/             → Application, Infrastructure. Composition root; Mediator.SourceGenerator runs here
     Hubs/RoomHub.cs IRoomClient.cs Contracts/   (wire contract — see signaling-protocol skill)
     Hubs/Filters/HubRateLimitFilter.cs HubExceptionFilter.cs
@@ -50,7 +51,12 @@ src/server/
 - **Options:** `AddOptions<T>().BindConfiguration(...).ValidateDataAnnotations().ValidateOnStart()`. Env vars use `__`
   (`LiveKit__ApiSecret`); compose maps `.env` names onto them.
 - **Time:** inject `TimeProvider`; tests use `FakeTimeProvider`.
-- **Outbound HTTP:** typed `HttpClient` + `AddStandardResilienceHandler()`; never log bearer tokens or credentials.
+- **Outbound HTTP:** one **typed client per external API** in Infrastructure (e.g. `Rtc/Cloudflare/CloudflareTurnClient`):
+  it only speaks HTTP and returns the API's DTOs; an adapter maps them to Application types. Base address (from
+  options, so tests can point it elsewhere) and auth headers are set once in `AddHttpClient<T>((sp, http) => …)`, plus
+  `AddStandardResilienceHandler()`. JSON via a source-generated `JsonSerializerContext`. Never `new HttpClient()` in
+  the app (only the one-shot `--health` process does). Never log bearer tokens or credentials. Test through the real
+  registration with `ConfigurePrimaryHttpMessageHandler(() => stub)`.
 - **Rate limiting:** hub invocations via `HubRateLimitFilter` (`RateLimiting:Hub`); `/api/*` will use `AddRateLimiter`.
 - **Proxies:** `UseForwardedHeaders` trusts only `ForwardedHeaders:KnownNetworks` (compose sets the Docker range);
   nginx forwards `X-Forwarded-For/Proto/Host`.

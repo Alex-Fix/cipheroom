@@ -1,6 +1,7 @@
 using Cipheroom.Application.Common.Interfaces;
 using Cipheroom.Infrastructure.Rooms;
 using Cipheroom.Infrastructure.Rtc;
+using Cipheroom.Infrastructure.Rtc.Cloudflare;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
@@ -17,8 +18,15 @@ public static class DependencyInjection
         services.AddOptions<TurnOptions>().BindConfiguration(TurnOptions.Section).ValidateDataAnnotations().ValidateOnStart();
 
         services.AddSingleton<ILiveKitTokenIssuer, LiveKitTokenIssuer>();
-        services.AddHttpClient<CloudflareIceServerProvider>(c => c.BaseAddress = new("https://rtc.live.cloudflare.com/v1/turn/keys/"))
+        // Typed client: configured once from options; pooled handlers, DNS refresh and resilience from the factory.
+        services.AddHttpClient<CloudflareTurnClient>((sp, http) =>
+            {
+                var cloudflare = sp.GetRequiredService<IOptions<TurnOptions>>().Value.Cloudflare;
+                http.BaseAddress = new Uri(cloudflare.ApiBaseUrl);
+                http.DefaultRequestHeaders.Authorization = new("Bearer", cloudflare.ApiToken);
+            })
             .AddStandardResilienceHandler();
+        services.AddTransient<CloudflareIceServerProvider>();
 
         // Resolved per use so configuration (and typed HttpClient lifetimes) are honoured.
         services.AddTransient<IIceServerProvider>(sp =>
