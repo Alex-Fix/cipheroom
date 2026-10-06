@@ -39,17 +39,15 @@
     </aside>
   }
 
-  <footer class="controls">
-    <button type="button" [class.off]="!livekit.micEnabled()" (click)="livekit.setMicrophone(!livekit.micEnabled())">
-      {{ livekit.micEnabled() ? 'Mute' : 'Unmute' }}
-    </button>
-    <button type="button" [class.off]="!livekit.cameraEnabled()" (click)="livekit.setCamera(!livekit.cameraEnabled())">
-      {{ livekit.cameraEnabled() ? 'Stop video' : 'Start video' }}
-    </button>
-    <button type="button" (click)="livekit.setScreenShare(!livekit.screenShareEnabled())">
-      {{ livekit.screenShareEnabled() ? 'Stop sharing' : 'Share screen' }}
-    </button>
-    <button type="button" class="ghost" (click)="showDiagnostics.set(!showDiagnostics())">Diagnostics</button>
-    <button type="button" class="danger" (click)="leave()">Leave</button>
-  </footer>
+  <app-call-controls
+    [micEnabled]="livekit.micEnabled()"
+    [cameraEnabled]="livekit.cameraEnabled()"
+    [screenShareEnabled]="livekit.screenShareEnabled()"
+    [canShareScreen]="canShareScreen"
+    (toggleMic)="setDevice('microphone', !livekit.micEnabled())"
+    (toggleCamera)="setDevice('camera', !livekit.cameraEnabled())"
+    (toggleScreenShare)="setDevice('screen', !livekit.screenShareEnabled())"
+    (openDiagnostics)="showDiagnostics.set(!showDiagnostics())"
+    (leave)="leave()"
+  />
 </div>

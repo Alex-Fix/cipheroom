@@ -67,20 +67,26 @@ export class LiveKitService implements OnDestroy {
       },
     });
 
-    await Promise.allSettled([this.setMicrophone(true), this.setCamera(true)]);
     this.canPlaybackAudio.set(room.canPlaybackAudio);
     this.refresh();
     this.statsTimer = setInterval(() => void this.collectStats(), 2000);
   }
 
+  /** Rejects with the browser's DOMException (e.g. NotAllowedError) when the device can't be used. */
   async setMicrophone(enabled: boolean): Promise<void> {
-    await this.room?.localParticipant.setMicrophoneEnabled(enabled);
-    this.refresh();
+    try {
+      await this.room?.localParticipant.setMicrophoneEnabled(enabled);
+    } finally {
+      this.refresh();
+    }
   }
 
   async setCamera(enabled: boolean): Promise<void> {
-    await this.room?.localParticipant.setCameraEnabled(enabled);
-    this.refresh();
+    try {
+      await this.room?.localParticipant.setCameraEnabled(enabled);
+    } finally {
+      this.refresh();
+    }
   }
 
   async setScreenShare(enabled: boolean): Promise<void> {

@@ -52,12 +52,5 @@ header {
   p { margin: 0.15rem 0; }
 }
 
-.controls {
-  display: flex;
-  justify-content: center;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-}
-
 .error { color: var(--danger); }
 .banner { width: 100%; }

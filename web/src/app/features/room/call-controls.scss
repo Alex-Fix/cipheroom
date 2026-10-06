@@ -1,0 +1,65 @@
+:host {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 8px 0 4px;
+}
+
+.control {
+  width: 48px;
+  height: 48px;
+  font-size: 20px;
+  background: var(--surface);
+  border-color: var(--border);
+
+  &.off {
+    color: #fff;
+    background: var(--danger);
+    border-color: var(--danger);
+  }
+
+  &.active {
+    color: #fff;
+    background: var(--accent);
+    border-color: var(--accent);
+  }
+}
+
+// ant-design has no "camera off" icon: draw the slash.
+.slashed {
+  position: relative;
+
+  &::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: -2px;
+    width: 2px;
+    height: calc(100% + 4px);
+    background: currentColor;
+    transform: translateX(-50%) rotate(-45deg);
+    border-radius: 1px;
+  }
+}
+
+.leave {
+  height: 48px;
+  margin-left: 12px;
+}
+
+@media (max-width: 480px) {
+  :host {
+    gap: 8px;
+  }
+
+  .leave {
+    margin-left: 0;
+    width: 48px;
+    padding: 0;
+  }
+
+  .leave-label {
+    display: none;
+  }
+}
