@@ -119,6 +119,16 @@ export class Room implements OnInit, OnDestroy {
     }
   }
 
+  /** Flip front ⇄ rear, or pick a specific camera. Failures (camera busy, gone) become a toast. */
+  protected async switchCamera(deviceId?: string): Promise<void> {
+    try {
+      if (deviceId) await this.livekit.selectCamera(deviceId);
+      else await this.livekit.flipCamera();
+    } catch (e) {
+      this.message.error(deviceErrorMessage('camera', e));
+    }
+  }
+
   protected async copyLink(): Promise<void> {
     try {
       // navigator.clipboard is undefined on plain-HTTP LAN origins.

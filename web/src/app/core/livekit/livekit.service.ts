@@ -1,6 +1,14 @@
-import { Injectable, OnDestroy, signal } from '@angular/core';
-import { ConnectionState, Participant, Room, RoomEvent, Track } from 'livekit-client';
+import { Injectable, OnDestroy, computed, signal } from '@angular/core';
+import {
+  ConnectionState,
+  LocalVideoTrack,
+  Participant,
+  Room,
+  RoomEvent,
+  Track,
+} from 'livekit-client';
 import { RtcConfig } from '../signaling/signaling.types';
+import { Camera, CameraFacing, cameraFacing, hasRearCamera } from './cameras';
 import { IcePath, selectedIcePath } from './ice-path';
 
 export interface Tile {
@@ -15,6 +23,8 @@ export interface Tile {
   video?: Track;
   audio?: Track;
   micMuted: boolean;
+  /** Mirror the preview: only your own front-facing camera (a mirrored rear camera would show text backwards). */
+  mirror: boolean;
 }
 
 /** One person in the media room — i.e. someone who can receive your audio and video. */
@@ -52,6 +62,13 @@ export class LiveKitService implements OnDestroy {
   readonly canPlaybackAudio = signal(true);
   readonly diagnostics = signal<Diagnostics>({ forceRelay: false });
 
+  /** Local video inputs. Labels only appear once camera permission is granted. Never leave the browser. */
+  readonly cameras = signal<Camera[]>([]);
+  readonly activeCameraId = signal<string | undefined>(undefined);
+  readonly cameraFacing = signal<CameraFacing | undefined>(undefined);
+  /** Phones/tablets: offer front ⇄ rear flipping. */
+  readonly canFlip = computed(() => hasRearCamera(this.cameras()));
+
   async connect(config: RtcConfig): Promise<void> {
     // TODO(e2ee): enable LiveKit E2EE with our per-participant key provider before publishing (see e2ee-media skill).
     const room = new Room({ adaptiveStream: true, dynacast: true });
@@ -68,6 +85,7 @@ export class LiveKitService implements OnDestroy {
       .on(RoomEvent.TrackUnsubscribed, () => this.refresh())
       .on(RoomEvent.TrackMuted, () => this.refresh())
       .on(RoomEvent.TrackUnmuted, () => this.refresh())
+      .on(RoomEvent.MediaDevicesChanged, () => void this.refreshCameras())
       .on(RoomEvent.LocalTrackPublished, () => this.refresh())
       .on(RoomEvent.LocalTrackUnpublished, () => this.refresh())
       .on(RoomEvent.ActiveSpeakersChanged, () => this.refresh());
@@ -101,6 +119,28 @@ export class LiveKitService implements OnDestroy {
     } finally {
       this.refresh();
     }
+    // First time on, permission was just granted: device labels are now readable.
+    if (enabled) await this.refreshCameras();
+  }
+
+  /** Front ⇄ rear. The track is restarted in place: same publication, others see a brief cut. */
+  async flipCamera(): Promise<void> {
+    const track = this.localCameraTrack();
+    if (!track) return;
+    const next: CameraFacing = this.cameraFacing() === 'environment' ? 'user' : 'environment';
+    try {
+      await track.restartTrack({ facingMode: next });
+    } finally {
+      this.refresh();
+    }
+  }
+
+  async selectCamera(deviceId: string): Promise<void> {
+    try {
+      await this.room?.switchActiveDevice('videoinput', deviceId);
+    } finally {
+      this.refresh();
+    }
   }
 
   async setScreenShare(enabled: boolean): Promise<void> {
@@ -123,6 +163,9 @@ export class LiveKitService implements OnDestroy {
     await room?.disconnect();
     this.tiles.set([]);
     this.participants.set([]);
+    this.cameras.set([]);
+    this.activeCameraId.set(undefined);
+    this.cameraFacing.set(undefined);
   }
 
   ngOnDestroy(): void {
@@ -138,9 +181,32 @@ export class LiveKitService implements OnDestroy {
     this.cameraEnabled.set(local.isCameraEnabled);
     this.screenShareEnabled.set(local.isScreenShareEnabled);
 
+    const cameraTrack = this.localCameraTrack();
+    const settings = cameraTrack?.mediaStreamTrack.getSettings();
+    const label =
+      this.cameras().find((c) => c.id === settings?.deviceId)?.label ??
+      cameraTrack?.mediaStreamTrack.label;
+    this.activeCameraId.set(settings?.deviceId);
+    this.cameraFacing.set(cameraTrack ? cameraFacing(settings?.facingMode, label) : undefined);
+
     const participants: Participant[] = [local, ...room.remoteParticipants.values()];
     this.tiles.set(participants.flatMap((p) => this.tilesFor(p, p === local)));
     this.participants.set(participants.map((p) => this.participantFor(p, p === local)));
+  }
+
+  private localCameraTrack(): LocalVideoTrack | undefined {
+    const track = this.room?.localParticipant.getTrackPublication(Track.Source.Camera)?.track;
+    return track instanceof LocalVideoTrack ? track : undefined;
+  }
+
+  private async refreshCameras(): Promise<void> {
+    const devices = await Room.getLocalDevices('videoinput', false).catch(() => []);
+    this.cameras.set(
+      devices
+        .filter((d) => d.deviceId) // empty before permission is granted
+        .map((d, i) => ({ id: d.deviceId, label: d.label || `Camera ${i + 1}` })),
+    );
+    this.refresh();
   }
 
   private participantFor(p: Participant, isLocal: boolean): CallParticipant {
@@ -177,6 +243,7 @@ export class LiveKitService implements OnDestroy {
         // Never play our own microphone back.
         audio: isLocal ? undefined : mic?.track,
         micMuted: !mic || mic.isMuted,
+        mirror: isLocal && this.cameraFacing() !== 'environment',
       },
     ];
     if (screen?.track && !screen.isMuted) {
@@ -189,6 +256,7 @@ export class LiveKitService implements OnDestroy {
         isSpeaking: false,
         video: screen.track,
         micMuted: true,
+        mirror: false,
       });
     }
     return tiles;

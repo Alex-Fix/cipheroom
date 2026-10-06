@@ -13,6 +13,8 @@ import {
   UnlockOutline,
   VideoCameraOutline,
   CloseOutline,
+  CheckOutline,
+  SyncOutline,
 } from '@ant-design/icons-angular/icons';
 import { IconDefinition } from '@ant-design/icons-angular';
 
@@ -36,4 +38,6 @@ export const APP_ICONS: IconDefinition[] = [
   UnlockOutline,
   VideoCameraOutline,
   CloseOutline,
+  CheckOutline,
+  SyncOutline,
 ];

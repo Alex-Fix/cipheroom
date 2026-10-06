@@ -14,6 +14,7 @@ function tile(overrides: Partial<Tile> = {}): Tile {
     isScreen: false,
     isSpeaking: false,
     micMuted: false,
+    mirror: false,
     ...overrides,
   };
 }
@@ -35,8 +36,8 @@ describe('CallTile', () => {
     expect(el.querySelector('video')).toBeNull();
   });
 
-  it('shows video instead of avatar and mirrors only the local camera', () => {
-    const local = render(tile({ video: fakeTrack(), isLocal: true }));
+  it('shows video instead of the monogram, mirrored when asked (front camera)', () => {
+    const local = render(tile({ video: fakeTrack(), isLocal: true, mirror: true }));
     expect(local.querySelector('.monogram')).toBeNull();
     expect(local.querySelector('video')?.classList).toContain('mirror');
   });
@@ -60,5 +61,10 @@ describe('CallTile', () => {
     const el = render(tile({ name: '<img src=x onerror=alert(1)>' }));
     expect(el.querySelector('img')).toBeNull();
     expect(el.querySelector('.name')?.textContent).toBe('<img src=x onerror=alert(1)>');
+  });
+
+  it('does not mirror a rear camera', () => {
+    const el = render(tile({ video: fakeTrack(), isLocal: true, mirror: false }));
+    expect(el.querySelector('video')?.classList).not.toContain('mirror');
   });
 });
