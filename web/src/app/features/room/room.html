@@ -1,0 +1,65 @@
+<div class="room">
+  <header>
+    <strong>{{ roomId() }}</strong>
+    <span class="state">{{ livekit.state() }}</span>
+    <span class="warn" title="Connectivity spike build">E2EE not enabled yet</span>
+    <button type="button" class="ghost" (click)="copyLink()">{{ copied() ? 'Copied' : 'Copy link' }}</button>
+  </header>
+
+  @if (error(); as message) {
+    <p class="error">Could not join: {{ message }}</p>
+  }
+
+  @if (!livekit.canPlaybackAudio()) {
+    <button type="button" class="banner" (click)="livekit.startAudio()">Click to enable audio</button>
+  }
+
+  <section class="grid">
+    @for (tile of livekit.tiles(); track tile.key) {
+      <figure class="tile" [class.speaking]="tile.isSpeaking" [class.screen]="tile.isScreen">
+        @if (tile.video) {
+          <video [appTrack]="tile.video" autoplay playsinline [muted]="true" [class.mirror]="tile.isLocal && !tile.isScreen"></video>
+        } @else {
+          <div class="avatar">{{ tile.name.charAt(0).toUpperCase() }}</div>
+        }
+        @if (tile.audio) {
+          <audio [appTrack]="tile.audio" autoplay></audio>
+        }
+        <figcaption>{{ tile.micMuted ? '🔇 ' : '' }}{{ tile.name }}</figcaption>
+      </figure>
+    }
+  </section>
+
+  @if (showDiagnostics()) {
+    <aside class="diagnostics">
+      <h2>Connection path</h2>
+      <p>Relay forced: <b>{{ livekit.diagnostics().forceRelay ? 'yes' : 'no' }}</b></p>
+      @for (row of [['Sending', livekit.diagnostics().publisher], ['Receiving', livekit.diagnostics().subscriber]]; track $index) {
+        @let path = $any(row[1]);
+        <p>
+          {{ row[0] }}:
+          @if (path) {
+            <b>{{ path.localType }}</b> ⇄ {{ path.remoteType }} {{ path.remoteAddress }}
+            ({{ path.protocol }}{{ path.relayProtocol ? ' via TURN/' + path.relayProtocol : '' }}{{ path.rttMs !== undefined ? ', ' + path.rttMs + ' ms' : '' }})
+          } @else {
+            <span class="muted">—</span>
+          }
+        </p>
+      }
+    </aside>
+  }
+
+  <footer class="controls">
+    <button type="button" [class.off]="!livekit.micEnabled()" (click)="livekit.setMicrophone(!livekit.micEnabled())">
+      {{ livekit.micEnabled() ? 'Mute' : 'Unmute' }}
+    </button>
+    <button type="button" [class.off]="!livekit.cameraEnabled()" (click)="livekit.setCamera(!livekit.cameraEnabled())">
+      {{ livekit.cameraEnabled() ? 'Stop video' : 'Start video' }}
+    </button>
+    <button type="button" (click)="livekit.setScreenShare(!livekit.screenShareEnabled())">
+      {{ livekit.screenShareEnabled() ? 'Stop sharing' : 'Share screen' }}
+    </button>
+    <button type="button" class="ghost" (click)="showDiagnostics.set(!showDiagnostics())">Diagnostics</button>
+    <button type="button" class="danger" (click)="leave()">Leave</button>
+  </footer>
+</div>

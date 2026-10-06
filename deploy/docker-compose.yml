@@ -1,0 +1,45 @@
+name: cipheroom
+
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: src/server/Cipheroom.Api/Dockerfile
+    environment:
+      LiveKit__Url: ${LIVEKIT_URL:?set LIVEKIT_URL in deploy/.env}
+      LiveKit__ApiKey: ${LIVEKIT_API_KEY:?run scripts/secrets.sh}
+      LiveKit__ApiSecret: ${LIVEKIT_API_SECRET:?run scripts/secrets.sh}
+      Turn__Cloudflare__KeyId: ${CF_TURN_KEY_ID:-}
+      Turn__Cloudflare__ApiToken: ${CF_TURN_API_TOKEN:-}
+      Turn__CredentialTtlSeconds: ${TURN_CREDENTIAL_TTL_SECONDS:-14400}
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ..
+      dockerfile: web/Dockerfile
+    ports:
+      - "127.0.0.1:${WEB_PORT:-8080}:8080"
+    depends_on: [api, livekit]
+    restart: unless-stopped
+
+  livekit:
+    image: livekit/livekit-server:v1.13.8
+    command: --config /etc/livekit.yaml
+    environment:
+      LIVEKIT_KEYS: "${LIVEKIT_API_KEY}: ${LIVEKIT_API_SECRET}"
+    volumes:
+      - ./livekit/livekit.yaml:/etc/livekit.yaml:ro
+    ports:
+      - "7881:7881/tcp"
+      - "50000-50100:50000-50100/udp"
+    restart: unless-stopped
+
+  cloudflared:
+    image: cloudflare/cloudflared:2026.10.0
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:-}
+    depends_on: [web]
+    restart: unless-stopped
+    profiles: [tunnel]

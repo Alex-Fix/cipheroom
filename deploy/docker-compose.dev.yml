@@ -1,0 +1,14 @@
+# LiveKit only, for scripts/dev.sh (API and Angular run natively).
+# LIVEKIT_NODE_IP: 127.0.0.1 for same-machine tests; your LAN IP to test from a phone.
+name: cipheroom-dev
+
+services:
+  livekit:
+    image: livekit/livekit-server:v1.13.8
+    command: --config /etc/livekit.yaml --node-ip ${LIVEKIT_NODE_IP:-127.0.0.1}
+    volumes:
+      - ./livekit/livekit.dev.yaml:/etc/livekit.yaml:ro
+    ports:
+      - "7880:7880"
+      - "7881:7881/tcp"
+      - "50000-50100:50000-50100/udp"

@@ -1,0 +1,33 @@
+# .NET
+bin/
+obj/
+*.user
+TestResults/
+
+# Node / Angular
+node_modules/
+dist/
+.angular/
+coverage/
+
+# IDE / OS
+.idea/**/workspace.xml
+.idea/**/tasks.xml
+.idea/**/usage.statistics.xml
+.idea/**/shelf/
+.vs/
+.vscode/*
+!.vscode/extensions.json
+.DS_Store
+
+# Secrets — never commit
+.env
+*.env
+!*.env.example
+.certs/
+*.pem
+*.key
+deploy/cloudflared/*.json
+
+# Claude Code local overrides
+.claude/settings.local.json

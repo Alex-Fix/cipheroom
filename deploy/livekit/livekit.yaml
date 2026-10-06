@@ -1,0 +1,14 @@
+# Home deployment: no public IP. Signaling (7880) goes through Cloudflare Tunnel; media reaches clients via
+# Cloudflare TURN (clients use iceTransportPolicy=relay). Keys come from LIVEKIT_KEYS env.
+port: 7880
+bind_addresses: ["0.0.0.0"]
+rtc:
+  tcp_port: 7881
+  port_range_start: 50000
+  port_range_end: 50100
+  # Announce the router's public address — Cloudflare TURN refuses to relay to private IPs.
+  use_external_ip: true
+turn:
+  enabled: false
+logging:
+  level: info
