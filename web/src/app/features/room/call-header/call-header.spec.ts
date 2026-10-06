@@ -1,8 +1,8 @@
 import { TestBed } from '@angular/core/testing';
 import { provideNzIcons } from 'ng-zorro-antd/icon';
-import { APP_ICONS } from '../../core/ui/icons';
+import { APP_ICONS } from '../../../core/ui/icons';
 import { CallHeader } from './call-header';
-import { CallStatus } from './call-status';
+import { CallStatus } from '../call-status';
 
 function render(status: CallStatus, extra: Record<string, unknown> = {}) {
   TestBed.configureTestingModule({ imports: [CallHeader], providers: [provideNzIcons(APP_ICONS)] });

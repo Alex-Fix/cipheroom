@@ -1,0 +1,19 @@
+@let t = tile();
+@if (t.video) {
+  <video [appTrack]="t.video" autoplay playsinline [muted]="true" [class.mirror]="t.mirror"></video>
+} @else {
+  <div class="monogram" aria-hidden="true">{{ initials() }}</div>
+}
+@if (t.audio) {
+  <audio [appTrack]="t.audio" autoplay></audio>
+}
+<div class="caption">
+  @if (t.isScreen) {
+    <span class="screen-tag">Screen</span>
+  } @else if (t.micMuted) {
+    <span class="mic-off" role="img" aria-label="Microphone off"
+      ><nz-icon nzType="audio-muted"
+    /></span>
+  }
+  <span class="name">{{ t.name }}</span>
+</div>

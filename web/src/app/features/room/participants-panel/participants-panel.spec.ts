@@ -1,7 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { provideNzIcons } from 'ng-zorro-antd/icon';
-import { CallParticipant } from '../../core/livekit/livekit.service';
-import { APP_ICONS } from '../../core/ui/icons';
+import { CallParticipant } from '../../../core/livekit/livekit.service';
+import { APP_ICONS } from '../../../core/ui/icons';
 import { ParticipantsPanel } from './participants-panel';
 
 const person = (overrides: Partial<CallParticipant>): CallParticipant => ({

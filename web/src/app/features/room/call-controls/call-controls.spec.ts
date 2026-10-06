@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { provideNzIcons } from 'ng-zorro-antd/icon';
-import { APP_ICONS } from '../../core/ui/icons';
+import { APP_ICONS } from '../../../core/ui/icons';
 import { CallControls } from './call-controls';
 
 interface State {
@@ -30,7 +30,10 @@ function render(state: State) {
 }
 
 /** nz-dropdown opens after a short debounce and renders into a CDK overlay on document.body. */
-async function openMore(fixture: { detectChanges(): void; whenStable(): Promise<unknown> }, more: HTMLElement) {
+async function openMore(
+  fixture: { detectChanges(): void; whenStable(): Promise<unknown> },
+  more: HTMLElement,
+) {
   more.click();
   await new Promise((resolve) => setTimeout(resolve, 200));
   fixture.detectChanges();

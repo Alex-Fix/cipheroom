@@ -1,8 +1,8 @@
 import { TestBed } from '@angular/core/testing';
 import { Track } from 'livekit-client';
 import { provideNzIcons } from 'ng-zorro-antd/icon';
-import { Tile } from '../../core/livekit/livekit.service';
-import { APP_ICONS } from '../../core/ui/icons';
+import { Tile } from '../../../core/livekit/livekit.service';
+import { APP_ICONS } from '../../../core/ui/icons';
 import { CallTile } from './call-tile';
 
 function tile(overrides: Partial<Tile> = {}): Tile {
