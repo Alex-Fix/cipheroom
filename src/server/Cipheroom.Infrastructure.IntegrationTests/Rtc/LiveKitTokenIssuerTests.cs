@@ -1,14 +1,14 @@
 using System.Text;
 using System.Text.Json;
-using Cipheroom.Api.Rtc;
-using Microsoft.Extensions.Options;
+using Cipheroom.Domain.Rooms;
+using Cipheroom.Infrastructure.Rtc;
 using Microsoft.Extensions.Time.Testing;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 
-namespace Cipheroom.Api.Tests;
+namespace Cipheroom.Infrastructure.IntegrationTests.Rtc;
 
-public sealed class LiveKitTokenServiceTests
+public sealed class LiveKitTokenIssuerTests
 {
     private static readonly LiveKitOptions Options = new()
     {
@@ -22,11 +22,13 @@ public sealed class LiveKitTokenServiceTests
     public async Task Token_is_signed_and_carries_identity_and_room_grant()
     {
         var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        var service = new LiveKitTokenService(Microsoft.Extensions.Options.Options.Create(Options), time);
+        var issuer = new LiveKitTokenIssuer(Microsoft.Extensions.Options.Options.Create(Options), time);
+        var participant = new Participant(new ParticipantId("abc123"), new RoomId("room-1"), "conn", new DisplayName("Alice"));
 
-        var token = service.Create("room-1", "abc123", "Alice");
+        var access = issuer.Issue(participant);
 
-        var result = await new JsonWebTokenHandler().ValidateTokenAsync(token, new TokenValidationParameters
+        Assert.Equal(Options.Url, access.Url);
+        var result = await new JsonWebTokenHandler().ValidateTokenAsync(access.Token, new TokenValidationParameters
         {
             ValidIssuer = Options.ApiKey,
             ValidateAudience = false,

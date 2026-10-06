@@ -1,22 +1,24 @@
 using System.Text;
+using Cipheroom.Application.Common.Interfaces;
+using Cipheroom.Domain.Rooms;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 
-namespace Cipheroom.Api.Rtc;
+namespace Cipheroom.Infrastructure.Rtc;
 
 /// <summary>Issues LiveKit access tokens (HS256 JWT with a "video" grant).</summary>
-public sealed class LiveKitTokenService(IOptions<LiveKitOptions> options, TimeProvider time)
+public sealed class LiveKitTokenIssuer(IOptions<LiveKitOptions> options, TimeProvider time) : ILiveKitTokenIssuer
 {
     private readonly JsonWebTokenHandler _handler = new() { SetDefaultTimesOnTokenCreation = false };
 
-    public string Create(string roomId, string participantId, string displayName)
+    public LiveKitAccess Issue(Participant participant)
     {
         var opts = options.Value;
         var now = time.GetUtcNow().UtcDateTime;
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(opts.ApiSecret));
 
-        return _handler.CreateToken(new SecurityTokenDescriptor
+        var token = _handler.CreateToken(new SecurityTokenDescriptor
         {
             Issuer = opts.ApiKey,
             NotBefore = now,
@@ -24,11 +26,11 @@ public sealed class LiveKitTokenService(IOptions<LiveKitOptions> options, TimePr
             SigningCredentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256),
             Claims = new Dictionary<string, object>
             {
-                ["sub"] = participantId,
-                ["name"] = displayName,
+                ["sub"] = participant.Id.Value,
+                ["name"] = participant.DisplayName.Value,
                 ["video"] = new Dictionary<string, object>
                 {
-                    ["room"] = roomId,
+                    ["room"] = participant.RoomId.Value,
                     ["roomJoin"] = true,
                     ["canPublish"] = true,
                     ["canSubscribe"] = true,
@@ -37,5 +39,7 @@ public sealed class LiveKitTokenService(IOptions<LiveKitOptions> options, TimePr
                 },
             },
         });
+
+        return new LiveKitAccess(opts.Url, token);
     }
 }

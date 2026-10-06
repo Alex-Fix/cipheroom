@@ -1,0 +1,13 @@
+<Solution>
+  <Folder Name="/src/" />
+  <Folder Name="/src/server/">
+    <Project Path="src/server/Cipheroom.Api/Cipheroom.Api.csproj" />
+    <Project Path="src/server/Cipheroom.Api.FunctionalTests/Cipheroom.Api.FunctionalTests.csproj" />
+    <Project Path="src/server/Cipheroom.Domain/Cipheroom.Domain.csproj" />
+    <Project Path="src/server/Cipheroom.Application.UnitTests/Cipheroom.Application.UnitTests.csproj" />
+    <Project Path="src/server/Cipheroom.Application/Cipheroom.Application.csproj" />
+    <Project Path="src/server/Cipheroom.Domain.UnitTests/Cipheroom.Domain.UnitTests.csproj" />
+    <Project Path="src/server/Cipheroom.Infrastructure.IntegrationTests/Cipheroom.Infrastructure.IntegrationTests.csproj" />
+    <Project Path="src/server/Cipheroom.Infrastructure/Cipheroom.Infrastructure.csproj" />
+  </Folder>
+</Solution>

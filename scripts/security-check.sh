@@ -27,7 +27,7 @@ else
 fi
 
 info "NuGet vulnerabilities"
-if out="$(dotnet list "$ROOT/Cipheroom.sln" package --vulnerable --include-transitive 2>&1)"; then
+if out="$(dotnet list "$ROOT/Cipheroom.slnx" package --vulnerable --include-transitive 2>&1)"; then
   if grep -qE '^\s+> ' <<<"$out"; then bad "vulnerable packages:"; grep -E 'Project|^\s+> ' <<<"$out" | sed 's/^/      /'
   else good "none reported"; fi
 else
