@@ -1,4 +1,4 @@
-<p align="center"><img src="web/src/assets-src/logo.svg" alt="Cipheroom logo" width="120" height="120"></p>
+<p align="center"><img src="web/design/logo.svg" alt="Cipheroom logo" width="120" height="120"></p>
 
 # Cipheroom
 

@@ -1,4 +1,4 @@
-// Renders the app icons in public/ from the SVG masters in src/assets-src/. Run via scripts/icons.sh.
+// Renders the app icons in public/ from the SVG masters in design/. Run via scripts/icons.sh.
 // Outputs are committed, so builds never need this. Renderer: @resvg/resvg-js (MPL-2.0, devDependency).
 import { Resvg } from '@resvg/resvg-js';
 import { createHash } from 'node:crypto';
@@ -6,7 +6,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const web = fileURLToPath(new URL('..', import.meta.url));
-const src = (name) => `${web}src/assets-src/${name}`;
+const src = (name) => `${web}design/${name}`;
 const out = (name) => `${web}public/${name}`;
 
 /** Icons are served from our origin and shown everywhere: plain shapes only, nothing that loads or runs. */
