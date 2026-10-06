@@ -1,7 +1,7 @@
 # Build context: repo root (needs Directory.Build.props).
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
-COPY Directory.Build.props ./
+COPY global.json Directory.Build.props Directory.Packages.props ./
 COPY src/server/Cipheroom.Api/Cipheroom.Api.csproj src/server/Cipheroom.Api/
 RUN dotnet restore src/server/Cipheroom.Api/Cipheroom.Api.csproj
 COPY src/server/Cipheroom.Api/ src/server/Cipheroom.Api/
