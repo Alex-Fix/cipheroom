@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Cipheroom logo, simplified for ≤ 48 px · © Cipheroom contributors · CC BY-SA 4.0 (see LICENSE-ASSETS.md) -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#141C42"/>
+      <stop offset="1" stop-color="#000000"/>
+    </linearGradient>
+    <linearGradient id="ring" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#5AC8FA"/>
+      <stop offset="1" stop-color="#5E5CE6"/>
+    </linearGradient>
+    <clipPath id="tile">
+      <rect width="1024" height="1024" rx="230"/>
+    </clipPath>
+  </defs>
+
+  <g clip-path="url(#tile)">
+    <rect width="1024" height="1024" fill="url(#bg)"/>
+    <!-- Hood, scaled up so it survives 16 px. -->
+    <path fill="#2A3366" d="
+      M 512 80
+      C 576 100 742 136 822 286
+      C 866 370 880 456 880 540
+      C 880 640 856 708 820 760
+      C 950 800 1030 880 1080 1060
+      L -56 1060
+      C -6 880 74 800 204 760
+      C 168 708 144 640 144 540
+      C 144 456 158 370 202 286
+      C 282 136 448 100 512 80 Z"/>
+    <path fill="#3E4A8C" d="
+      M 512 228
+      C 690 228 784 380 784 552
+      C 784 730 672 846 512 846
+      C 352 846 240 730 240 552
+      C 240 380 334 228 512 228 Z"/>
+    <path fill="#03040C" d="
+      M 512 260
+      C 672 260 750 400 750 552
+      C 750 712 650 812 512 812
+      C 374 812 274 712 274 552
+      C 274 400 352 260 512 260 Z"/>
+    <circle cx="512" cy="552" r="168" fill="url(#ring)"/>
+    <circle cx="512" cy="552" r="88" fill="#05061A"/>
+    <circle cx="470" cy="508" r="30" fill="#FFFFFF" fill-opacity="0.9"/>
+  </g>
+</svg>
