@@ -18,6 +18,20 @@ Payloads never contain plaintext keys: only public keys and opaque signed envelo
 
 `JoinRoom` is open (no lobby) until admission is built; it will be replaced by `JoinLobby` below.
 
+### Errors
+
+Failures arrive as a `HubException`; the client sees `…HubException: <message>`. Messages are constant text and never
+echo input. Mapped centrally by `HubExceptionFilter`; pinned by `Cipheroom.Api.FunctionalTests`.
+
+| Message | When |
+|---|---|
+| `Invalid room id.` | `JoinRoom` with a room id not matching `^[a-z0-9-]{3,64}$` |
+| `Display name must be 1-64 characters.` | `JoinRoom` with a blank or too-long name (checked after the room id) |
+| `Already in a room.` | `JoinRoom` on a connection that has already joined |
+| `Join a room first.` | `GetRtcConfig` before joining |
+| `Too many requests.` | More than 20 calls in a burst / 5 per second on one connection (`RateLimiting:Hub`) |
+| `Something went wrong.` | Any unexpected server error (details only in the server log) |
+
 ## Planned — Client → Server (hub methods)
 
 | Method | Args | Returns | Notes |

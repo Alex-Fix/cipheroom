@@ -1,53 +1,78 @@
 ---
 name: dotnet-backend
-description: Conventions and scaffolding for the Cipheroom .NET 10 backend (ASP.NET Core minimal APIs, SignalR hubs, LiveKit token + ICE server issuance, LiveKit webhooks/usage guard, xUnit tests, Dockerfile). Use when creating or modifying anything under src/server.
+description: Conventions for the Cipheroom .NET 10 backend — Clean Architecture (Domain/Application/Infrastructure/Api), Mediator commands/queries with FluentValidation, SignalR hubs and filters, LiveKit token + ICE issuance, xUnit v3 tests per layer, chiseled Dockerfile. Use when creating or modifying anything under src/server.
 ---
 
 # .NET backend
 
-## Scaffold (first time only)
-```bash
-dotnet new web    -n Cipheroom.Api       -o src/server/Cipheroom.Api       -f net10.0
-dotnet new xunit  -n Cipheroom.Api.Tests -o src/server/Cipheroom.Api.Tests -f net10.0
-dotnet sln Cipheroom.slnx add src/server/Cipheroom.Api src/server/Cipheroom.Api.Tests
-dotnet add src/server/Cipheroom.Api.Tests reference src/server/Cipheroom.Api
-dotnet add src/server/Cipheroom.Api.Tests package Microsoft.AspNetCore.Mvc.Testing
-dotnet add src/server/Cipheroom.Api.Tests package Microsoft.AspNetCore.SignalR.Client
-```
-Add `Directory.Build.props` at repo root: `Nullable=enable`, `ImplicitUsings=enable`, `TreatWarningsAsErrors=true`,
-`LangVersion=latest`. Add `public partial class Program;` so tests can use `WebApplicationFactory<Program>`.
+Design: `docs/plans/2026-10-06-backend-clean-architecture-design.md`.
 
-## Structure
+## Layers (dependencies point inward only — enforced by project references)
 ```
-Cipheroom.Api/
-  Program.cs              composition root only
-  Hubs/RoomHub.cs, IRoomClient.cs, Contracts/
-  Rooms/IRoomRegistry.cs, InMemoryRoomRegistry.cs    lobby, admission, host role
-  Rtc/LiveKitOptions.cs, LiveKitTokenService.cs
-  Rtc/IIceServerProvider.cs, CloudflareIceServerProvider.cs
-  Rtc/LiveKitWebhookEndpoint.cs, UsageGuard.cs        monthly relay usage, free-tier limits
-  Health/                 /healthz (used by compose healthcheck)
+src/server/
+  Cipheroom.Domain/          entities, value objects, rules. No project or package references.
+    Common/DomainException.cs
+    Rooms/RoomId.cs DisplayName.cs ParticipantId.cs Participant.cs Room.cs
+  Cipheroom.Application/     → Domain. Mediator.Abstractions, FluentValidation, Logging.Abstractions
+    Common/Behaviours/       UnhandledException, Logging, Validation (pipeline order set in Api/Program.cs)
+    Common/Exceptions/       NotFoundException
+    Common/Interfaces/       ports: IRoomStore, ILiveKitTokenIssuer, IIceServerProvider
+    <Feature>/Commands|Queries/<UseCase>/<UseCase>Command.cs   record + validator + handler in one file
+    DependencyInjection.cs   AddApplication() (validators)
+  Cipheroom.Infrastructure/  → Application. Adapters + options; AddInfrastructure()
+    Rooms/InMemoryRoomStore.cs   Rtc/LiveKitTokenIssuer.cs  Rtc/IceServerProviders.cs  Rtc/RtcOptions.cs
+  Cipheroom.Api/             → Application, Infrastructure. Composition root; Mediator.SourceGenerator runs here
+    Hubs/RoomHub.cs IRoomClient.cs Contracts/   (wire contract — see signaling-protocol skill)
+    Hubs/Filters/HubRateLimitFilter.cs HubExceptionFilter.cs
+    Hosting/ForwardedHeadersSetup.cs HealthProbe.cs
+  Cipheroom.Domain.UnitTests/  Cipheroom.Application.UnitTests/  Cipheroom.Infrastructure.IntegrationTests/
+  Cipheroom.Api.FunctionalTests/   WebApplicationFactory + real SignalR client
 ```
+
+## Adding a use case
+1. Domain: new rules/types if needed (constants for limits live here, e.g. `DisplayName.MaxLength`).
+2. Application: `XCommand`/`XQuery` record (`ICommand<T>`/`IQuery<T>`), `XValidator : AbstractValidator<X>` reusing
+   Domain constants with **constant messages that never echo input**, handler. New port interface if it needs I/O.
+3. Infrastructure: adapter for any new port, registered in `AddInfrastructure()`.
+4. Api: hub method = one `mediator.Send(...)` + SignalR-only work (groups, events). Map results to `Contracts` by hand
+   (`ParticipantDto.From(...)`) — no AutoMapper.
+5. Tests: validator + handler unit tests; functional test for the client-visible behaviour and messages.
+6. Any hub method/event change → `signaling-protocol` skill (C#, TS, `docs/signaling-protocol.md`, incl. Errors table).
 
 ## Conventions
-- Minimal APIs grouped with `MapGroup("/api")`; endpoints in static `Map*` extension methods per feature.
-- Options pattern + `ValidateOnStart()` for config (`LiveKit:ApiKey`, `LiveKit:ApiSecret`, `LiveKit:Url`, `Turn:Cloudflare:KeyId`, `Turn:Cloudflare:ApiToken`, …). Env vars use `__` (`LiveKit__ApiSecret`). Compose maps `.env` names onto these.
-- `TimeProvider` injected for anything time-based (token expiry, usage periods) so tests can fake it.
-- Outbound HTTP (Cloudflare TURN API) via typed `HttpClient` + `AddStandardResilienceHandler`; never log the bearer token or returned credentials.
-- Logging: structured `ILogger` with message templates. **Never log envelope blobs, chat ciphertext, or anything from client payloads verbatim** beyond ids/lengths.
-- CORS: only the configured web origin; SignalR needs `AllowCredentials`.
-- Behind cloudflared/nginx: `UseForwardedHeaders` with known proxies.
-- Rate limiting: `AddRateLimiter` on `/api/*`; per-connection throttle in the hub.
-
-## LiveKit + ICE
-- Token & ICE rules: see the `livekit-media` skill. `GetRtcConfig` is only callable by admitted participants.
-- Verify LiveKit webhook signatures (JWT in `Authorization` header, sha256 of body) before trusting usage data.
+- **Validation:** FluentValidation only, run by `ValidationBehaviour`. Domain constructors keep a cheap guard as a last
+  line of defence, not as user-facing validation. `ClassLevelCascadeMode = Stop` when the client shows one message.
+- **Errors:** throw `DomainException` (business rule), `NotFoundException`, or let `ValidationException` happen.
+  `HubExceptionFilter` maps them to `HubException(message)`; anything else becomes "Something went wrong." and is logged
+  without request values. Never `throw new HubException` in Application/Domain. REST uses ProblemDetails.
+- **Logging:** `[LoggerMessage]` source-generated methods (CA1848). Log ids and types, **never request values** —
+  no display names, envelopes, ciphertext, tokens or TURN credentials. Guard expensive arguments with `IsEnabled`.
+- **Options:** `AddOptions<T>().BindConfiguration(...).ValidateDataAnnotations().ValidateOnStart()`. Env vars use `__`
+  (`LiveKit__ApiSecret`); compose maps `.env` names onto them.
+- **Time:** inject `TimeProvider`; tests use `FakeTimeProvider`.
+- **Outbound HTTP:** typed `HttpClient` + `AddStandardResilienceHandler()`; never log bearer tokens or credentials.
+- **Rate limiting:** hub invocations via `HubRateLimitFilter` (`RateLimiting:Hub`); `/api/*` will use `AddRateLimiter`.
+- **Proxies:** `UseForwardedHeaders` trusts only `ForwardedHeaders:KnownNetworks` (compose sets the Docker range);
+  nginx forwards `X-Forwarded-For/Proto/Host`.
+- **CORS:** none — everything is same-origin behind nginx.
+- **Packages:** versions only in `Directory.Packages.props`; free/open-source only. **Not MediatR or AutoMapper**
+  (RPL-1.5/commercial since 2025). Mediator = `Mediator.Abstractions`/`Mediator.SourceGenerator` (MIT).
+- **Build:** `Directory.Build.props` sets net10.0, nullable, warnings as errors, `AnalysisLevel=latest-recommended`,
+  `EnforceCodeStyleInBuild`. Fix analyzer findings rather than suppressing; tests may use underscores (CA1707 off).
 
 ## Commands
 - Run: `dotnet watch --project src/server/Cipheroom.Api` (or `scripts/dev.sh`)
-- Test: `dotnet test` (or `scripts/test.sh --server`)
-- Format: `dotnet format`
+- Test: `scripts/test.sh --server` (= `dotnet test --solution Cipheroom.slnx`; Microsoft Testing Platform via global.json)
+- Format: `scripts/lint.sh` / `scripts/lint.sh --fix`
+- New project: create the `.csproj` (no `TargetFramework`/versions — inherited), then
+  `dotnet sln Cipheroom.slnx add --solution-folder src/server <path>`; test projects need `<OutputType>Exe</OutputType>`.
 
 ## Dockerfile
-Multi-stage: `mcr.microsoft.com/dotnet/sdk:10.0` build → `mcr.microsoft.com/dotnet/aspnet:10.0` runtime,
-run as non-root (`USER app`), expose 8080, `HEALTHCHECK` against `/healthz`.
+Build context is the repo root. SDK stage copies `global.json` + `Directory.*.props` + each layer's `.csproj` (cached
+restore), then sources, then publishes. Runtime: `mcr.microsoft.com/dotnet/aspnet:10.0-noble-chiseled` (no shell,
+non-root `$APP_UID`), port 8080, `HEALTHCHECK CMD ["dotnet", "Cipheroom.Api.dll", "--health"]`. Add new layer projects
+to the COPY lines.
+
+## LiveKit + ICE
+Token and ICE rules: `livekit-media` skill. `GetRtcConfig` only for joined participants (`NotFoundException`
+otherwise). Verify LiveKit webhook signatures before trusting usage data (future usage guard).

@@ -34,6 +34,23 @@
 - **LiveKit signaling** (LiveKit WebSocket) — SDP/ICE/track subscriptions. Owned by `livekit-client`; not re-implemented.
 - **App signaling** (SignalR `/hubs/room`) — Cipheroom logic, including E2EE key distribution. LiveKit never sees keys.
 
+## Backend layering
+
+The api follows Clean Architecture ([design](plans/2026-10-06-backend-clean-architecture-design.md)):
+
+```
+Cipheroom.Api ──► Cipheroom.Application ──► Cipheroom.Domain
+      │                    ▲
+      └──► Cipheroom.Infrastructure (implements Application ports)
+```
+
+- **Domain**: `Room`, `Participant`, value objects (`RoomId`, `DisplayName`, `ParticipantId`) and their rules.
+- **Application**: one command/query per use case on Mediator (MIT, source-generated), with pipeline behaviours for
+  unhandled-exception logging, logging (request type only — never values) and FluentValidation.
+- **Infrastructure**: in-memory room store, LiveKit token issuer, Cloudflare/direct ICE providers, options.
+- **Api**: SignalR hub (thin), `HubRateLimitFilter` (per-connection token bucket), `HubExceptionFilter` (safe
+  client messages), ProblemDetails for REST, trusted forwarded headers, `--health` probe for the chiseled image.
+
 ## Join flow
 
 1. Client loads/creates its **device identity** and connects to SignalR.
