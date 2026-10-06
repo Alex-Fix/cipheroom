@@ -62,7 +62,7 @@ import { initials } from '../../shared/avatar';
       </ng-container>
     </nz-drawer>
   `,
-  styleUrl: './participants-panel.scss',
+  styleUrl: './participants-panel.less',
 })
 export class ParticipantsPanel {
   readonly open = input.required<boolean>();

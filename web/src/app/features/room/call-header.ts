@@ -121,7 +121,7 @@ const STATUS_TEXT: Record<CallStatus, string> = {
       </button>
     </div>
   `,
-  styleUrl: './call-header.scss',
+  styleUrl: './call-header.less',
 })
 export class CallHeader {
   readonly roomId = input.required<string>();

@@ -41,7 +41,7 @@ import { TrackDirective } from '../../shared/track.directive';
       <span class="name">{{ t.name }}</span>
     </div>
   `,
-  styleUrl: './call-tile.scss',
+  styleUrl: './call-tile.less',
 })
 export class CallTile {
   readonly tile = input.required<Tile>();

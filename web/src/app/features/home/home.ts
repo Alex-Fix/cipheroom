@@ -27,7 +27,7 @@ export function newRoomId(): string {
   imports: [FormsModule, NzButtonModule, NzIconModule, NzInputModule, NzTooltipModule],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './home.html',
-  styleUrl: './home.scss',
+  styleUrl: './home.less',
 })
 export class Home {
   private readonly router = inject(Router);

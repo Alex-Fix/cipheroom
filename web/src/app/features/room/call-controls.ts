@@ -119,7 +119,7 @@ import { Camera } from '../../core/livekit/cameras';
       <nz-icon nzType="close" />
     </button>
   `,
-  styleUrl: './call-controls.scss',
+  styleUrl: './call-controls.less',
 })
 export class CallControls {
   readonly micEnabled = input.required<boolean>();

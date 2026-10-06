@@ -40,7 +40,7 @@ import { ParticipantsPanel } from './participants-panel';
   providers: [LiveKitService],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './room.html',
-  styleUrl: './room.scss',
+  styleUrl: './room.less',
 })
 export class Room implements OnInit, OnDestroy {
   /** Bound from the :roomId route param. */
