@@ -31,15 +31,5 @@ button {
   overflow: auto;
 }
 
-.diagnostics {
-  font-size: 0.85rem;
-  background: var(--surface);
-  border-radius: 8px;
-  padding: 0.5rem 0.75rem;
-
-  h2 { font-size: 0.9rem; margin: 0 0 0.25rem; }
-  p { margin: 0.15rem 0; }
-}
-
 .error { color: var(--danger); }
 .banner { width: 100%; }

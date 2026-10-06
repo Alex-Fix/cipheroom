@@ -14,7 +14,9 @@
   }
 
   @if (!livekit.canPlaybackAudio()) {
-    <button type="button" class="banner" (click)="livekit.startAudio()">Click to enable audio</button>
+    <button type="button" class="banner" (click)="livekit.startAudio()">
+      Click to enable audio
+    </button>
   }
 
   <section class="grid">
@@ -22,25 +24,6 @@
       <app-call-tile [tile]="tile" />
     }
   </section>
-
-  @if (showDiagnostics()) {
-    <aside class="diagnostics">
-      <h2>Connection path</h2>
-      <p>Relay forced: <b>{{ livekit.diagnostics().forceRelay ? 'yes' : 'no' }}</b></p>
-      @for (row of [['Sending', livekit.diagnostics().publisher], ['Receiving', livekit.diagnostics().subscriber]]; track $index) {
-        @let path = $any(row[1]);
-        <p>
-          {{ row[0] }}:
-          @if (path) {
-            <b>{{ path.localType }}</b> ⇄ {{ path.remoteType }} {{ path.remoteAddress }}
-            ({{ path.protocol }}{{ path.relayProtocol ? ' via TURN/' + path.relayProtocol : '' }}{{ path.rttMs !== undefined ? ', ' + path.rttMs + ' ms' : '' }})
-          } @else {
-            <span class="muted">—</span>
-          }
-        </p>
-      }
-    </aside>
-  }
 
   <app-call-controls
     [micEnabled]="livekit.micEnabled()"
@@ -50,7 +33,13 @@
     (toggleMic)="setDevice('microphone', !livekit.micEnabled())"
     (toggleCamera)="setDevice('camera', !livekit.cameraEnabled())"
     (toggleScreenShare)="setDevice('screen', !livekit.screenShareEnabled())"
-    (openDiagnostics)="showDiagnostics.set(!showDiagnostics())"
+    (openDiagnostics)="showDiagnostics.set(true)"
     (leave)="leave()"
+  />
+
+  <app-diagnostics-drawer
+    [open]="showDiagnostics()"
+    [diagnostics]="livekit.diagnostics()"
+    (closed)="showDiagnostics.set(false)"
   />
 </div>

@@ -17,10 +17,11 @@ import { CallControls } from './call-controls';
 import { CallHeader, callStatus } from './call-header';
 import { CallTile } from './call-tile';
 import { Device, deviceErrorMessage } from './device-error';
+import { DiagnosticsDrawer } from './diagnostics-drawer';
 
 @Component({
   selector: 'app-room',
-  imports: [CallControls, CallHeader, CallTile],
+  imports: [CallControls, CallHeader, CallTile, DiagnosticsDrawer],
   providers: [LiveKitService],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './room.html',
