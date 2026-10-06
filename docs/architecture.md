@@ -12,10 +12,10 @@
  Browser (Angular)                                  Docker host (home, no public IP)
  ┌───────────────────────────────┐                 ┌──────────────────────────────────┐
  │ UI (lobby, grid, controls)    │  HTTPS / WSS    │ cloudflared  tunnel ingress      │
- │ AppHubService (SignalR) ──────┼─── Cloudflare ─▶│ web      nginx + Angular static  │
+ │ SignalingService (SignalR) ───┼─── Cloudflare ─▶│ web      nginx + Angular static  │
  │ LiveKitService (livekit-client)── Tunnel ──────▶│ api      .NET 10 + SignalR       │
- │ CryptoService (identity, keys)│                 │ livekit  SFU (signaling via tunnel)
- │ LiveKit E2EE worker (frames)  │                 └────────────────┬─────────────────┘
+ │ CryptoService (planned)       │                 │ livekit  SFU (signaling via tunnel)
+ │ LiveKit E2EE worker (planned) │                 └────────────────┬─────────────────┘
  └───────────────┬───────────────┘                                  │ outbound UDP
                  │ media                    ┌───────────────────────┐│
                  └─────────────────────────▶│ Cloudflare TURN relay │◀┘
@@ -53,6 +53,9 @@ Cipheroom.Api ──► Cipheroom.Application ──► Cipheroom.Domain
 
 ## Join flow
 
+**Today:** `JoinRoom(roomId, displayName)` (open, no lobby) → `GetRtcConfig()` → connect to LiveKit with the
+returned token and ICE servers; no E2EE yet ([protocol](signaling-protocol.md)). **Target** flow:
+
 1. Client loads/creates its **device identity** and connects to SignalR.
 2. `JoinLobby(roomId, signedIdentityBundle)` → host admits (or room is open).
 3. On admit the api returns `RtcConfig`: LiveKit URL, **LiveKit access token** (JWT, room-scoped, short TTL),
@@ -61,6 +64,9 @@ Cipheroom.Api ──► Cipheroom.Application ──► Cipheroom.Domain
 5. Sender keys are exchanged over SignalR (below); media starts once keys are in place.
 
 ## Encryption model
+
+> **Status: planned.** Nothing below is implemented yet; calls currently rely on DTLS-SRTP only (see the README
+> warning). This section is the target design.
 
 LiveKit's E2EE worker does the frame crypto (AES-GCM via encoded transforms). **We own key management** —
 no custom frame crypto in this repo.

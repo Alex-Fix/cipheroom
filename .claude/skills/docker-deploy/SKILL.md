@@ -10,7 +10,7 @@ Constraints: **runs at home, no public IP, $0 running cost, no rented VMs.** See
 ## Services (`deploy/docker-compose.yml`)
 | Service | Image | Ports | Notes |
 |---|---|---|---|
-| `api` | `src/server/Cipheroom.Api/Dockerfile` | 8080 internal | env from `.env` (`LiveKit__*`, `Turn__*`) |
+| `api` | `src/Cipheroom.Api/Dockerfile` | 8080 internal | env from `.env` (`LiveKit__*`, `Turn__*`) |
 | `web` | `web/Dockerfile` | 8080 internal (`${WEB_PORT}` on host for local) | nginx, proxies `/api` + `/hubs` to api, `/livekit/` to livekit |
 | `livekit` | `livekit/livekit-server` | 7880 internal (signaling), `50000-50100/udp`, `7881/tcp` on host | config `deploy/livekit/livekit.yaml`, `LIVEKIT_KEYS="${LIVEKIT_API_KEY}: ${LIVEKIT_API_SECRET}"` |
 | `cloudflared` | `cloudflare/cloudflared` | none | profile `tunnel`; `tunnel run --token ${TUNNEL_TOKEN}` |

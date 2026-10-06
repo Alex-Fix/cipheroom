@@ -105,7 +105,8 @@ directions should show `relay`. If a network can't connect, see the contingencie
 ## Project layout
 
 ```
-src/server/   .NET API + tests
+src/          .NET API (Domain, Application, Infrastructure, Api)
+tests/        .NET tests, one project per layer
 web/          Angular app
 deploy/       Docker Compose, nginx, LiveKit config
 scripts/      dev and ops scripts

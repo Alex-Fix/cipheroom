@@ -32,11 +32,11 @@ compromised client devices.
 
 ## Rules by layer
 
-### SignalR hub / API (`src/server`)
+### SignalR hub / API (`src/`)
 - Every hub argument is untrusted. SignalR binds `null` to non-nullable parameters, so null-check and length-check everything.
 - Authorise per call: the caller is in this room, is admitted, is host for host-only methods. Never trust ids sent by the client for "who am I"; use `Context.ConnectionId` → registry.
 - Relay targeted messages only to members of the caller's room (`Clients.Client(id)` after a membership check). Never `Clients.All`.
-- Never expose connection ids to clients. Use random participant ids (already done in `InMemoryRoomRegistry`).
+- Never expose connection ids to clients. Use random participant ids (already done: `ParticipantId.New()` in Domain).
 - Errors: `HubException` with a generic message. Don't leak stack traces, config or internal state.
 - Logging: ids, counts and lengths only. **Never** log tokens, ICE credentials, envelopes, chat ciphertext, SDP, display names in bulk, or raw client payloads.
 - Limits: `MaximumReceiveMessageSize` (64 KB), per-connection rate limits on chatty methods, a max participants per room.

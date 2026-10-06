@@ -1,6 +1,6 @@
 ---
 name: dotnet-backend
-description: Conventions for the Cipheroom .NET 10 backend — Clean Architecture (Domain/Application/Infrastructure/Api), Mediator commands/queries with FluentValidation, SignalR hubs and filters, LiveKit token + ICE issuance, xUnit v3 tests per layer, chiseled Dockerfile. Use when creating or modifying anything under src/server.
+description: Conventions for the Cipheroom .NET 10 backend — Clean Architecture (Domain/Application/Infrastructure/Api), Mediator commands/queries with FluentValidation, SignalR hubs and filters, LiveKit token + ICE issuance, xUnit v3 tests per layer, chiseled Dockerfile. Use when creating or modifying anything under src/ or tests/.
 ---
 
 # .NET backend
@@ -9,7 +9,7 @@ Design: `docs/plans/2026-10-06-backend-clean-architecture-design.md`.
 
 ## Layers (dependencies point inward only — enforced by project references)
 ```
-src/server/
+src/
   Cipheroom.Domain/          entities, value objects, rules. No project or package references.
     Common/DomainException.cs
     Rooms/RoomId.cs DisplayName.cs ParticipantId.cs Participant.cs Room.cs
@@ -26,6 +26,8 @@ src/server/
     Hubs/RoomHub.cs IRoomClient.cs Contracts/   (wire contract — see signaling-protocol skill)
     Hubs/Filters/HubRateLimitFilter.cs HubExceptionFilter.cs
     Hosting/ForwardedHeadersSetup.cs HealthProbe.cs
+    Dockerfile               image for this project (build context: repo root)
+tests/                       one project per layer; Directory.Build.props adds xUnit v3, OutputType=Exe, IsPackable=false
   Cipheroom.Domain.UnitTests/  Cipheroom.Application.UnitTests/  Cipheroom.Infrastructure.IntegrationTests/
   Cipheroom.Api.FunctionalTests/   WebApplicationFactory + real SignalR client
 ```
@@ -64,16 +66,17 @@ src/server/
 - **Packages:** versions only in `Directory.Packages.props`; free/open-source only. **Not MediatR or AutoMapper**
   (RPL-1.5/commercial since 2025). Mediator = `Mediator.Abstractions`/`Mediator.SourceGenerator` (MIT).
 - **Build:** `Directory.Build.props` sets net10.0, nullable, warnings as errors, `AnalysisLevel=latest-recommended`,
-  `EnforceCodeStyleInBuild`, `UseArtifactsOutput` (all output under `artifacts/{bin,obj,publish}/<Project>/<config>`,
+  `EnforceCodeStyleInBuild`, `UseArtifactsOutput` with `ArtifactsPath` pinned to the repo root (all output under `artifacts/{bin,obj,publish}/<Project>/<config>`,
   gitignored — there are no per-project bin/obj folders). Fix analyzer findings rather than suppressing; tests may
   use underscores (CA1707 off).
 
 ## Commands
-- Run: `dotnet watch --project src/server/Cipheroom.Api` (or `scripts/dev.sh`)
+- Run: `dotnet watch --project src/Cipheroom.Api` (or `scripts/dev.sh`)
 - Test: `scripts/test.sh --server` (= `dotnet test --solution Cipheroom.slnx`; Microsoft Testing Platform via global.json)
 - Format: `scripts/lint.sh` / `scripts/lint.sh --fix`
-- New project: create the `.csproj` (no `TargetFramework`/versions — inherited), then
-  `dotnet sln Cipheroom.slnx add --solution-folder src/server <path>`; test projects need `<OutputType>Exe</OutputType>`.
+- New project: create the `.csproj` (no `TargetFramework`/versions — inherited) under `src/` or `tests/`, then
+  `dotnet sln Cipheroom.slnx add --solution-folder src <path>` (or `tests`). Test projects inherit xUnit and
+  `OutputType=Exe` from `tests/Directory.Build.props`; reference production projects as `..\..\src\<Project>\<Project>.csproj`.
 
 ## Dockerfile
 Build context is the repo root. SDK stage copies `global.json` + `Directory.*.props` + each layer's `.csproj` (cached

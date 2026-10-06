@@ -7,7 +7,7 @@ description: Conventions and scaffolding for the Cipheroom Angular frontend (sta
 
 ## Scaffold (first time only)
 ```bash
-npx @angular/cli@latest new web --directory web --routing --style=scss --ssr=false --skip-git
+npx @angular/cli@latest new web --directory web --routing --style=less --ssr=false --skip-git
 cd web && npm i @microsoft/signalr livekit-client
 ```
 Add `web/proxy.conf.json` proxying `/api` and `/hubs` (with `"ws": true`) to `http://localhost:5080`,
@@ -15,18 +15,34 @@ and reference it from `angular.json` → `serve.options.proxyConfig`.
 
 ## Structure
 ```
-web/src/app/
-  core/
-    signaling/   signaling.service.ts, signaling.types.ts   (SignalR wrapper, typed)
-    livekit/     livekit.service.ts                         (Room, tracks → signals; see `livekit-media`)
-    crypto/      identity, sender-keys, key provider, safety code, chat crypto (see `e2ee-media`)
-    media/       media-devices.service.ts                   (device list, preview before join)
-  features/
-    home/        create/join room
-    room/        room.ts (container) + call-header, call-tile, call-controls, diagnostics-drawer
-  shared/        presentational components, pipes
-core/ui/          icons.ts (static ng-zorro icon registry), theme.service.ts (OS appearance / forced dark)
+web/
+  src/app/
+    app.ts .html .less .spec.ts   root shell (router outlet)
+    core/                app-wide singletons and providers — never import from features/
+      signaling/         signaling.service.ts, signaling.types.ts   (SignalR wrapper, typed)
+      livekit/           livekit.service.ts, cameras.ts, ice-path.ts (Room, tracks → signals; see `livekit-media`)
+      settings/          display-name.ts                            (browser-local preferences)
+      ui/                icons.ts (static ng-zorro icon registry), theme.service.ts (OS appearance / forced dark)
+      crypto/            (planned) identity, sender keys, key provider, safety code, chat crypto (see `e2ee-media`)
+    shared/              reusable directives/pipes and pure template helpers (track.directive.ts, initials.ts)
+    features/            routed screens; a feature never imports from another feature
+      home/              home.ts .html .less .spec.ts, room-id.ts
+      room/              room.ts .html .less .spec.ts (container), call-status.ts, participant-changes.ts,
+                         device-error.ts, and one folder per child component:
+        call-header/  call-tile/  call-controls/  participants-panel/  diagnostics-drawer/
+  src/styles.less        global tokens/styles;  src/theme/  ng-zorro light/dark themes
+  design/                logo masters for scripts/icons.sh (not part of the build)
 ```
+
+### File rules
+- **Every component** has its own `.ts`, `.html`, `.less` and `.spec.ts` with the same base name — no inline
+  `template`/`styles`, even for tiny ones (an empty `.less` with a one-line comment is fine). Child components live in
+  their own folder (`call-tile/call-tile.ts`); a feature's routed container sits in the feature root.
+- A component file contains only the component. Exported helpers (pure functions, types, storage access) go in their
+  own `.ts` + `.spec.ts`: next to the component if only it uses them, at the feature root if siblings share them,
+  in `core/` or `shared/` if several features do.
+- Directives and pipes are a single `.ts` (+ `.spec.ts`).
+- Styles are **Less only** (`angular.json` schematics + `inlineStyleLanguage`), matching ng-zorro's Less theming.
 
 ## Conventions
 - Standalone components only, `ChangeDetectionStrategy.OnPush`, signals (`signal`, `computed`, `input()`, `output()`),
@@ -66,7 +82,7 @@ Design: `docs/plans/2026-10-06-ngzorro-ui-design.md` (see "Revision: Apple-style
   `connect-src 'self'` blocks it and a third-party fetch would leak who uses the app.
 - `NzMessageService` renders string content with `[innerHTML]`: only pass **constant strings** — never display names,
   room ids, or error text from browsers/servers. Show those via template interpolation.
-- Component SCSS stays SCSS; per-component style budget is 4 kB warn / 8 kB error.
+- Per-component style budget is 4 kB warn / 8 kB error.
 
 ## Commands
 - Dev: `npm start --prefix web` (or `scripts/dev.sh`)

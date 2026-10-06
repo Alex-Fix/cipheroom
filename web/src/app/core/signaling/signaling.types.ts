@@ -1,4 +1,4 @@
-// Mirrors src/server/Cipheroom.Api/Hubs (IRoomClient, RoomHub, Contracts). Keep in sync — see docs/signaling-protocol.md.
+// Mirrors src/Cipheroom.Api/Hubs (IRoomClient, RoomHub, Contracts). Keep in sync — see docs/signaling-protocol.md.
 
 export interface ParticipantDto {
   id: string;
