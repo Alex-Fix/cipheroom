@@ -5,13 +5,27 @@ import { IcePath, selectedIcePath } from './ice-path';
 
 export interface Tile {
   key: string;
+  /** Label for the tile, e.g. "Alex (you)". */
   name: string;
+  /** The participant's own name, same on every client (avatar initials and colour). */
+  displayName: string;
   isLocal: boolean;
   isScreen: boolean;
   isSpeaking: boolean;
   video?: Track;
   audio?: Track;
   micMuted: boolean;
+}
+
+/** One person in the media room — i.e. someone who can receive your audio and video. */
+export interface CallParticipant {
+  identity: string;
+  name: string;
+  isLocal: boolean;
+  isSpeaking: boolean;
+  micMuted: boolean;
+  cameraOn: boolean;
+  sharingScreen: boolean;
 }
 
 export interface Diagnostics {
@@ -31,6 +45,7 @@ export class LiveKitService implements OnDestroy {
 
   readonly state = signal<ConnectionState>(ConnectionState.Disconnected);
   readonly tiles = signal<Tile[]>([]);
+  readonly participants = signal<CallParticipant[]>([]);
   readonly micEnabled = signal(false);
   readonly cameraEnabled = signal(false);
   readonly screenShareEnabled = signal(false);
@@ -44,7 +59,9 @@ export class LiveKitService implements OnDestroy {
 
     room
       .on(RoomEvent.ConnectionStateChanged, (s) => this.state.set(s))
-      .on(RoomEvent.AudioPlaybackStatusChanged, () => this.canPlaybackAudio.set(room.canPlaybackAudio))
+      .on(RoomEvent.AudioPlaybackStatusChanged, () =>
+        this.canPlaybackAudio.set(room.canPlaybackAudio),
+      )
       .on(RoomEvent.ParticipantConnected, () => this.refresh())
       .on(RoomEvent.ParticipantDisconnected, () => this.refresh())
       .on(RoomEvent.TrackSubscribed, () => this.refresh())
@@ -64,20 +81,26 @@ export class LiveKitService implements OnDestroy {
       },
     });
 
-    await Promise.allSettled([this.setMicrophone(true), this.setCamera(true)]);
     this.canPlaybackAudio.set(room.canPlaybackAudio);
     this.refresh();
     this.statsTimer = setInterval(() => void this.collectStats(), 2000);
   }
 
+  /** Rejects with the browser's DOMException (e.g. NotAllowedError) when the device can't be used. */
   async setMicrophone(enabled: boolean): Promise<void> {
-    await this.room?.localParticipant.setMicrophoneEnabled(enabled);
-    this.refresh();
+    try {
+      await this.room?.localParticipant.setMicrophoneEnabled(enabled);
+    } finally {
+      this.refresh();
+    }
   }
 
   async setCamera(enabled: boolean): Promise<void> {
-    await this.room?.localParticipant.setCameraEnabled(enabled);
-    this.refresh();
+    try {
+      await this.room?.localParticipant.setCameraEnabled(enabled);
+    } finally {
+      this.refresh();
+    }
   }
 
   async setScreenShare(enabled: boolean): Promise<void> {
@@ -99,6 +122,7 @@ export class LiveKitService implements OnDestroy {
     this.room = undefined;
     await room?.disconnect();
     this.tiles.set([]);
+    this.participants.set([]);
   }
 
   ngOnDestroy(): void {
@@ -116,18 +140,36 @@ export class LiveKitService implements OnDestroy {
 
     const participants: Participant[] = [local, ...room.remoteParticipants.values()];
     this.tiles.set(participants.flatMap((p) => this.tilesFor(p, p === local)));
+    this.participants.set(participants.map((p) => this.participantFor(p, p === local)));
+  }
+
+  private participantFor(p: Participant, isLocal: boolean): CallParticipant {
+    const mic = p.getTrackPublication(Track.Source.Microphone);
+    const camera = p.getTrackPublication(Track.Source.Camera);
+    const screen = p.getTrackPublication(Track.Source.ScreenShare);
+    return {
+      identity: p.identity,
+      name: p.name || p.identity,
+      isLocal,
+      isSpeaking: p.isSpeaking,
+      micMuted: !mic || mic.isMuted,
+      cameraOn: !!camera && !camera.isMuted,
+      sharingScreen: !!screen && !screen.isMuted,
+    };
   }
 
   private tilesFor(p: Participant, isLocal: boolean): Tile[] {
     const camera = p.getTrackPublication(Track.Source.Camera);
     const mic = p.getTrackPublication(Track.Source.Microphone);
     const screen = p.getTrackPublication(Track.Source.ScreenShare);
-    const name = (p.name || p.identity) + (isLocal ? ' (you)' : '');
+    const displayName = p.name || p.identity;
+    const name = displayName + (isLocal ? ' (you)' : '');
 
     const tiles: Tile[] = [
       {
         key: `${p.identity}:camera`,
         name,
+        displayName,
         isLocal,
         isScreen: false,
         isSpeaking: p.isSpeaking,
@@ -140,7 +182,8 @@ export class LiveKitService implements OnDestroy {
     if (screen?.track && !screen.isMuted) {
       tiles.push({
         key: `${p.identity}:screen`,
-        name: `${name} — screen`,
+        name,
+        displayName,
         isLocal,
         isScreen: true,
         isSpeaking: false,

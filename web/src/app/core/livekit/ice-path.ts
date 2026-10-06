@@ -26,7 +26,10 @@ export function selectedIcePath(report: StatsLike): IcePath | undefined {
   // Firefox has no transport.selectedCandidatePairId; it flags the pair instead.
   if (!pair) {
     report.forEach((stat) => {
-      if (stat.type === 'candidate-pair' && (stat.selected || (stat.nominated && stat.state === 'succeeded'))) {
+      if (
+        stat.type === 'candidate-pair' &&
+        (stat.selected || (stat.nominated && stat.state === 'succeeded'))
+      ) {
         pair ??= stat;
       }
     });
@@ -43,6 +46,9 @@ export function selectedIcePath(report: StatsLike): IcePath | undefined {
     protocol: local.protocol,
     relayProtocol: local.relayProtocol,
     remoteAddress: remote.address ?? remote.ip,
-    rttMs: pair.currentRoundTripTime !== undefined ? Math.round(pair.currentRoundTripTime * 1000) : undefined,
+    rttMs:
+      pair.currentRoundTripTime !== undefined
+        ? Math.round(pair.currentRoundTripTime * 1000)
+        : undefined,
   };
 }

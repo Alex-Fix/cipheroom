@@ -1,0 +1,91 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Cipheroom logo · © Cipheroom contributors · CC BY-SA 4.0 (see LICENSE-ASSETS.md) -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0B1026"/>
+      <stop offset="1" stop-color="#000000"/>
+    </linearGradient>
+    <radialGradient id="vignette" cx="512" cy="300" r="620" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1E2A66" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#1E2A66" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="hood" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#252D52"/>
+      <stop offset="0.6" stop-color="#1A2140"/>
+      <stop offset="1" stop-color="#0E1328"/>
+    </linearGradient>
+    <linearGradient id="rim" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#6573C2" stop-opacity="0.95"/>
+      <stop offset="0.5" stop-color="#6573C2" stop-opacity="0"/>
+    </linearGradient>
+    <radialGradient id="void" cx="512" cy="500" r="260" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0A0E22"/>
+      <stop offset="1" stop-color="#03040A"/>
+    </radialGradient>
+    <radialGradient id="glow" cx="512" cy="545" r="230" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#6E7BFF" stop-opacity="0.8"/>
+      <stop offset="0.55" stop-color="#5E5CE6" stop-opacity="0.25"/>
+      <stop offset="1" stop-color="#5E5CE6" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="ring" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#5AC8FA"/>
+      <stop offset="1" stop-color="#5E5CE6"/>
+    </linearGradient>
+    <radialGradient id="pupil" cx="490" cy="520" r="90" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#3D4BC9"/>
+      <stop offset="0.6" stop-color="#151A4A"/>
+      <stop offset="1" stop-color="#05061A"/>
+    </radialGradient>
+    <clipPath id="tile">
+      <rect width="1024" height="1024" rx="230"/>
+    </clipPath>
+  </defs>
+
+  <g clip-path="url(#tile)">
+    <rect width="1024" height="1024" fill="url(#bg)"/>
+    <rect width="1024" height="1024" fill="url(#vignette)"/>
+
+    <!-- Hood: a soft peak, draping into shoulders that bleed off the bottom edge. -->
+    <path fill="url(#hood)" d="
+      M 512 124
+      C 566 140 704 170 772 296
+      C 812 372 828 452 828 536
+      C 828 628 808 690 776 742
+      C 908 784 1000 866 1054 1040
+      L -30 1040
+      C 24 866 116 784 248 742
+      C 216 690 196 628 196 536
+      C 196 452 212 372 252 296
+      C 320 170 458 140 512 124 Z"/>
+    <path fill="none" stroke="url(#rim)" stroke-width="9" stroke-linecap="round" d="
+      M 196 536 C 196 452 212 372 252 296 C 320 170 458 140 512 124
+      C 566 140 704 170 772 296 C 812 372 828 452 828 536"/>
+    <!-- Front fold below the chin. -->
+    <path fill="#070A1A" fill-opacity="0.55" d="
+      M 386 748 C 452 790 572 790 638 748 C 590 846 548 930 512 1040 C 476 930 434 846 386 748 Z"/>
+
+    <!-- Hood opening: a lit band, then the empty face. -->
+    <path fill="#323C72" d="
+      M 512 262
+      C 664 262 742 396 742 546
+      C 742 702 646 800 512 800
+      C 378 800 282 702 282 546
+      C 282 396 360 262 512 262 Z"/>
+    <path fill="url(#void)" d="
+      M 512 292
+      C 646 292 712 412 712 546
+      C 712 686 628 774 512 774
+      C 396 774 312 686 312 546
+      C 312 412 378 292 512 292 Z"/>
+
+    <!-- Lens: the only light. -->
+    <circle cx="512" cy="545" r="215" fill="url(#glow)"/>
+    <circle cx="512" cy="545" r="122" fill="url(#ring)"/>
+    <circle cx="512" cy="545" r="96" fill="#05061A"/>
+    <circle cx="512" cy="545" r="84" fill="url(#pupil)"/>
+    <circle cx="512" cy="545" r="58" fill="none" stroke="#7F8CFF" stroke-opacity="0.35" stroke-width="4"/>
+    <circle cx="512" cy="545" r="26" fill="#020310"/>
+    <ellipse cx="478" cy="506" rx="22" ry="15" fill="#FFFFFF" fill-opacity="0.9" transform="rotate(-35 478 506)"/>
+    <circle cx="548" cy="586" r="6" fill="#FFFFFF" fill-opacity="0.35"/>
+  </g>
+</svg>

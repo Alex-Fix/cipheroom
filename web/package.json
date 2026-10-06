@@ -20,6 +20,7 @@
     "@angular/router": "^22.2.0",
     "@microsoft/signalr": "^10.0.11",
     "livekit-client": "^2.22.3",
+    "ng-zorro-antd": "^22.1.1",
     "rxjs": "~7.8.0",
     "tslib": "^2.3.0"
   },
@@ -27,7 +28,9 @@
     "@angular/build": "^22.2.1",
     "@angular/cli": "^22.2.1",
     "@angular/compiler-cli": "^22.2.0",
+    "@resvg/resvg-js": "^2.6.2",
     "jsdom": "^30.0.0",
+    "less": "^4.9.1",
     "prettier": "^3.8.1",
     "typescript": "~6.0.2",
     "vitest": "^5.0.0"

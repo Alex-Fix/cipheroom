@@ -1,0 +1,137 @@
+:host {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  flex-wrap: wrap;
+}
+
+.room {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.room-id {
+  color: var(--label);
+  font-size: 17px; // HIG Headline
+  font-weight: 600;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.icon-button {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: 50%;
+  color: var(--label);
+  font-size: 16px;
+  cursor: pointer;
+  box-shadow: none;
+}
+
+.status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 36px;
+  padding: 0 14px;
+  border-radius: 999px;
+  box-shadow: none;
+  color: var(--label-secondary);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--label);
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--orange);
+}
+
+[data-status='connected'] .dot {
+  background: var(--green);
+}
+
+[data-status='disconnected'] .dot,
+[data-status='failed'] .dot {
+  background: var(--red);
+}
+
+[data-status='connecting'] .dot,
+[data-status='reconnecting'] .dot {
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.3;
+  }
+}
+
+.divider {
+  width: 0.5px;
+  height: 16px;
+  background: var(--separator);
+}
+
+.e2ee {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--orange);
+
+  &.secure {
+    color: var(--green);
+  }
+}
+
+.count {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0 -8px 0 -4px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--label);
+  font: inherit;
+  cursor: pointer;
+
+  &:hover {
+    background: var(--fill);
+  }
+}
+
+.manual-copy {
+  width: min(320px, 80vw);
+}
+
+// Touch: 44pt minimum hit target (HIG).
+@media (pointer: coarse) {
+  .icon-button {
+    width: 44px;
+    height: 44px;
+  }
+}
+
+@media (max-width: 480px) {
+  .label,
+  [data-status='connected'] .state-text {
+    display: none;
+  }
+}

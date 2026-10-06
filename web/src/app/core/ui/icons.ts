@@ -1,0 +1,39 @@
+import {
+  AudioMutedOutline,
+  AudioOutline,
+  CopyOutline,
+  DesktopOutline,
+  ExclamationCircleOutline,
+  InfoCircleOutline,
+  LockOutline,
+  MoreOutline,
+  ReloadOutline,
+  SoundOutline,
+  TeamOutline,
+  UnlockOutline,
+  VideoCameraOutline,
+  CloseOutline,
+} from '@ant-design/icons-angular/icons';
+import { IconDefinition } from '@ant-design/icons-angular';
+
+/**
+ * Every icon the app renders, bundled statically. ng-zorro must never fetch icons at runtime:
+ * CSP `connect-src 'self'` blocks CDNs, and a third-party fetch would leak who uses the app.
+ * Add new icons here.
+ */
+export const APP_ICONS: IconDefinition[] = [
+  AudioMutedOutline,
+  AudioOutline,
+  CopyOutline,
+  DesktopOutline,
+  ExclamationCircleOutline,
+  InfoCircleOutline,
+  LockOutline,
+  MoreOutline,
+  ReloadOutline,
+  SoundOutline,
+  TeamOutline,
+  UnlockOutline,
+  VideoCameraOutline,
+  CloseOutline,
+];

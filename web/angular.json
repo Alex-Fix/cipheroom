@@ -30,8 +30,13 @@
               }
             ],
             "styles": [
-              "src/styles.scss"
-            ]
+              "src/styles.less",
+              { "input": "src/theme/theme-light.less", "bundleName": "theme-light", "inject": false },
+              { "input": "src/theme/theme-dark.less", "bundleName": "theme-dark", "inject": false }
+            ],
+            "stylePreprocessorOptions": {
+              "includePaths": ["node_modules"]
+            }
           },
           "configurations": {
             "production": {

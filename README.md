@@ -1,3 +1,5 @@
+<p align="center"><img src="web/src/assets-src/logo.svg" alt="Cipheroom logo" width="120" height="120"></p>
+
 # Cipheroom
 
 **Self-hosted, open-source video calls that your own server can't watch.**
@@ -131,5 +133,7 @@ Please **don't** open public issues for vulnerabilities. Report them privately v
 
 Cipheroom is licensed under the [GNU Affero General Public License v3.0](LICENSE).
 If you run a modified version as a network service, you must offer its source code to your users.
+
+The logo and app icons are licensed separately under [CC BY-SA 4.0](LICENSE-ASSETS.md).
 
 Third-party components keep their own licenses. Notably, LiveKit is Apache-2.0 and is used as an unmodified container.

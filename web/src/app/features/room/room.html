@@ -1,65 +1,89 @@
 <div class="room">
-  <header>
-    <strong>{{ roomId() }}</strong>
-    <span class="state">{{ livekit.state() }}</span>
-    <span class="warn" title="Connectivity spike build">E2EE not enabled yet</span>
-    <button type="button" class="ghost" (click)="copyLink()">{{ copied() ? 'Copied' : 'Copy link' }}</button>
-  </header>
+  <app-call-header
+    [roomId]="roomId()"
+    [link]="link"
+    [status]="status()"
+    [participants]="participantCount()"
+    [manualCopy]="manualCopy()"
+    (copyLink)="copyLink()"
+    (manualCopyClosed)="manualCopy.set(false)"
+    (rejoin)="retry()"
+    (showParticipants)="showParticipants.set(true)"
+  />
+
+  <div class="notices" aria-live="polite">
+    @for (notice of notices(); track notice.id) {
+      <div class="notice glass">{{ notice.text }}</div>
+    }
+  </div>
 
   @if (error(); as message) {
-    <p class="error">Could not join: {{ message }}</p>
-  }
-
-  @if (!livekit.canPlaybackAudio()) {
-    <button type="button" class="banner" (click)="livekit.startAudio()">Click to enable audio</button>
-  }
-
-  <section class="grid">
-    @for (tile of livekit.tiles(); track tile.key) {
-      <figure class="tile" [class.speaking]="tile.isSpeaking" [class.screen]="tile.isScreen">
-        @if (tile.video) {
-          <video [appTrack]="tile.video" autoplay playsinline [muted]="true" [class.mirror]="tile.isLocal && !tile.isScreen"></video>
-        } @else {
-          <div class="avatar">{{ tile.name.charAt(0).toUpperCase() }}</div>
-        }
-        @if (tile.audio) {
-          <audio [appTrack]="tile.audio" autoplay></audio>
-        }
-        <figcaption>{{ tile.micMuted ? '🔇 ' : '' }}{{ tile.name }}</figcaption>
-      </figure>
+    <section class="join-error" role="alert">
+      <nz-icon class="join-error-icon" nzType="exclamation-circle" />
+      <h2>Couldn't join the call</h2>
+      <p>{{ message }}</p>
+      <div class="actions">
+        <button nz-button nzShape="round" nzSize="large" class="home" (click)="leave()">
+          Back to Home
+        </button>
+        <button
+          nz-button
+          nzType="primary"
+          nzShape="round"
+          nzSize="large"
+          class="retry"
+          (click)="retry()"
+        >
+          Try Again
+        </button>
+      </div>
+    </section>
+  } @else {
+    @if (!livekit.canPlaybackAudio()) {
+      <div class="audio-blocked glass" role="status">
+        <nz-icon nzType="sound" />
+        <span>Your browser paused call audio.</span>
+        <button
+          nz-button
+          nzType="primary"
+          nzShape="round"
+          nzSize="small"
+          (click)="livekit.startAudio()"
+        >
+          Enable Audio
+        </button>
+      </div>
     }
-  </section>
 
-  @if (showDiagnostics()) {
-    <aside class="diagnostics">
-      <h2>Connection path</h2>
-      <p>Relay forced: <b>{{ livekit.diagnostics().forceRelay ? 'yes' : 'no' }}</b></p>
-      @for (row of [['Sending', livekit.diagnostics().publisher], ['Receiving', livekit.diagnostics().subscriber]]; track $index) {
-        @let path = $any(row[1]);
-        <p>
-          {{ row[0] }}:
-          @if (path) {
-            <b>{{ path.localType }}</b> ⇄ {{ path.remoteType }} {{ path.remoteAddress }}
-            ({{ path.protocol }}{{ path.relayProtocol ? ' via TURN/' + path.relayProtocol : '' }}{{ path.rttMs !== undefined ? ', ' + path.rttMs + ' ms' : '' }})
-          } @else {
-            <span class="muted">—</span>
-          }
-        </p>
+    <section class="grid" [attr.data-count]="livekit.tiles().length">
+      @for (tile of livekit.tiles(); track tile.key) {
+        <app-call-tile [tile]="tile" />
       }
-    </aside>
+    </section>
+
+    <app-call-controls
+      class="controls"
+      [micEnabled]="livekit.micEnabled()"
+      [cameraEnabled]="livekit.cameraEnabled()"
+      [screenShareEnabled]="livekit.screenShareEnabled()"
+      [canShareScreen]="canShareScreen"
+      (toggleMic)="setDevice('microphone', !livekit.micEnabled())"
+      (toggleCamera)="setDevice('camera', !livekit.cameraEnabled())"
+      (toggleScreenShare)="setDevice('screen', !livekit.screenShareEnabled())"
+      (openDiagnostics)="showDiagnostics.set(true)"
+      (leave)="leave()"
+    />
   }
 
-  <footer class="controls">
-    <button type="button" [class.off]="!livekit.micEnabled()" (click)="livekit.setMicrophone(!livekit.micEnabled())">
-      {{ livekit.micEnabled() ? 'Mute' : 'Unmute' }}
-    </button>
-    <button type="button" [class.off]="!livekit.cameraEnabled()" (click)="livekit.setCamera(!livekit.cameraEnabled())">
-      {{ livekit.cameraEnabled() ? 'Stop video' : 'Start video' }}
-    </button>
-    <button type="button" (click)="livekit.setScreenShare(!livekit.screenShareEnabled())">
-      {{ livekit.screenShareEnabled() ? 'Stop sharing' : 'Share screen' }}
-    </button>
-    <button type="button" class="ghost" (click)="showDiagnostics.set(!showDiagnostics())">Diagnostics</button>
-    <button type="button" class="danger" (click)="leave()">Leave</button>
-  </footer>
+  <app-participants-panel
+    [open]="showParticipants()"
+    [participants]="livekit.participants()"
+    (closed)="showParticipants.set(false)"
+  />
+
+  <app-diagnostics-drawer
+    [open]="showDiagnostics()"
+    [diagnostics]="livekit.diagnostics()"
+    (closed)="showDiagnostics.set(false)"
+  />
 </div>

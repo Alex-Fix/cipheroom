@@ -1,0 +1,97 @@
+// Inset grouped list, like iOS.
+.list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-radius: 12px;
+  background: var(--fill);
+  overflow: hidden;
+}
+
+.person {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  padding: 6px 14px;
+
+  & + &::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 62px;
+    right: 0;
+    height: 0.5px;
+    background: var(--separator);
+  }
+}
+
+.monogram {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: linear-gradient(180deg, #a5abb8 0%, #858994 100%);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  box-shadow: 0 0 0 2px transparent;
+  transition: box-shadow 160ms ease-out;
+}
+
+.speaking .monogram {
+  box-shadow: 0 0 0 2px var(--green);
+}
+
+.name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--label);
+  font-size: 15px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.you {
+  color: var(--label-secondary);
+}
+
+.status {
+  display: flex;
+  gap: 10px;
+  color: var(--label);
+  font-size: 16px;
+
+  .off {
+    color: var(--label-tertiary);
+  }
+
+  .sharing {
+    color: var(--accent);
+  }
+}
+
+.slashed {
+  position: relative;
+
+  &::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: -2px;
+    width: 1.5px;
+    height: calc(100% + 4px);
+    background: currentColor;
+    transform: translateX(-50%) rotate(-45deg);
+  }
+}
+
+.footnote {
+  margin: 10px 14px 0;
+  color: var(--label-secondary);
+  font-size: 13px;
+}
