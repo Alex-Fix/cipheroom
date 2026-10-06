@@ -5,29 +5,15 @@ import { NzButtonModule } from 'ng-zorro-antd/button';
 import { NzIconModule } from 'ng-zorro-antd/icon';
 import { NzInputModule } from 'ng-zorro-antd/input';
 import { NzTooltipModule } from 'ng-zorro-antd/tooltip';
-
-export const DISPLAY_NAME_KEY = 'cipheroom.displayName';
-
-export function loadDisplayName(): string {
-  try {
-    return localStorage.getItem(DISPLAY_NAME_KEY) ?? '';
-  } catch {
-    return '';
-  }
-}
-
-export function newRoomId(): string {
-  const bytes = crypto.getRandomValues(new Uint8Array(6));
-  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
-  return `${hex.slice(0, 4)}-${hex.slice(4, 8)}-${hex.slice(8)}`;
-}
+import { loadDisplayName, saveDisplayName } from '../../core/settings/display-name';
+import { newRoomId } from './room-id';
 
 @Component({
   selector: 'app-home',
   imports: [FormsModule, NzButtonModule, NzIconModule, NzInputModule, NzTooltipModule],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './home.html',
-  styleUrl: './home.scss',
+  styleUrl: './home.less',
 })
 export class Home {
   private readonly router = inject(Router);
@@ -48,11 +34,7 @@ export class Home {
   protected join(): void {
     const name = this.name().trim();
     if (!name || !this.validRoom()) return;
-    try {
-      localStorage.setItem(DISPLAY_NAME_KEY, name);
-    } catch {
-      // Storage unavailable (private mode) — name just won't be remembered.
-    }
+    saveDisplayName(name);
     void this.router.navigate(['/r', this.roomId()]);
   }
 }

@@ -4,7 +4,7 @@ services:
   api:
     build:
       context: ..
-      dockerfile: src/server/Cipheroom.Api/Dockerfile
+      dockerfile: src/Cipheroom.Api/Dockerfile
     environment:
       LiveKit__Url: ${LIVEKIT_URL:?set LIVEKIT_URL in deploy/.env}
       LiveKit__ApiKey: ${LIVEKIT_API_KEY:?run scripts/secrets.sh}

@@ -1,0 +1,79 @@
+<div class="room">
+  <span class="room-id" [title]="roomId()">{{ roomId() }}</span>
+  <button
+    type="button"
+    class="icon-button glass copy"
+    aria-label="Copy invite link"
+    nz-tooltip
+    nzTooltipTitle="Copy invite link"
+    nz-popover
+    [nzPopoverContent]="manualCopyTpl"
+    nzPopoverTitle="Copy this link"
+    [nzPopoverTrigger]="null"
+    [nzPopoverVisible]="manualCopy()"
+    (nzPopoverVisibleChange)="!$event && manualCopyClosed.emit()"
+    nzPopoverPlacement="bottomLeft"
+    (click)="copyLink.emit()"
+  >
+    <nz-icon nzType="copy" />
+  </button>
+  <ng-template #manualCopyTpl>
+    <input
+      nz-input
+      readonly
+      class="manual-copy"
+      [value]="link()"
+      (focus)="$any($event.target).select()"
+      aria-label="Invite link"
+    />
+  </ng-template>
+</div>
+
+<div class="status glass">
+  <span class="state" [attr.data-status]="status()">
+    <span class="dot" aria-hidden="true"></span>
+    <span class="state-text">{{ statusText() }}</span>
+  </span>
+
+  @if (status() === 'disconnected') {
+    <button
+      nz-button
+      nzType="primary"
+      nzShape="round"
+      nzSize="small"
+      class="rejoin"
+      (click)="rejoin.emit()"
+    >
+      Rejoin
+    </button>
+  }
+
+  <span class="divider" aria-hidden="true"></span>
+
+  @if (encrypted()) {
+    <span class="e2ee secure" nz-tooltip nzTooltipTitle="Media is end-to-end encrypted">
+      <nz-icon nzType="lock" /> <span class="label">Encrypted</span>
+    </span>
+  } @else {
+    <span
+      class="e2ee"
+      nz-tooltip
+      nzTooltipTitle="End-to-end encryption isn't enabled in this build yet. The server can see this call."
+    >
+      <nz-icon nzType="unlock" /> <span class="label">Not encrypted yet</span>
+    </span>
+  }
+
+  <span class="divider" aria-hidden="true"></span>
+
+  <button
+    type="button"
+    class="count"
+    nz-tooltip
+    nzTooltipTitle="People"
+    [attr.aria-label]="'Show people (' + participants() + ')'"
+    (click)="showParticipants.emit()"
+  >
+    <nz-icon nzType="team" /> {{ participants() }}
+  </button>
+</div>

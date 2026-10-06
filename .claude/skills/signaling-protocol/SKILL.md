@@ -10,22 +10,23 @@ SignalR carries **app** signaling only. Media signaling (SDP/ICE) belongs to Liv
 A protocol change is incomplete unless **all** of these are updated in the same change:
 
 1. **C# contract**
-   - Client→server: method on `src/server/Cipheroom.Api/Hubs/RoomHub.cs` (`Hub<IRoomClient>`).
-   - Server→client: method on `src/server/Cipheroom.Api/Hubs/IRoomClient.cs`.
-   - DTOs: `record`s in `src/server/Cipheroom.Api/Hubs/Contracts/`.
+   - Client→server: method on `src/Cipheroom.Api/Hubs/RoomHub.cs` (`Hub<IRoomClient>`).
+   - Server→client: method on `src/Cipheroom.Api/Hubs/IRoomClient.cs`.
+   - DTOs: `record`s in `src/Cipheroom.Api/Hubs/Contracts/`.
 2. **TS contract** — `web/src/app/core/signaling/signaling.types.ts`: mirror DTOs as `interface`s, add method
    names to the `HubMethods` / `ClientEvents` maps.
 3. **TS service** — `web/src/app/core/signaling/signaling.service.ts`: typed `invoke` wrapper or `on` handler
    exposed as a signal/observable. Components never call `HubConnection` directly.
 4. **Doc** — row in `docs/signaling-protocol.md`.
-5. **Tests** — hub integration test in `Cipheroom.Api.Tests` (connect two or more `HubConnection`s to a
+5. **Tests** — hub functional test in `tests/Cipheroom.Api.FunctionalTests` (connect two or more `HubConnection`s to a
    `WebApplicationFactory` host, assert relay/broadcast).
 
 ## Server rules
 - Validate inputs: lengths (displayName ≤ 64, envelope blob ≤ 4 KB, chat ciphertext ≤ 64 KB), ids are known members of the
   caller's room, caller is admitted (host-only methods check host role). Relaying to an arbitrary connection id outside the room is a bug.
 - Relay targeted messages with `Clients.Client(targetId)`; never `Clients.All`.
-- Room state is in an in-memory `IRoomRegistry` singleton (thread-safe). Clean up in `OnDisconnectedAsync`.
+- Room state lives behind the `IRoomStore` port (in-memory, thread-safe adapter in Infrastructure). Clean up in
+  `OnDisconnectedAsync` via the `LeaveRoom` command.
 - Rate-limit chatty methods (envelopes, chat) per connection.
 - Never add fields that could carry key material. If you think you need one, stop and consult `e2ee-media`.
 

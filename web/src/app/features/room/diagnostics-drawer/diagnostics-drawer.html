@@ -1,0 +1,36 @@
+<nz-drawer
+  [nzVisible]="open()"
+  nzTitle="Connection diagnostics"
+  nzPlacement="right"
+  [nzWidth]="360"
+  (nzOnClose)="closed.emit()"
+>
+  <ng-container *nzDrawerContent>
+    <dl class="rows">
+      <dt>Relay forced</dt>
+      <dd>{{ diagnostics().forceRelay ? 'yes' : 'no' }}</dd>
+      @for (row of rows(); track row.label) {
+        <dt>{{ row.label }}</dt>
+        <dd>
+          @if (row.path; as path) {
+            <span class="pill" [class.relay]="path.localType === 'relay'">{{
+              path.localType
+            }}</span>
+            ⇄ {{ path.remoteType }}
+            <div class="detail">
+              {{ path.protocol }}{{ path.relayProtocol ? ' via TURN/' + path.relayProtocol : '' }}
+              @if (path.rttMs !== undefined) {
+                · {{ path.rttMs }} ms
+              }
+            </div>
+            @if (path.remoteAddress) {
+              <div class="detail mono">{{ path.remoteAddress }}</div>
+            }
+          } @else {
+            <span class="muted">—</span>
+          }
+        </dd>
+      }
+    </dl>
+  </ng-container>
+</nz-drawer>

@@ -16,14 +16,15 @@ import { NzMessageService } from 'ng-zorro-antd/message';
 import { CallParticipant, LiveKitService } from '../../core/livekit/livekit.service';
 import { SignalingService } from '../../core/signaling/signaling.service';
 import { ThemeService } from '../../core/ui/theme.service';
-import { loadDisplayName } from '../home/home';
-import { CallControls } from './call-controls';
-import { CallHeader, callStatus } from './call-header';
-import { CallTile } from './call-tile';
+import { loadDisplayName } from '../../core/settings/display-name';
+import { CallControls } from './call-controls/call-controls';
+import { CallHeader } from './call-header/call-header';
+import { callStatus } from './call-status';
+import { CallTile } from './call-tile/call-tile';
 import { Device, deviceErrorMessage } from './device-error';
-import { DiagnosticsDrawer } from './diagnostics-drawer';
+import { DiagnosticsDrawer } from './diagnostics-drawer/diagnostics-drawer';
 import { participantChanges } from './participant-changes';
-import { ParticipantsPanel } from './participants-panel';
+import { ParticipantsPanel } from './participants-panel/participants-panel';
 
 /** Call screen container: owns the join/leave lifecycle and is the only place that talks to LiveKitService. */
 @Component({
@@ -40,7 +41,7 @@ import { ParticipantsPanel } from './participants-panel';
   providers: [LiveKitService],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './room.html',
-  styleUrl: './room.scss',
+  styleUrl: './room.less',
 })
 export class Room implements OnInit, OnDestroy {
   /** Bound from the :roomId route param. */

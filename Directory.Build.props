@@ -13,6 +13,7 @@
 
     <!-- All build output in one place: artifacts/{bin,obj,publish}/<Project>/<config> instead of per-project bin/obj. -->
     <UseArtifactsOutput>true</UseArtifactsOutput>
+    <ArtifactsPath>$(MSBuildThisFileDirectory)artifacts</ArtifactsPath>
 
     <Deterministic>true</Deterministic>
     <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>

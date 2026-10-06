@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <PackageReference Include="Microsoft.Extensions.Diagnostics.Testing" />
+    <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" />
+    <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Cipheroom.Api\Cipheroom.Api.csproj" />
+  </ItemGroup>
+
+</Project>

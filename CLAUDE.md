@@ -20,13 +20,14 @@ Hard constraints: runs at home, **no public IP**, **$0 running cost** (free tier
 
 ```
 Cipheroom.slnx                   solution (+ global.json, Directory.Build.props, Directory.Packages.props)
-src/server/                      Clean Architecture — dependencies point inward only:
+src/                             Clean Architecture — dependencies point inward only:
   Cipheroom.Domain/              entities, value objects, rules (no dependencies)
   Cipheroom.Application/         commands/queries (Mediator), FluentValidation, ports (interfaces)
   Cipheroom.Infrastructure/      adapters: room store, LiveKit tokens, Cloudflare TURN, options
-  Cipheroom.Api/                 ASP.NET Core host: SignalR hubs, filters, composition root
-  Cipheroom.*.UnitTests/ .IntegrationTests/ .Api.FunctionalTests/   xUnit v3 per layer
-web/                             Angular app (npm)
+  Cipheroom.Api/                 ASP.NET Core host: SignalR hubs, filters, composition root (+ Dockerfile)
+tests/                           xUnit v3, one project per layer (shared settings in tests/Directory.Build.props)
+  Cipheroom.Domain.UnitTests/ .Application.UnitTests/ .Infrastructure.IntegrationTests/ .Api.FunctionalTests/
+web/                             Angular app (npm, + Dockerfile); src/app/{core,shared,features}, design/ = logo masters
 deploy/
   docker-compose.yml             api, web (nginx), livekit, cloudflared
   livekit/ nginx/ cloudflared/   service config
@@ -62,7 +63,10 @@ All scripts run from the repo root.
   method; all input validated by FluentValidation in the pipeline (clients are untrusted); errors mapped by
   `HubExceptionFilter`. Nullable, file-scoped namespaces, records, `[LoggerMessage]` logging (never request values),
   `TimeProvider` for time, versions only in `Directory.Packages.props`. No MediatR/AutoMapper (non-OSS licences).
-- Angular: standalone components, signals for state, `inject()` over constructor DI. Services `SignalingService` / `LiveKitService` / `CryptoService` are the boundaries — components never touch LiveKit `Room` or keys directly.
+- Angular: standalone components, signals for state, `inject()` over constructor DI. Every component is a folder
+  with `.ts` + `.html` + `.less` + `.spec.ts` (no inline templates/styles); styles are Less only; features never
+  import each other (shared code goes to `core/` or `shared/`). Services `SignalingService` / `LiveKitService` /
+  `CryptoService` (planned) are the boundaries — components never touch LiveKit `Room` or keys directly.
 - Tests: xUnit v3 (Microsoft Testing Platform) + NSubstitute for backend, one test project per layer; hub behaviour
   and client-visible messages get functional tests. Angular default test runner for frontend.
 - Keep crypto in one place (`web/src/app/core/crypto/`). WebCrypto only; frame crypto is LiveKit's, we never write our own.

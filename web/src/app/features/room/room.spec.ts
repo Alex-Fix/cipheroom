@@ -7,7 +7,7 @@ import { NzMessageService } from 'ng-zorro-antd/message';
 import { CallParticipant, LiveKitService } from '../../core/livekit/livekit.service';
 import { SignalingService } from '../../core/signaling/signaling.service';
 import { APP_ICONS } from '../../core/ui/icons';
-import { DISPLAY_NAME_KEY } from '../home/home';
+import { DISPLAY_NAME_KEY } from '../../core/settings/display-name';
 import { Room } from './room';
 
 function fakeLiveKit() {

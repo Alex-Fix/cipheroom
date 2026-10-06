@@ -1,13 +1,15 @@
 <Solution>
-  <Folder Name="/src/" />
-  <Folder Name="/src/server/">
-    <Project Path="src/server/Cipheroom.Api/Cipheroom.Api.csproj" />
-    <Project Path="src/server/Cipheroom.Api.FunctionalTests/Cipheroom.Api.FunctionalTests.csproj" />
-    <Project Path="src/server/Cipheroom.Domain/Cipheroom.Domain.csproj" />
-    <Project Path="src/server/Cipheroom.Application.UnitTests/Cipheroom.Application.UnitTests.csproj" />
-    <Project Path="src/server/Cipheroom.Application/Cipheroom.Application.csproj" />
-    <Project Path="src/server/Cipheroom.Domain.UnitTests/Cipheroom.Domain.UnitTests.csproj" />
-    <Project Path="src/server/Cipheroom.Infrastructure.IntegrationTests/Cipheroom.Infrastructure.IntegrationTests.csproj" />
-    <Project Path="src/server/Cipheroom.Infrastructure/Cipheroom.Infrastructure.csproj" />
+  <Folder Name="/src/">
+    <Project Path="src/Cipheroom.Domain/Cipheroom.Domain.csproj" />
+    <Project Path="src/Cipheroom.Application/Cipheroom.Application.csproj" />
+    <Project Path="src/Cipheroom.Infrastructure/Cipheroom.Infrastructure.csproj" />
+    <Project Path="src/Cipheroom.Api/Cipheroom.Api.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <File Path="tests/Directory.Build.props" />
+    <Project Path="tests/Cipheroom.Domain.UnitTests/Cipheroom.Domain.UnitTests.csproj" />
+    <Project Path="tests/Cipheroom.Application.UnitTests/Cipheroom.Application.UnitTests.csproj" />
+    <Project Path="tests/Cipheroom.Infrastructure.IntegrationTests/Cipheroom.Infrastructure.IntegrationTests.csproj" />
+    <Project Path="tests/Cipheroom.Api.FunctionalTests/Cipheroom.Api.FunctionalTests.csproj" />
   </Folder>
 </Solution>
