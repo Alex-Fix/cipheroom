@@ -1,16 +1,26 @@
-import { ChangeDetectionStrategy, Component, OnDestroy, OnInit, inject, input, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  OnDestroy,
+  OnInit,
+  computed,
+  inject,
+  input,
+  signal,
+} from '@angular/core';
 import { Router } from '@angular/router';
 import { NzMessageService } from 'ng-zorro-antd/message';
 import { LiveKitService } from '../../core/livekit/livekit.service';
 import { SignalingService } from '../../core/signaling/signaling.service';
 import { loadDisplayName } from '../home/home';
 import { CallControls } from './call-controls';
+import { CallHeader, callStatus } from './call-header';
 import { CallTile } from './call-tile';
 import { Device, deviceErrorMessage } from './device-error';
 
 @Component({
   selector: 'app-room',
-  imports: [CallControls, CallTile],
+  imports: [CallControls, CallHeader, CallTile],
   providers: [LiveKitService],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './room.html',
@@ -27,7 +37,14 @@ export class Room implements OnInit, OnDestroy {
 
   protected readonly error = signal<string | undefined>(undefined);
   protected readonly showDiagnostics = signal(false);
-  protected readonly copied = signal(false);
+  protected readonly manualCopy = signal(false);
+  private readonly joined = signal(false);
+
+  protected readonly link = location.href;
+  protected readonly status = computed(() => callStatus(this.livekit.state(), this.joined()));
+  protected readonly participants = computed(
+    () => this.livekit.tiles().filter((t) => !t.isScreen).length,
+  );
 
   async ngOnInit(): Promise<void> {
     const name = loadDisplayName();
@@ -38,6 +55,7 @@ export class Room implements OnInit, OnDestroy {
     try {
       await this.signaling.joinRoom(this.roomId(), name);
       await this.livekit.connect(await this.signaling.getRtcConfig());
+      this.joined.set(true);
       await Promise.all([this.setDevice('microphone', true), this.setDevice('camera', true)]);
     } catch (e) {
       this.error.set(e instanceof Error ? e.message : String(e));
@@ -63,9 +81,13 @@ export class Room implements OnInit, OnDestroy {
   }
 
   protected async copyLink(): Promise<void> {
-    await navigator.clipboard.writeText(location.href);
-    this.copied.set(true);
-    setTimeout(() => this.copied.set(false), 1500);
+    try {
+      // navigator.clipboard is undefined on plain-HTTP LAN origins.
+      await navigator.clipboard.writeText(this.link);
+      this.message.success('Invite link copied');
+    } catch {
+      this.manualCopy.set(true);
+    }
   }
 
   protected leave(): void {

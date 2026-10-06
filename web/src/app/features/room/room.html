@@ -1,10 +1,13 @@
 <div class="room">
-  <header>
-    <strong>{{ roomId() }}</strong>
-    <span class="state">{{ livekit.state() }}</span>
-    <span class="warn" title="Connectivity spike build">E2EE not enabled yet</span>
-    <button type="button" class="ghost" (click)="copyLink()">{{ copied() ? 'Copied' : 'Copy link' }}</button>
-  </header>
+  <app-call-header
+    [roomId]="roomId()"
+    [link]="link"
+    [status]="status()"
+    [participants]="participants()"
+    [manualCopy]="manualCopy()"
+    (copyLink)="copyLink()"
+    (manualCopyClosed)="manualCopy.set(false)"
+  />
 
   @if (error(); as message) {
     <p class="error">Could not join: {{ message }}</p>
