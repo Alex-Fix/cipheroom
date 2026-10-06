@@ -8,6 +8,8 @@ using Microsoft.AspNetCore.SignalR;
 using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Testing;
 
 namespace Cipheroom.Api.FunctionalTests;
 
@@ -19,7 +21,9 @@ public sealed class ErrorHandlingTests(WebApplicationFactory<Program> factory) :
         .UseSetting("LiveKit:Url", "ws://livekit.test")
         .UseSetting("LiveKit:ApiKey", "testkey")
         .UseSetting("LiveKit:ApiSecret", "test-secret-that-is-at-least-32-bytes-long")
-        .ConfigureTestServices(s => s.AddTransient<IIceServerProvider, FailingIceServerProvider>()));
+        .ConfigureTestServices(s => s
+            .AddLogging(l => l.AddFakeLogging())
+            .AddTransient<IIceServerProvider, FailingIceServerProvider>()));
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
@@ -33,6 +37,18 @@ public sealed class ErrorHandlingTests(WebApplicationFactory<Program> factory) :
 
         Assert.EndsWith("HubException: Something went wrong.", error.Message, StringComparison.Ordinal);
         Assert.DoesNotContain("cf-secret", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Rejected_calls_are_not_logged_as_errors()
+    {
+        await using var connection = await ConnectAsync();
+        var collector = _factory.Services.GetFakeLogCollector();
+        collector.Clear();
+
+        await Assert.ThrowsAsync<HubException>(() => connection.InvokeAsync<JoinResult>("JoinRoom", "BAD ID", "Alice", Ct));
+
+        Assert.DoesNotContain(collector.GetSnapshot(), r => r.Level >= LogLevel.Error);
     }
 
     [Fact]
