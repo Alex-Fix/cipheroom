@@ -1,0 +1,69 @@
+:host {
+  position: relative;
+  display: grid;
+  place-items: center;
+  aspect-ratio: 16 / 9;
+  background: var(--surface);
+  border-radius: 12px;
+  overflow: hidden;
+  outline: 2px solid transparent;
+  outline-offset: -2px;
+  transition: outline-color 120ms ease-out;
+}
+
+:host(.speaking) {
+  outline-color: var(--accent);
+  box-shadow: 0 0 0 4px rgb(79 140 255 / 0.25);
+}
+
+video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+:host(.screen) video {
+  object-fit: contain;
+  background: #000;
+}
+
+video.mirror {
+  transform: scaleX(-1);
+}
+
+.avatar {
+  font-size: 28px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.caption {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  max-width: calc(100% - 16px);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: rgb(0 0 0 / 0.55);
+  font-size: 13px;
+  line-height: 22px;
+}
+
+.name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.mic-off {
+  color: var(--danger);
+}
+
+.screen-tag {
+  margin: 0;
+}

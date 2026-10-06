@@ -42,40 +42,6 @@ header {
   overflow: auto;
 }
 
-.tile {
-  position: relative;
-  margin: 0;
-  aspect-ratio: 16 / 9;
-  background: var(--surface);
-  border-radius: 12px;
-  overflow: hidden;
-  outline: 2px solid transparent;
-
-  &.speaking { outline-color: var(--accent); }
-
-  video { width: 100%; height: 100%; object-fit: cover; }
-  &.screen video { object-fit: contain; }
-  video.mirror { transform: scaleX(-1); }
-
-  figcaption {
-    position: absolute;
-    left: 0.5rem;
-    bottom: 0.5rem;
-    padding: 0.15rem 0.5rem;
-    border-radius: 6px;
-    background: rgb(0 0 0 / 0.55);
-    font-size: 0.85rem;
-  }
-}
-
-.avatar {
-  display: grid;
-  place-items: center;
-  height: 100%;
-  font-size: 3rem;
-  color: var(--muted);
-}
-
 .diagnostics {
   font-size: 0.85rem;
   background: var(--surface);

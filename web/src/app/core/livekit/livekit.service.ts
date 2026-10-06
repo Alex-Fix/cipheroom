@@ -5,7 +5,10 @@ import { IcePath, selectedIcePath } from './ice-path';
 
 export interface Tile {
   key: string;
+  /** Label for the tile, e.g. "Alex (you)". */
   name: string;
+  /** The participant's own name, same on every client (avatar initials and colour). */
+  displayName: string;
   isLocal: boolean;
   isScreen: boolean;
   isSpeaking: boolean;
@@ -122,12 +125,14 @@ export class LiveKitService implements OnDestroy {
     const camera = p.getTrackPublication(Track.Source.Camera);
     const mic = p.getTrackPublication(Track.Source.Microphone);
     const screen = p.getTrackPublication(Track.Source.ScreenShare);
-    const name = (p.name || p.identity) + (isLocal ? ' (you)' : '');
+    const displayName = p.name || p.identity;
+    const name = displayName + (isLocal ? ' (you)' : '');
 
     const tiles: Tile[] = [
       {
         key: `${p.identity}:camera`,
         name,
+        displayName,
         isLocal,
         isScreen: false,
         isSpeaking: p.isSpeaking,
@@ -140,7 +145,8 @@ export class LiveKitService implements OnDestroy {
     if (screen?.track && !screen.isMuted) {
       tiles.push({
         key: `${p.identity}:screen`,
-        name: `${name} — screen`,
+        name,
+        displayName,
         isLocal,
         isScreen: true,
         isSpeaking: false,

@@ -16,17 +16,7 @@
 
   <section class="grid">
     @for (tile of livekit.tiles(); track tile.key) {
-      <figure class="tile" [class.speaking]="tile.isSpeaking" [class.screen]="tile.isScreen">
-        @if (tile.video) {
-          <video [appTrack]="tile.video" autoplay playsinline [muted]="true" [class.mirror]="tile.isLocal && !tile.isScreen"></video>
-        } @else {
-          <div class="avatar">{{ tile.name.charAt(0).toUpperCase() }}</div>
-        }
-        @if (tile.audio) {
-          <audio [appTrack]="tile.audio" autoplay></audio>
-        }
-        <figcaption>{{ tile.micMuted ? '🔇 ' : '' }}{{ tile.name }}</figcaption>
-      </figure>
+      <app-call-tile [tile]="tile" />
     }
   </section>
 

@@ -2,12 +2,12 @@ import { ChangeDetectionStrategy, Component, OnDestroy, OnInit, inject, input, s
 import { Router } from '@angular/router';
 import { LiveKitService } from '../../core/livekit/livekit.service';
 import { SignalingService } from '../../core/signaling/signaling.service';
-import { TrackDirective } from '../../shared/track.directive';
 import { loadDisplayName } from '../home/home';
+import { CallTile } from './call-tile';
 
 @Component({
   selector: 'app-room',
-  imports: [TrackDirective],
+  imports: [CallTile],
   providers: [LiveKitService],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './room.html',
