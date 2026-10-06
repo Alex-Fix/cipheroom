@@ -2,7 +2,7 @@ import { ChangeDetectionStrategy, Component, computed, input, output } from '@an
 import { NzDrawerModule } from 'ng-zorro-antd/drawer';
 import { NzIconModule } from 'ng-zorro-antd/icon';
 import { CallParticipant } from '../../core/livekit/livekit.service';
-import { initials } from '../../shared/avatar';
+import { initials } from '../../shared/initials';
 
 /**
  * Everyone in the media room. Part of the ghost-participant defence (docs/architecture.md): people must always be

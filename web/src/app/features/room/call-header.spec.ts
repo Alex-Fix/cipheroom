@@ -1,8 +1,8 @@
 import { TestBed } from '@angular/core/testing';
-import { ConnectionState } from 'livekit-client';
 import { provideNzIcons } from 'ng-zorro-antd/icon';
 import { APP_ICONS } from '../../core/ui/icons';
-import { CallHeader, CallStatus, callStatus } from './call-header';
+import { CallHeader } from './call-header';
+import { CallStatus } from './call-status';
 
 function render(status: CallStatus, extra: Record<string, unknown> = {}) {
   TestBed.configureTestingModule({ imports: [CallHeader], providers: [provideNzIcons(APP_ICONS)] });
@@ -18,23 +18,6 @@ function render(status: CallStatus, extra: Record<string, unknown> = {}) {
   fixture.detectChanges();
   return { fixture, el: fixture.nativeElement as HTMLElement };
 }
-
-describe('callStatus', () => {
-  it('treats the initial disconnected state as connecting', () => {
-    expect(callStatus(ConnectionState.Disconnected, false)).toBe('connecting');
-    expect(callStatus(ConnectionState.Disconnected, true)).toBe('disconnected');
-  });
-
-  it('maps both reconnect states to reconnecting', () => {
-    expect(callStatus(ConnectionState.Reconnecting, true)).toBe('reconnecting');
-    expect(callStatus(ConnectionState.SignalReconnecting, true)).toBe('reconnecting');
-    expect(callStatus(ConnectionState.Connected, true)).toBe('connected');
-  });
-
-  it('reports a failed join regardless of LiveKit state', () => {
-    expect(callStatus(ConnectionState.Disconnected, false, true)).toBe('failed');
-  });
-});
 
 describe('CallHeader', () => {
   it('shows room id, state and participant count', () => {

@@ -2,7 +2,8 @@ import { TestBed } from '@angular/core/testing';
 import { provideRouter, Router } from '@angular/router';
 import { provideNzIcons } from 'ng-zorro-antd/icon';
 import { APP_ICONS } from '../../core/ui/icons';
-import { DISPLAY_NAME_KEY, Home, newRoomId } from './home';
+import { DISPLAY_NAME_KEY } from '../../core/settings/display-name';
+import { Home } from './home';
 
 async function setup() {
   localStorage.removeItem(DISPLAY_NAME_KEY);
@@ -26,10 +27,6 @@ async function setup() {
 }
 
 describe('Home', () => {
-  it('generates room ids matching the room pattern', () => {
-    expect(newRoomId()).toMatch(/^[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}$/);
-  });
-
   it('shows a validation message for an invalid room id and disables Join', async () => {
     const { el, type, submit } = await setup();
     await type('name', 'Alex');

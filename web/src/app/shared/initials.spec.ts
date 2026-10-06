@@ -1,4 +1,4 @@
-import { initials } from './avatar';
+import { initials } from './initials';
 
 describe('initials', () => {
   it('takes the first letter of up to two words', () => {
