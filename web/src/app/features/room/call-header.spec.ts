@@ -30,6 +30,10 @@ describe('callStatus', () => {
     expect(callStatus(ConnectionState.SignalReconnecting, true)).toBe('reconnecting');
     expect(callStatus(ConnectionState.Connected, true)).toBe('connected');
   });
+
+  it('reports a failed join regardless of LiveKit state', () => {
+    expect(callStatus(ConnectionState.Disconnected, false, true)).toBe('failed');
+  });
 });
 
 describe('CallHeader', () => {
@@ -52,6 +56,8 @@ describe('CallHeader', () => {
 
   it('offers Rejoin only when disconnected', () => {
     expect(render('reconnecting').el.querySelector('.rejoin')).toBeNull();
+    TestBed.resetTestingModule();
+    expect(render('failed').el.querySelector('.rejoin')).toBeNull();
     TestBed.resetTestingModule();
     const { fixture, el } = render('disconnected');
     const rejoin = vi.fn();

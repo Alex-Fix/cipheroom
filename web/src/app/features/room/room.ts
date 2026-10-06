@@ -55,7 +55,7 @@ export class Room implements OnInit, OnDestroy {
 
   protected readonly link = location.href;
   protected readonly canShareScreen = typeof navigator.mediaDevices?.getDisplayMedia === 'function';
-  protected readonly status = computed(() => callStatus(this.livekit.state(), this.joined()));
+  protected readonly status = computed(() => callStatus(this.livekit.state(), this.joined(), !!this.error()));
   protected readonly participants = computed(
     () => this.livekit.tiles().filter((t) => !t.isScreen).length,
   );

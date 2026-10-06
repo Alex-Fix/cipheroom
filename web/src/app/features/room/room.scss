@@ -12,8 +12,11 @@
   min-height: 0;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+  // Tiles are overflow:hidden, which drops their min height to 0 — without this, rows shrink and tiles overlap.
+  grid-auto-rows: max-content;
   gap: 8px;
-  align-content: center;
+  // "safe": when tiles don't fit, scroll from the top instead of clipping the first row.
+  align-content: safe center;
   overflow: auto;
 }
 

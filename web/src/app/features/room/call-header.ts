@@ -8,10 +8,14 @@ import { NzPopoverModule } from 'ng-zorro-antd/popover';
 import { NzTagModule } from 'ng-zorro-antd/tag';
 import { NzTooltipModule } from 'ng-zorro-antd/tooltip';
 
-export type CallStatus = 'connecting' | 'connected' | 'reconnecting' | 'disconnected';
+export type CallStatus = 'connecting' | 'connected' | 'reconnecting' | 'disconnected' | 'failed';
 
-/** LiveKit starts out "disconnected" before the first connect — that's still "connecting" to the user. */
-export function callStatus(state: ConnectionState, joined: boolean): CallStatus {
+/**
+ * LiveKit starts out "disconnected" before the first connect — that's still "connecting" to the user.
+ * `failed` = the join itself failed (the room shows its own Retry, so no Rejoin in the header).
+ */
+export function callStatus(state: ConnectionState, joined: boolean, failed = false): CallStatus {
+  if (failed) return 'failed';
   switch (state) {
     case ConnectionState.Connected:
       return 'connected';
@@ -33,6 +37,7 @@ const BADGE: Record<
   connected: { status: 'success', text: 'Connected' },
   reconnecting: { status: 'warning', text: 'Reconnecting…' },
   disconnected: { status: 'error', text: 'Disconnected' },
+  failed: { status: 'error', text: 'Not connected' },
 };
 
 /** Call header: room id + copy, connection state, encryption state, participant count. Presentational. */
