@@ -27,7 +27,7 @@
 | `api` (.NET 10, SignalR) | identities, rooms, lobby/admission, presence, encrypted-chat relay, **key-envelope relay**, LiveKit token + ICE config issuance | metadata, public keys, ciphertext blobs |
 | `livekit` | SFU: routing, simulcast, dynacast, screen share | encrypted frames + metadata |
 | TURN | relay so media can reach LiveKit without a public IP | DTLS-SRTP packets around E2EE frames |
-| `web` | static Angular app + security headers | nothing sensitive |
+| `web` | static Angular app (ng-zorro dark UI, icons bundled — no runtime CDN fetches) + security headers | nothing sensitive |
 | `cloudflared` | public HTTPS hostnames → `web`, `api`, `livekit` (signaling only) | TLS-terminated HTTP/WS |
 
 **Two signaling channels by design:**

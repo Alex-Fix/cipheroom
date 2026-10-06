@@ -23,8 +23,9 @@ web/src/app/
     media/       media-devices.service.ts                   (device list, preview before join)
   features/
     home/        create/join room
-    room/        call grid, controls, participant tile
+    room/        room.ts (container) + call-header, call-tile, call-controls, diagnostics-drawer
   shared/        presentational components, pipes
+core/ui/icons.ts  every ng-zorro icon the app renders (static registry)
 ```
 
 ## Conventions
@@ -36,7 +37,20 @@ web/src/app/
 - LiveKit callbacks run outside Angular's knowledge — only ever write to signals from them.
 - E2EE worker: `new Worker(new URL('livekit-client/e2ee-worker', import.meta.url))` — check the Angular builder bundles it.
 - Only `core/crypto` touches key material. Components get booleans/strings (e.g. safety code), never keys.
-- No third-party UI kit until needed; keep bundle small.
+- Feature containers (e.g. `Room`) inject services; their child components are presentational (inputs/outputs only).
+
+## UI kit: ng-zorro-antd (dark theme)
+Design: `docs/plans/2026-10-06-ngzorro-ui-design.md`.
+- Import the per-component `NzXxxModule` in each standalone component; nothing global beyond `app.config.ts`
+  (`provideNzI18n(en_US)`, `provideNzIcons(APP_ICONS)`, `provideNzConfig`). ng-zorro 22 needs no `@angular/animations`.
+- Styles: `src/styles.less` imports the dark theme + **only the `<component>/style/entry.less` files we use**.
+  Using a new component → add its style entry there, or it renders unstyled. Theme tweaks are Less variable overrides
+  (`@blue-base`, `@component-background`, …) after the imports. Paths resolve via `stylePreprocessorOptions.includePaths`.
+- Icons: add to `core/ui/icons.ts`. **Never** enable dynamic icon loading (`NzIconService` fetch / CDN): CSP
+  `connect-src 'self'` blocks it and a third-party fetch would leak who uses the app.
+- `NzMessageService` renders string content with `[innerHTML]`: only pass **constant strings** — never display names,
+  room ids, or error text from browsers/servers. Show those via template interpolation (e.g. `nz-result` subtitle).
+- Component SCSS stays SCSS; per-component style budget is 4 kB warn / 8 kB error.
 
 ## Commands
 - Dev: `npm start --prefix web` (or `scripts/dev.sh`)

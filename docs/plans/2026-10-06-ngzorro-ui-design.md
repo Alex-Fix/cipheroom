@@ -88,6 +88,9 @@ None.
 - Never enable ng-zorro dynamic icon loading (`NzIconService` fetch / CDN) — would also leak app usage to a third party.
 - User-controlled strings (display names, room id) only via Angular interpolation; no `innerHTML`, no HTML-string
   tooltip titles.
+- Found during implementation: `NzMessageService` renders string content via `[innerHTML]` (Angular-sanitised, but
+  markup still renders). Toasts use constant strings only (`device-error.ts`); join errors go to the `nz-result`
+  subtitle via interpolation.
 - The E2EE tag must reflect real state; it must never show "Encrypted" unless E2EE is actually active.
 
 ## Testing
@@ -102,8 +105,11 @@ Manual: two browsers + phone on LAN (`scripts/certs.sh`); 375 px / 768 px / desk
 (stop the API). `scripts/test.sh --web`, `scripts/lint.sh`, `npm run build` within budget.
 
 ## Open questions
-- Exact ng-zorro 22 LESS entry paths / dark theme import — verify against the installed package during step 1.
-- If the initial bundle exceeds the 500 kB warning, report the measured size before deciding to adjust the budget.
+- ~~LESS entry paths~~ — resolved: `includePaths: ["node_modules"]` + `ng-zorro-antd/<c>/style/entry.less`
+  (package `exports` map breaks bare-specifier resolution for some components).
+- Initial bundle is 625 kB raw / 127 kB transfer (was 462 kB before ng-zorro components): over the 500 kB *warning*,
+  under the 1 MB error. ng-zorro core + icon service land in `main` because providers are in `app.config.ts`.
+  Options: accept and raise the warning to 700 kB, or move ng-zorro providers into a lazy parent route. Undecided.
 
 ## Implementation steps
 1. Add `ng-zorro-antd`, `less`; switch to `styles.less` with dark theme + per-component imports; providers in
