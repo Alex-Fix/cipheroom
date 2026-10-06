@@ -15,7 +15,7 @@ csharp_style_var_for_built_in_types = true:suggestion
 dotnet_sort_system_directives_first = true
 
 # Tests: underscores make test names readable sentences (Joining_twice_is_rejected).
-[src/server/*Tests/**.cs]
+[tests/**.cs]
 dotnet_diagnostic.CA1707.severity = none
 
 [*.{sln,slnx}]

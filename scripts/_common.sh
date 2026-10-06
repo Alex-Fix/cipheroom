@@ -3,8 +3,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-API_DIR="$ROOT/src/server/Cipheroom.Api"
-TESTS_DIR="$ROOT/src/server/Cipheroom.Api.FunctionalTests"
+API_DIR="$ROOT/src/Cipheroom.Api"
+TESTS_DIR="$ROOT/tests"
 WEB_DIR="$ROOT/web"
 DEPLOY_DIR="$ROOT/deploy"
 COMPOSE=(docker compose -f "$DEPLOY_DIR/docker-compose.yml")
