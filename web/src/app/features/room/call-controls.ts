@@ -3,6 +3,7 @@ import { NzDropdownModule } from 'ng-zorro-antd/dropdown';
 import { NzIconModule } from 'ng-zorro-antd/icon';
 import { NzMenuModule } from 'ng-zorro-antd/menu';
 import { NzTooltipModule } from 'ng-zorro-antd/tooltip';
+import { Camera } from '../../core/livekit/cameras';
 
 /** Bottom call control bar. Presentational: state in, intents out. */
 @Component({
@@ -37,6 +38,19 @@ import { NzTooltipModule } from 'ng-zorro-antd/tooltip';
       <nz-icon nzType="video-camera" [class.slashed]="!cameraEnabled()" />
     </button>
 
+    @if (canFlip() && cameraEnabled()) {
+      <button
+        type="button"
+        class="control flip"
+        nz-tooltip
+        nzTooltipTitle="Switch camera"
+        aria-label="Switch camera"
+        (click)="flipCamera.emit()"
+      >
+        <nz-icon nzType="sync" />
+      </button>
+    }
+
     @if (canShareScreen()) {
       <button
         type="button"
@@ -65,6 +79,29 @@ import { NzTooltipModule } from 'ng-zorro-antd/tooltip';
     </button>
     <nz-dropdown-menu #moreMenu="nzDropdownMenu">
       <ul nz-menu>
+        @if (cameras().length > 1) {
+          <li nz-menu-group nzTitle="Camera">
+            <ul>
+              @for (camera of cameras(); track camera.id) {
+                <li
+                  nz-menu-item
+                  class="camera-item"
+                  [attr.aria-checked]="camera.id === activeCameraId()"
+                  role="menuitemradio"
+                  (click)="selectCamera.emit(camera.id)"
+                >
+                  <span class="check" aria-hidden="true">
+                    @if (camera.id === activeCameraId()) {
+                      <nz-icon nzType="check" />
+                    }
+                  </span>
+                  {{ camera.label }}
+                </li>
+              }
+            </ul>
+          </li>
+          <li nz-menu-divider></li>
+        }
         <li nz-menu-item class="diagnostics-item" (click)="openDiagnostics.emit()">
           <nz-icon nzType="info-circle" /> Connection diagnostics
         </li>
@@ -90,10 +127,17 @@ export class CallControls {
   readonly screenShareEnabled = input.required<boolean>();
   /** Phones have no getDisplayMedia — hide the button instead of failing. */
   readonly canShareScreen = input(true);
+  /** Video inputs for the ⋯ menu picker (shown when there's more than one). */
+  readonly cameras = input<Camera[]>([]);
+  readonly activeCameraId = input<string | undefined>(undefined);
+  /** Phone/tablet with a rear camera: show the front ⇄ rear button. */
+  readonly canFlip = input(false);
 
   readonly toggleMic = output();
   readonly toggleCamera = output();
   readonly toggleScreenShare = output();
+  readonly flipCamera = output();
+  readonly selectCamera = output<string>();
   readonly openDiagnostics = output();
   readonly leave = output();
 }

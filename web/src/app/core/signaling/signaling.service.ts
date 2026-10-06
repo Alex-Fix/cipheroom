@@ -1,5 +1,10 @@
 import { Injectable, signal } from '@angular/core';
-import { HubConnection, HubConnectionBuilder, HubConnectionState, LogLevel } from '@microsoft/signalr';
+import {
+  HubConnection,
+  HubConnectionBuilder,
+  HubConnectionState,
+  LogLevel,
+} from '@microsoft/signalr';
 import { ClientEvents, HubMethods, JoinResult, ParticipantDto, RtcConfig } from './signaling.types';
 
 /** App signaling over SignalR. Media signaling is LiveKit's job — never add SDP/ICE here. */

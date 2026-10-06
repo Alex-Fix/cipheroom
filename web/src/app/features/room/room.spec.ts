@@ -20,6 +20,11 @@ function fakeLiveKit() {
     screenShareEnabled: signal(false),
     canPlaybackAudio: signal(true),
     diagnostics: signal({ forceRelay: false }),
+    cameras: signal<{ id: string; label: string }[]>([]),
+    activeCameraId: signal<string | undefined>(undefined),
+    canFlip: signal(false),
+    flipCamera: vi.fn().mockResolvedValue(undefined),
+    selectCamera: vi.fn().mockResolvedValue(undefined),
     connect: vi.fn().mockResolvedValue(undefined),
     disconnect: vi.fn().mockResolvedValue(undefined),
     setMicrophone: vi.fn().mockResolvedValue(undefined),
@@ -161,5 +166,21 @@ describe('Room', () => {
     livekit.participants.set([person('Alex', true), person('<b>Eve</b>')]);
     fixture.detectChanges();
     expect(notices()).toContain('Bob left');
+  });
+
+  it('flips the camera and reports a busy camera as a toast', async () => {
+    const { el, fixture, livekit, message } = await setup({
+      tweak: (lk) => {
+        lk.canFlip.set(true);
+        lk.cameraEnabled.set(true);
+        lk.flipCamera.mockRejectedValueOnce(new DOMException('busy', 'NotReadableError'));
+      },
+    });
+    fixture.detectChanges();
+    el.querySelector<HTMLButtonElement>('button.flip')!.click();
+    await fixture.whenStable();
+
+    expect(livekit.flipCamera).toHaveBeenCalledOnce();
+    expect(message.error).toHaveBeenCalledWith('Camera is in use by another app.');
   });
 });

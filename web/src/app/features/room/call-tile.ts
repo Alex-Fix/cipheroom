@@ -22,7 +22,7 @@ import { TrackDirective } from '../../shared/track.directive';
         autoplay
         playsinline
         [muted]="true"
-        [class.mirror]="t.isLocal && !t.isScreen"
+        [class.mirror]="t.mirror"
       ></video>
     } @else {
       <div class="monogram" aria-hidden="true">{{ initials() }}</div>
