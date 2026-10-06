@@ -33,7 +33,7 @@ describe('CallControls', () => {
     const { button } = render(allOn);
     expect(button('mic')!.classList).not.toContain('off');
     expect(button('mic')!.getAttribute('aria-label')).toBe('Mute');
-    expect(button('camera')!.getAttribute('aria-label')).toBe('Stop video');
+    expect(button('camera')!.getAttribute('aria-label')).toBe('Turn camera off');
     expect(button('camera')!.querySelector('.slashed')).toBeNull();
   });
 

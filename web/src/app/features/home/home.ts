@@ -2,8 +2,6 @@ import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/cor
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { NzButtonModule } from 'ng-zorro-antd/button';
-import { NzCardModule } from 'ng-zorro-antd/card';
-import { NzFormModule } from 'ng-zorro-antd/form';
 import { NzIconModule } from 'ng-zorro-antd/icon';
 import { NzInputModule } from 'ng-zorro-antd/input';
 import { NzTooltipModule } from 'ng-zorro-antd/tooltip';
@@ -26,15 +24,7 @@ export function newRoomId(): string {
 
 @Component({
   selector: 'app-home',
-  imports: [
-    FormsModule,
-    NzButtonModule,
-    NzCardModule,
-    NzFormModule,
-    NzIconModule,
-    NzInputModule,
-    NzTooltipModule,
-  ],
+  imports: [FormsModule, NzButtonModule, NzIconModule, NzInputModule, NzTooltipModule],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './home.html',
   styleUrl: './home.scss',

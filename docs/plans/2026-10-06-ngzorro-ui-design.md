@@ -1,5 +1,5 @@
 # ng-zorro UI overhaul — design
-Status: approved · Date: 2026-10-06
+Status: approved · Date: 2026-10-06 · Revised: 2026-10-06 (Apple-style, see end)
 
 ## Problem
 The web UI is hand-rolled from the connectivity spike: plain buttons, text-only controls, diagnostics panel open by
@@ -122,3 +122,22 @@ Manual: two browsers + phone on LAN (`scripts/certs.sh`); 375 px / 768 px / desk
 7. Join error panel with Retry, autoplay `nz-alert`, disconnected *Rejoin*; `room` tests.
 8. Responsive pass (375 / 768 / desktop); budget check.
 9. Docs: update `angular-frontend` skill (UI kit rules, static icons), one line in `docs/architecture.md`.
+
+## Revision: Apple-style (2026-10-06)
+User feedback on the first build: "make it Apple-like — follow Apple design best practices". Changes vs. above:
+
+- **Appearance follows the OS** (HIG: support Dark Mode) instead of dark-only; the call screen is always dark like
+  FaceTime. Two ng-zorro theme bundles (`src/theme/theme-{light,dark}.less`, `inject: false`) linked from `index.html`
+  with `prefers-color-scheme` media queries; `ThemeService` forces dark during calls. App tokens in `styles.less`.
+  Side effect: ng-zorro CSS left the initial bundle — initial is now ~378 kB, under the 500 kB budget (open question
+  resolved).
+- **iOS system colours and type:** `#007AFF/#0A84FF` accent, system red/green/orange, `#F2F2F7`/black backgrounds,
+  SF system font, HIG text sizes.
+- **Home:** app-icon glyph, large title, inset grouped form (Name / Room rows), footnote validation, full-width
+  tinted Join (dimmed when disabled). Dropped nz-card/nz-form.
+- **Call:** floating frosted-glass control bar over the stage; toggled-off = white button; red end-call button;
+  grey Contacts-style monograms (per-name colours removed); plain name captions; white speaker ring; header is the
+  room name + a glass status capsule (connection · encryption · count). Custom error state instead of nz-result;
+  glass "Enable Audio" banner instead of nz-alert. Dropped nz-avatar/nz-tag/nz-badge/nz-result/nz-alert.
+- **Accessibility:** 44 px touch targets, safe-area insets (`viewport-fit=cover`), `:focus-visible` ring,
+  `prefers-reduced-motion` and `prefers-reduced-transparency` honoured.

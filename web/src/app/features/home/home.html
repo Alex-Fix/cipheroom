@@ -1,69 +1,80 @@
 <main class="home">
-  <nz-card class="card" [nzBordered]="false">
+  <header class="hero">
+    <div class="app-icon" aria-hidden="true"><nz-icon nzType="video-camera" nzTheme="fill" /></div>
     <h1 class="title">Cipheroom</h1>
-    <p class="tagline">Video calls on your own server.</p>
-    <p class="e2ee"><nz-icon nzType="lock" /> Self-hosted · end-to-end encryption in progress</p>
+    <p class="subtitle">Private video calls on your own server.</p>
+  </header>
 
-    <form nz-form nzLayout="vertical" (ngSubmit)="join()">
-      <nz-form-item>
-        <nz-form-label nzFor="name" nzRequired>Your name</nz-form-label>
-        <nz-form-control nzErrorTip="Enter a name others will see">
-          <nz-input-wrapper>
-            <nz-icon nzInputPrefix nzType="user" />
-            <input
-              nz-input
-              id="name"
-              name="name"
-              [(ngModel)]="name"
-              maxlength="64"
-              required
-              autocomplete="nickname"
-              placeholder="e.g. Alex"
-            />
-          </nz-input-wrapper>
-        </nz-form-control>
-      </nz-form-item>
+  <form class="form" (ngSubmit)="join()">
+    <div class="group">
+      <div class="row">
+        <label class="row-label" for="name">Name</label>
+        <input
+          nz-input
+          nzVariant="borderless"
+          id="name"
+          name="name"
+          [(ngModel)]="name"
+          #nameModel="ngModel"
+          maxlength="64"
+          required
+          autocomplete="nickname"
+          placeholder="Your name"
+        />
+      </div>
+      <div class="row">
+        <label class="row-label" for="room">Room</label>
+        <input
+          nz-input
+          nzVariant="borderless"
+          id="room"
+          name="room"
+          [(ngModel)]="roomId"
+          #roomModel="ngModel"
+          pattern="[a-z0-9-]{3,64}"
+          required
+          autocapitalize="off"
+          autocorrect="off"
+          spellcheck="false"
+        />
+        <button
+          type="button"
+          class="regenerate"
+          nz-button
+          nzType="text"
+          nzShape="circle"
+          nz-tooltip
+          nzTooltipTitle="New random room"
+          aria-label="New random room"
+          (click)="regenerateRoom()"
+        >
+          <nz-icon nzType="reload" />
+        </button>
+      </div>
+    </div>
 
-      <nz-form-item>
-        <nz-form-label nzFor="room" nzRequired>Room</nz-form-label>
-        <nz-form-control nzErrorTip="3–64 characters: lowercase letters, digits and dashes">
-          <nz-input-wrapper>
-            <input
-              nz-input
-              id="room"
-              name="room"
-              [(ngModel)]="roomId"
-              pattern="[a-z0-9-]{3,64}"
-              required
-            />
-            <button
-              nzInputSuffix
-              type="button"
-              class="regenerate"
-              nz-button
-              nzType="text"
-              nzSize="small"
-              nz-tooltip
-              nzTooltipTitle="New random room"
-              aria-label="New random room"
-              (click)="regenerateRoom()"
-            >
-              <nz-icon nzType="reload" />
-            </button>
-          </nz-input-wrapper>
-        </nz-form-control>
-      </nz-form-item>
+    @if (roomModel.invalid && roomModel.dirty) {
+      <p class="footnote error" role="alert">
+        Room names use 3–64 characters: lowercase letters, digits and dashes.
+      </p>
+    } @else if (nameModel.invalid && nameModel.dirty) {
+      <p class="footnote error" role="alert">Enter a name others will see.</p>
+    } @else {
+      <p class="footnote">Share the room link with the people you want to call.</p>
+    }
 
-      <button
-        nz-button
-        nzType="primary"
-        nzBlock
-        nzSize="large"
-        type="submit"
-        [disabled]="!name().trim() || !validRoom()"
-      >
-        Join
-      </button>
-    </form>
-  </nz-card>
+    <button
+      nz-button
+      nzType="primary"
+      nzBlock
+      nzSize="large"
+      class="join"
+      type="submit"
+      [disabled]="!name().trim() || !validRoom()"
+    >
+      Join
+    </button>
+  </form>
+
+  <p class="e2ee"><nz-icon nzType="lock" /> Self-hosted · end-to-end encryption in progress</p>
 </main>

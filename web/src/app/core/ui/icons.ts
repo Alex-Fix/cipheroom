@@ -6,14 +6,14 @@ import {
   ExclamationCircleOutline,
   InfoCircleOutline,
   LockOutline,
-  LogoutOutline,
   MoreOutline,
   ReloadOutline,
   SoundOutline,
   TeamOutline,
   UnlockOutline,
-  UserOutline,
   VideoCameraOutline,
+  CloseOutline,
+  VideoCameraFill,
 } from '@ant-design/icons-angular/icons';
 import { IconDefinition } from '@ant-design/icons-angular';
 
@@ -30,12 +30,12 @@ export const APP_ICONS: IconDefinition[] = [
   ExclamationCircleOutline,
   InfoCircleOutline,
   LockOutline,
-  LogoutOutline,
   MoreOutline,
   ReloadOutline,
   SoundOutline,
   TeamOutline,
   UnlockOutline,
-  UserOutline,
   VideoCameraOutline,
+  CloseOutline,
+  VideoCameraFill,
 ];

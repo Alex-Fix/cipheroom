@@ -1,32 +1,58 @@
+// Floating frosted control bar (FaceTime-style). The `glass` material comes from styles.less.
 :host {
   display: flex;
   align-items: center;
-  justify-content: center;
   gap: 12px;
-  padding: 8px 0 4px;
+  padding: 10px;
+  border-radius: 999px;
 }
 
 .control {
-  width: 48px;
-  height: 48px;
-  font-size: 20px;
-  background: var(--surface);
-  border-color: var(--border);
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--glass-control);
+  color: #fff;
+  font-size: 22px;
+  cursor: pointer;
+  transition:
+    background-color 150ms ease-out,
+    color 150ms ease-out,
+    transform 100ms ease-out;
 
+  &:hover {
+    background: rgb(255 255 255 / 0.22);
+  }
+
+  &:active {
+    transform: scale(0.94);
+  }
+
+  // Apple convention: a toggled-off device is a white button with a dark glyph.
   &.off {
-    color: #fff;
-    background: var(--danger);
-    border-color: var(--danger);
+    background: #fff;
+    color: #000;
   }
 
   &.active {
-    color: #fff;
     background: var(--accent);
-    border-color: var(--accent);
+  }
+
+  &.leave {
+    margin-left: 8px;
+    background: var(--red);
+
+    &:hover {
+      background: color-mix(in srgb, var(--red) 85%, #000);
+    }
   }
 }
 
-// ant-design has no "camera off" icon: draw the slash.
+// ant-design has no "camera off" glyph: draw the slash.
 .slashed {
   position: relative;
 
@@ -34,32 +60,28 @@
     content: '';
     position: absolute;
     left: 50%;
-    top: -2px;
+    top: -3px;
     width: 2px;
-    height: calc(100% + 4px);
+    height: calc(100% + 6px);
     background: currentColor;
     transform: translateX(-50%) rotate(-45deg);
     border-radius: 1px;
   }
 }
 
-.leave {
-  height: 48px;
-  margin-left: 12px;
-}
-
-@media (max-width: 480px) {
+@media (max-width: 400px) {
   :host {
     gap: 8px;
+    padding: 8px;
   }
 
-  .leave {
-    margin-left: 0;
+  .control {
     width: 48px;
-    padding: 0;
-  }
+    height: 48px;
+    font-size: 20px;
 
-  .leave-label {
-    display: none;
+    &.leave {
+      margin-left: 0;
+    }
   }
 }

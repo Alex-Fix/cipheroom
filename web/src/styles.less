@@ -1,49 +1,99 @@
-// ng-zorro dark theme, per-component (see docs/plans/2026-10-06-ngzorro-ui-design.md).
-// Only import styles for components the app actually uses — keeps the initial bundle small.
-@import 'ng-zorro-antd/style/dark.less';
-@import 'ng-zorro-antd/style/entry.less';
-@import 'ng-zorro-antd/alert/style/entry.less';
-@import 'ng-zorro-antd/avatar/style/entry.less';
-@import 'ng-zorro-antd/badge/style/entry.less';
-@import 'ng-zorro-antd/button/style/entry.less';
-@import 'ng-zorro-antd/card/style/entry.less';
-@import 'ng-zorro-antd/drawer/style/entry.less';
-@import 'ng-zorro-antd/dropdown/style/entry.less';
-@import 'ng-zorro-antd/form/style/entry.less';
-@import 'ng-zorro-antd/grid/style/entry.less';
-@import 'ng-zorro-antd/input/style/entry.less';
-@import 'ng-zorro-antd/menu/style/entry.less';
-@import 'ng-zorro-antd/message/style/entry.less';
-@import 'ng-zorro-antd/popover/style/entry.less';
-@import 'ng-zorro-antd/result/style/entry.less';
-@import 'ng-zorro-antd/tag/style/entry.less';
-@import 'ng-zorro-antd/tooltip/style/entry.less';
-
-// Theme overrides (Less variables are lazy: last definition wins everywhere).
-@blue-base: #4f8cff;
-@body-background: #0f1115;
-@component-background: #1a1d24;
-@popover-background: #222630;
-@border-radius-base: 8px;
-@font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-
+// App-level design tokens (Apple system colours). ng-zorro's own themes are src/theme/theme-{light,dark}.less,
+// linked from index.html so the browser picks one by prefers-color-scheme; calls force dark via [data-theme].
 :root {
+  color-scheme: light;
+  --bg: #f2f2f7;
+  --bg-elevated: #ffffff;
+  --bg-tile: #e5e5ea;
+  --label: #000000;
+  --label-secondary: rgb(60 60 67 / 0.6);
+  --label-tertiary: rgb(60 60 67 / 0.3);
+  --separator: rgb(60 60 67 / 0.29);
+  --fill: rgb(120 120 128 / 0.12);
+  --accent: #007aff;
+  --red: #ff3b30;
+  --green: #34c759;
+  --orange: #ff9500;
+  --glass: rgb(255 255 255 / 0.72);
+  --glass-border: rgb(0 0 0 / 0.08);
+  --glass-control: rgb(120 120 128 / 0.16);
+  --shadow: 0 8px 32px rgb(0 0 0 / 0.12);
+}
+
+@dark: {
   color-scheme: dark;
-  --bg: #0f1115;
-  --surface: #1a1d24;
-  --border: #2a2f3a;
-  --text: #e6e8ee;
-  --muted: #8a92a6;
-  --accent: #4f8cff;
-  --danger: #e5484d;
-  --warn: #f5a524;
+  --bg: #000000;
+  --bg-elevated: #1c1c1e;
+  --bg-tile: #1c1c1e;
+  --label: #ffffff;
+  --label-secondary: rgb(235 235 245 / 0.6);
+  --label-tertiary: rgb(235 235 245 / 0.3);
+  --separator: rgb(84 84 88 / 0.65);
+  --fill: rgb(120 120 128 / 0.24);
+  --accent: #0a84ff;
+  --red: #ff453a;
+  --green: #30d158;
+  --orange: #ff9f0a;
+  --glass: rgb(30 30 32 / 0.62);
+  --glass-border: rgb(255 255 255 / 0.1);
+  --glass-control: rgb(255 255 255 / 0.14);
+  --shadow: 0 8px 32px rgb(0 0 0 / 0.5);
+};
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    @dark();
+  }
+}
+
+:root[data-theme='dark'] {
+  @dark();
 }
 
 html,
 body {
   margin: 0;
+  min-height: 100%;
   background: var(--bg);
-  color: var(--text);
+  color: var(--label);
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
 }
 
-.muted { color: var(--muted); }
+.muted {
+  color: var(--label-secondary);
+}
+
+// Frosted material (HIG "materials"). Opaque when the user asks for reduced transparency.
+.glass {
+  background: var(--glass);
+  border: 0.5px solid var(--glass-border);
+  -webkit-backdrop-filter: saturate(180%) blur(24px);
+  backdrop-filter: saturate(180%) blur(24px);
+  box-shadow: var(--shadow);
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .glass {
+    background: var(--bg-elevated);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+// Visible keyboard focus everywhere (mouse clicks don't show it).
+:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--accent) 60%, transparent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}

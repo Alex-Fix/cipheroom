@@ -1,11 +1,9 @@
 import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
 import { ConnectionState } from 'livekit-client';
-import { NzBadgeModule } from 'ng-zorro-antd/badge';
 import { NzButtonModule } from 'ng-zorro-antd/button';
 import { NzIconModule } from 'ng-zorro-antd/icon';
 import { NzInputModule } from 'ng-zorro-antd/input';
 import { NzPopoverModule } from 'ng-zorro-antd/popover';
-import { NzTagModule } from 'ng-zorro-antd/tag';
 import { NzTooltipModule } from 'ng-zorro-antd/tooltip';
 
 export type CallStatus = 'connecting' | 'connected' | 'reconnecting' | 'disconnected' | 'failed';
@@ -29,37 +27,25 @@ export function callStatus(state: ConnectionState, joined: boolean, failed = fal
   }
 }
 
-const BADGE: Record<
-  CallStatus,
-  { status: 'success' | 'processing' | 'warning' | 'error'; text: string }
-> = {
-  connecting: { status: 'processing', text: 'Connecting…' },
-  connected: { status: 'success', text: 'Connected' },
-  reconnecting: { status: 'warning', text: 'Reconnecting…' },
-  disconnected: { status: 'error', text: 'Disconnected' },
-  failed: { status: 'error', text: 'Not connected' },
+const STATUS_TEXT: Record<CallStatus, string> = {
+  connecting: 'Connecting…',
+  connected: 'Connected',
+  reconnecting: 'Reconnecting…',
+  disconnected: 'Disconnected',
+  failed: 'Not connected',
 };
 
 /** Call header: room id + copy, connection state, encryption state, participant count. Presentational. */
 @Component({
   selector: 'app-call-header',
-  imports: [
-    NzBadgeModule,
-    NzButtonModule,
-    NzIconModule,
-    NzInputModule,
-    NzPopoverModule,
-    NzTagModule,
-    NzTooltipModule,
-  ],
+  imports: [NzButtonModule, NzIconModule, NzInputModule, NzPopoverModule, NzTooltipModule],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="room">
       <span class="room-id" [title]="roomId()">{{ roomId() }}</span>
       <button
-        nz-button
-        nzType="text"
-        class="copy"
+        type="button"
+        class="icon-button glass copy"
         aria-label="Copy invite link"
         nz-tooltip
         nzTooltipTitle="Copy invite link"
@@ -82,43 +68,46 @@ const BADGE: Record<
           [value]="link()"
           (focus)="$any($event.target).select()"
           aria-label="Invite link"
-          autofocus
         />
       </ng-template>
     </div>
 
-    <div class="status">
-      <nz-badge
-        class="state"
-        [class.compact-hidden]="status() === 'connected'"
-        [nzStatus]="badge().status"
-        [nzText]="badge().text"
-      />
+    <div class="status glass">
+      <span class="state" [attr.data-status]="status()">
+        <span class="dot" aria-hidden="true"></span>
+        <span class="state-text">{{ statusText() }}</span>
+      </span>
+
       @if (status() === 'disconnected') {
-        <button nz-button nzSize="small" class="rejoin" (click)="rejoin.emit()">
-          <nz-icon nzType="reload" /> Rejoin
+        <button
+          nz-button
+          nzType="primary"
+          nzShape="round"
+          nzSize="small"
+          class="rejoin"
+          (click)="rejoin.emit()"
+        >
+          Rejoin
         </button>
       }
 
+      <span class="divider" aria-hidden="true"></span>
+
       @if (encrypted()) {
-        <nz-tag
-          class="e2ee"
-          nzColor="success"
-          nz-tooltip
-          nzTooltipTitle="Media is end-to-end encrypted"
-        >
-          <nz-icon nzType="lock" /> <span class="tag-text">Encrypted</span>
-        </nz-tag>
+        <span class="e2ee secure" nz-tooltip nzTooltipTitle="Media is end-to-end encrypted">
+          <nz-icon nzType="lock" /> <span class="label">Encrypted</span>
+        </span>
       } @else {
-        <nz-tag
+        <span
           class="e2ee"
-          nzColor="warning"
           nz-tooltip
           nzTooltipTitle="End-to-end encryption isn't enabled in this build yet. The server can see this call."
         >
-          <nz-icon nzType="unlock" /> <span class="tag-text">Not encrypted yet</span>
-        </nz-tag>
+          <nz-icon nzType="unlock" /> <span class="label">Not encrypted yet</span>
+        </span>
       }
+
+      <span class="divider" aria-hidden="true"></span>
 
       <span
         class="count"
@@ -146,5 +135,5 @@ export class CallHeader {
   readonly manualCopyClosed = output();
   readonly rejoin = output();
 
-  protected readonly badge = computed(() => BADGE[this.status()]);
+  protected readonly statusText = computed(() => STATUS_TEXT[this.status()]);
 }

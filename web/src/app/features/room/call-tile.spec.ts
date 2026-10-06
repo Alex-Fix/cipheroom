@@ -29,15 +29,15 @@ function render(t: Tile): HTMLElement {
 const fakeTrack = () => ({ attach: vi.fn(), detach: vi.fn() }) as unknown as Track;
 
 describe('CallTile', () => {
-  it('shows initials avatar when there is no video', () => {
+  it('shows an initials monogram when there is no video', () => {
     const el = render(tile());
-    expect(el.querySelector('nz-avatar')?.textContent).toContain('AP');
+    expect(el.querySelector('.monogram')?.textContent).toContain('AP');
     expect(el.querySelector('video')).toBeNull();
   });
 
   it('shows video instead of avatar and mirrors only the local camera', () => {
     const local = render(tile({ video: fakeTrack(), isLocal: true }));
-    expect(local.querySelector('nz-avatar')).toBeNull();
+    expect(local.querySelector('.monogram')).toBeNull();
     expect(local.querySelector('video')?.classList).toContain('mirror');
   });
 
@@ -51,7 +51,7 @@ describe('CallTile', () => {
 
   it('tags screen shares and does not mirror them', () => {
     const el = render(tile({ isScreen: true, isLocal: true, video: fakeTrack(), micMuted: true }));
-    expect(el.querySelector('nz-tag')?.textContent).toContain('Screen');
+    expect(el.querySelector('.screen-tag')?.textContent).toContain('Screen');
     expect(el.querySelector('.mic-off')).toBeNull();
     expect(el.querySelector('video')?.classList).not.toContain('mirror');
   });

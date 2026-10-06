@@ -1,13 +1,12 @@
 import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
 import { NzDrawerModule } from 'ng-zorro-antd/drawer';
-import { NzTagModule } from 'ng-zorro-antd/tag';
 import { Diagnostics } from '../../core/livekit/livekit.service';
 import { IcePath } from '../../core/livekit/ice-path';
 
 /** Connection path details (which ICE candidates / TURN transport are in use). Presentational. */
 @Component({
   selector: 'app-diagnostics-drawer',
-  imports: [NzDrawerModule, NzTagModule],
+  imports: [NzDrawerModule],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <nz-drawer
@@ -25,9 +24,9 @@ import { IcePath } from '../../core/livekit/ice-path';
             <dt>{{ row.label }}</dt>
             <dd>
               @if (row.path; as path) {
-                <nz-tag [nzColor]="path.localType === 'relay' ? 'blue' : 'default'">{{
+                <span class="pill" [class.relay]="path.localType === 'relay'">{{
                   path.localType
-                }}</nz-tag>
+                }}</span>
                 ⇄ {{ path.remoteType }}
                 <div class="detail">
                   {{ path.protocol
@@ -56,7 +55,7 @@ import { IcePath } from '../../core/livekit/ice-path';
       margin: 0;
     }
     dt {
-      color: var(--muted);
+      color: var(--label-secondary);
     }
     dd {
       margin: 0;
@@ -64,7 +63,18 @@ import { IcePath } from '../../core/livekit/ice-path';
     .detail {
       margin-top: 4px;
       font-size: 12px;
-      color: var(--muted);
+      color: var(--label-secondary);
+    }
+    .pill {
+      padding: 1px 8px;
+      border-radius: 999px;
+      background: var(--fill);
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .pill.relay {
+      background: color-mix(in srgb, var(--accent) 25%, transparent);
+      color: var(--accent);
     }
     .mono {
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace;

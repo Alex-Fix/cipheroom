@@ -1,35 +1,126 @@
 .home {
-  display: grid;
-  place-items: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 28px;
   min-height: 100dvh;
-  padding: 16px;
+  padding: max(24px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+    max(24px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
   box-sizing: border-box;
 }
 
-.card {
-  width: min(100%, 400px);
+.hero {
+  text-align: center;
+}
+
+.app-icon {
+  display: grid;
+  place-items: center;
+  width: 72px;
+  height: 72px;
+  margin: 0 auto 16px;
+  border-radius: 16px; // ~22% of the size, like an app icon
+  background: linear-gradient(180deg, #5ac8fa 0%, #007aff 100%);
+  box-shadow: 0 6px 20px rgb(0 122 255 / 0.3);
+  color: #fff;
+  font-size: 34px;
 }
 
 .title {
   margin: 0;
-  font-size: 1.75rem;
-  font-weight: 600;
+  color: var(--label);
+  font-size: 34px; // HIG Large Title
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  line-height: 1.2;
 }
 
-.tagline {
-  margin: 0.25rem 0 0.5rem;
-  color: var(--muted);
+.subtitle {
+  margin: 6px 0 0;
+  color: var(--label-secondary);
+  font-size: 17px;
+}
+
+.form {
+  width: min(100%, 400px);
+}
+
+// Inset grouped list (Settings-style).
+.group {
+  overflow: hidden;
+  border-radius: 12px;
+  background: var(--bg-elevated);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  min-height: 48px;
+  padding: 0 8px 0 16px;
+
+  // Hairline separator inset from the leading edge, like iOS lists.
+  & + & {
+    position: relative;
+
+    &::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 16px;
+      right: 0;
+      height: 0.5px;
+      background: var(--separator);
+    }
+  }
+
+  input {
+    flex: 1;
+    padding-left: 0;
+    font-size: 17px;
+  }
+}
+
+.row-label {
+  width: 72px;
+  flex: none;
+  color: var(--label);
+  font-size: 17px;
+}
+
+.regenerate {
+  color: var(--accent);
+}
+
+.footnote {
+  margin: 8px 16px 20px;
+  color: var(--label-secondary);
+  font-size: 13px;
+
+  &.error {
+    color: var(--red);
+  }
+}
+
+.join {
+  height: 50px;
+  border-radius: 12px;
+  font-size: 17px;
+
+  // Apple dims the tinted button instead of turning it grey.
+  &[disabled] {
+    border-color: var(--accent);
+    background: var(--accent);
+    color: #fff;
+    opacity: 0.4;
+  }
 }
 
 .e2ee {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
-  margin-bottom: 1.5rem;
-  color: var(--muted);
-  font-size: 0.85rem;
-}
-
-.regenerate {
-  margin-right: -6px;
+  gap: 6px;
+  margin: 0;
+  color: var(--label-secondary);
+  font-size: 13px;
 }

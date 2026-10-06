@@ -25,7 +25,7 @@ web/src/app/
     home/        create/join room
     room/        room.ts (container) + call-header, call-tile, call-controls, diagnostics-drawer
   shared/        presentational components, pipes
-core/ui/icons.ts  every ng-zorro icon the app renders (static registry)
+core/ui/          icons.ts (static ng-zorro icon registry), theme.service.ts (OS appearance / forced dark)
 ```
 
 ## Conventions
@@ -39,17 +39,30 @@ core/ui/icons.ts  every ng-zorro icon the app renders (static registry)
 - Only `core/crypto` touches key material. Components get booleans/strings (e.g. safety code), never keys.
 - Feature containers (e.g. `Room`) inject services; their child components are presentational (inputs/outputs only).
 
-## UI kit: ng-zorro-antd (dark theme)
-Design: `docs/plans/2026-10-06-ngzorro-ui-design.md`.
-- Import the per-component `NzXxxModule` in each standalone component; nothing global beyond `app.config.ts`
+## Look & feel: Apple HIG on ng-zorro-antd
+Design: `docs/plans/2026-10-06-ngzorro-ui-design.md` (see "Revision: Apple-style").
+- **Appearance:** follows the OS (light/dark) everywhere; the call screen is always dark (`ThemeService.setForcedDark`).
+- **Tokens:** use the CSS variables from `src/styles.less` (`--bg`, `--bg-elevated`, `--label`, `--label-secondary`,
+  `--separator`, `--fill`, `--accent`, `--red`, `--green`, `--orange`, `--glass*`) — iOS system colours, defined for
+  both appearances. Never hard-code a colour that differs between light and dark.
+- **Materials:** add the global `glass` class for frosted surfaces (falls back to opaque with reduced transparency).
+- **Type:** system font stack (SF on Apple devices); HIG sizes — 34 large title, 22 title, 17 body/headline,
+  15 callout, 13 footnote. No web fonts.
+- **Targets:** ≥ 44 px on touch (`@media (pointer: coarse)`); respect `env(safe-area-inset-*)`.
+- **Conventions:** toggled-off device = white button with dark glyph; destructive = `--red`; grey monogram avatars;
+  inset grouped lists for forms; visible `:focus-visible` ring; honour `prefers-reduced-motion`.
+
+### ng-zorro specifics
+- Import the per-component `NzXxxModule` in each standalone component; global providers only in `app.config.ts`
   (`provideNzI18n(en_US)`, `provideNzIcons(APP_ICONS)`, `provideNzConfig`). ng-zorro 22 needs no `@angular/animations`.
-- Styles: `src/styles.less` imports the dark theme + **only the `<component>/style/entry.less` files we use**.
-  Using a new component → add its style entry there, or it renders unstyled. Theme tweaks are Less variable overrides
-  (`@blue-base`, `@component-background`, …) after the imports. Paths resolve via `stylePreprocessorOptions.includePaths`.
+- Themes: `src/theme/theme-{light,dark}.less` are non-injected bundles linked from `index.html` with
+  `media="(prefers-color-scheme: …)"` (no flash, no JS needed). Both share `_components.less` (**only the
+  `<component>/style/entry.less` files we use** — add one when using a new component) and `_apple.less` (shared
+  Less variable overrides). Their file names are unhashed, so nginx serves them with `expires -1`.
 - Icons: add to `core/ui/icons.ts`. **Never** enable dynamic icon loading (`NzIconService` fetch / CDN): CSP
   `connect-src 'self'` blocks it and a third-party fetch would leak who uses the app.
 - `NzMessageService` renders string content with `[innerHTML]`: only pass **constant strings** — never display names,
-  room ids, or error text from browsers/servers. Show those via template interpolation (e.g. `nz-result` subtitle).
+  room ids, or error text from browsers/servers. Show those via template interpolation.
 - Component SCSS stays SCSS; per-component style budget is 4 kB warn / 8 kB error.
 
 ## Commands

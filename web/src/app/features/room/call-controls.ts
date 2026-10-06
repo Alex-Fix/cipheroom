@@ -1,5 +1,4 @@
 import { ChangeDetectionStrategy, Component, input, output } from '@angular/core';
-import { NzButtonModule } from 'ng-zorro-antd/button';
 import { NzDropdownModule } from 'ng-zorro-antd/dropdown';
 import { NzIconModule } from 'ng-zorro-antd/icon';
 import { NzMenuModule } from 'ng-zorro-antd/menu';
@@ -8,13 +7,12 @@ import { NzTooltipModule } from 'ng-zorro-antd/tooltip';
 /** Bottom call control bar. Presentational: state in, intents out. */
 @Component({
   selector: 'app-call-controls',
-  imports: [NzButtonModule, NzDropdownModule, NzIconModule, NzMenuModule, NzTooltipModule],
+  imports: [NzDropdownModule, NzIconModule, NzMenuModule, NzTooltipModule],
   changeDetection: ChangeDetectionStrategy.OnPush,
+  host: { class: 'glass' },
   template: `
     <button
-      nz-button
-      nzShape="circle"
-      nzSize="large"
+      type="button"
       class="control mic"
       [class.off]="!micEnabled()"
       nz-tooltip
@@ -27,14 +25,12 @@ import { NzTooltipModule } from 'ng-zorro-antd/tooltip';
     </button>
 
     <button
-      nz-button
-      nzShape="circle"
-      nzSize="large"
+      type="button"
       class="control camera"
       [class.off]="!cameraEnabled()"
       nz-tooltip
-      [nzTooltipTitle]="cameraEnabled() ? 'Stop video' : 'Start video'"
-      [attr.aria-label]="cameraEnabled() ? 'Stop video' : 'Start video'"
+      [nzTooltipTitle]="cameraEnabled() ? 'Turn camera off' : 'Turn camera on'"
+      [attr.aria-label]="cameraEnabled() ? 'Turn camera off' : 'Turn camera on'"
       [attr.aria-pressed]="!cameraEnabled()"
       (click)="toggleCamera.emit()"
     >
@@ -43,9 +39,7 @@ import { NzTooltipModule } from 'ng-zorro-antd/tooltip';
 
     @if (canShareScreen()) {
       <button
-        nz-button
-        nzShape="circle"
-        nzSize="large"
+        type="button"
         class="control screen"
         [class.active]="screenShareEnabled()"
         nz-tooltip
@@ -59,9 +53,7 @@ import { NzTooltipModule } from 'ng-zorro-antd/tooltip';
     }
 
     <button
-      nz-button
-      nzShape="circle"
-      nzSize="large"
+      type="button"
       class="control more"
       nz-dropdown
       [nzDropdownMenu]="moreMenu"
@@ -80,15 +72,14 @@ import { NzTooltipModule } from 'ng-zorro-antd/tooltip';
     </nz-dropdown-menu>
 
     <button
-      nz-button
-      nzType="primary"
-      nzDanger
-      nzShape="round"
-      nzSize="large"
-      class="leave"
+      type="button"
+      class="control leave"
+      nz-tooltip
+      nzTooltipTitle="Leave call"
+      aria-label="Leave call"
       (click)="leave.emit()"
     >
-      <nz-icon nzType="logout" /> <span class="leave-label">Leave</span>
+      <nz-icon nzType="close" />
     </button>
   `,
   styleUrl: './call-controls.scss',

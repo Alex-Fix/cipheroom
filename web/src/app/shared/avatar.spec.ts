@@ -1,20 +1,4 @@
-import { AVATAR_PALETTE, avatarColor, initials } from './avatar';
-
-describe('avatarColor', () => {
-  it('is deterministic and always from the palette', () => {
-    for (const name of ['Alex', 'Олександр', '', 'a very long name with spaces', '🦊']) {
-      expect(avatarColor(name)).toBe(avatarColor(name));
-      expect(AVATAR_PALETTE).toContain(avatarColor(name));
-    }
-  });
-
-  it('spreads different names over several colours', () => {
-    const colours = new Set(
-      ['Alex', 'Bob', 'Carol', 'Dave', 'Eve', 'Mallory', 'Trent', 'Peggy'].map(avatarColor),
-    );
-    expect(colours.size).toBeGreaterThan(3);
-  });
-});
+import { initials } from './avatar';
 
 describe('initials', () => {
   it('takes the first letter of up to two words', () => {

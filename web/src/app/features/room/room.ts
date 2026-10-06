@@ -9,12 +9,12 @@ import {
   signal,
 } from '@angular/core';
 import { Router } from '@angular/router';
-import { NzAlertModule } from 'ng-zorro-antd/alert';
 import { NzButtonModule } from 'ng-zorro-antd/button';
+import { NzIconModule } from 'ng-zorro-antd/icon';
 import { NzMessageService } from 'ng-zorro-antd/message';
-import { NzResultModule } from 'ng-zorro-antd/result';
 import { LiveKitService } from '../../core/livekit/livekit.service';
 import { SignalingService } from '../../core/signaling/signaling.service';
+import { ThemeService } from '../../core/ui/theme.service';
 import { loadDisplayName } from '../home/home';
 import { CallControls } from './call-controls';
 import { CallHeader, callStatus } from './call-header';
@@ -25,15 +25,7 @@ import { DiagnosticsDrawer } from './diagnostics-drawer';
 /** Call screen container: owns the join/leave lifecycle and is the only place that talks to LiveKitService. */
 @Component({
   selector: 'app-room',
-  imports: [
-    CallControls,
-    CallHeader,
-    CallTile,
-    DiagnosticsDrawer,
-    NzAlertModule,
-    NzButtonModule,
-    NzResultModule,
-  ],
+  imports: [CallControls, CallHeader, CallTile, DiagnosticsDrawer, NzButtonModule, NzIconModule],
   providers: [LiveKitService],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './room.html',
@@ -46,6 +38,7 @@ export class Room implements OnInit, OnDestroy {
   private readonly router = inject(Router);
   private readonly signaling = inject(SignalingService);
   private readonly message = inject(NzMessageService);
+  private readonly theme = inject(ThemeService);
   protected readonly livekit = inject(LiveKitService);
 
   protected readonly error = signal<string | undefined>(undefined);
@@ -55,12 +48,15 @@ export class Room implements OnInit, OnDestroy {
 
   protected readonly link = location.href;
   protected readonly canShareScreen = typeof navigator.mediaDevices?.getDisplayMedia === 'function';
-  protected readonly status = computed(() => callStatus(this.livekit.state(), this.joined(), !!this.error()));
+  protected readonly status = computed(() =>
+    callStatus(this.livekit.state(), this.joined(), !!this.error()),
+  );
   protected readonly participants = computed(
     () => this.livekit.tiles().filter((t) => !t.isScreen).length,
   );
 
   async ngOnInit(): Promise<void> {
+    this.theme.setForcedDark(true);
     if (!loadDisplayName()) {
       void this.router.navigate(['/'], { queryParams: { room: this.roomId() } });
       return;
@@ -69,6 +65,7 @@ export class Room implements OnInit, OnDestroy {
   }
 
   async ngOnDestroy(): Promise<void> {
+    this.theme.setForcedDark(false);
     await this.teardown();
   }
 

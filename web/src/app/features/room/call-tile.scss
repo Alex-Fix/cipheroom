@@ -3,17 +3,25 @@
   display: grid;
   place-items: center;
   aspect-ratio: 16 / 9;
-  background: var(--surface);
-  border-radius: 12px;
+  background: var(--bg-tile);
+  border-radius: 18px;
   overflow: hidden;
-  outline: 2px solid transparent;
-  outline-offset: -2px;
-  transition: outline-color 120ms ease-out;
+  isolation: isolate;
 }
 
-:host(.speaking) {
-  outline-color: var(--accent);
-  box-shadow: 0 0 0 4px rgb(79 140 255 / 0.25);
+// Active speaker: a soft white ring (FaceTime-style), drawn above the video.
+:host::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 3px transparent;
+  transition: box-shadow 160ms ease-out;
+  pointer-events: none;
+}
+
+:host(.speaking)::after {
+  box-shadow: inset 0 0 0 3px rgb(255 255 255 / 0.9);
 }
 
 video {
@@ -22,6 +30,7 @@ video {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  z-index: -1;
 }
 
 :host(.screen) video {
@@ -33,25 +42,32 @@ video.mirror {
   transform: scaleX(-1);
 }
 
-.avatar {
-  font-size: 28px;
-  font-weight: 600;
+// Contacts-style monogram.
+.monogram {
+  display: grid;
+  place-items: center;
+  width: clamp(64px, 22%, 112px);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: linear-gradient(180deg, #a5abb8 0%, #858994 100%);
   color: #fff;
+  font-size: clamp(24px, 4vw, 40px);
+  font-weight: 600;
+  letter-spacing: 0.02em;
 }
 
 .caption {
   position: absolute;
-  left: 8px;
-  bottom: 8px;
-  max-width: calc(100% - 16px);
+  left: 12px;
+  bottom: 10px;
+  max-width: calc(100% - 24px);
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 2px 10px;
-  border-radius: 999px;
-  background: rgb(0 0 0 / 0.55);
+  color: #fff;
   font-size: 13px;
-  line-height: 22px;
+  font-weight: 600;
+  text-shadow: 0 1px 3px rgb(0 0 0 / 0.6);
 }
 
 .name {
@@ -61,9 +77,20 @@ video.mirror {
 }
 
 .mic-off {
-  color: var(--danger);
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: rgb(0 0 0 / 0.45);
+  font-size: 12px;
+  text-shadow: none;
 }
 
 .screen-tag {
-  margin: 0;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: rgb(0 0 0 / 0.45);
+  font-size: 11px;
+  text-shadow: none;
 }
