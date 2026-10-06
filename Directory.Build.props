@@ -11,6 +11,9 @@
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
 
+    <!-- All build output in one place: artifacts/{bin,obj,publish}/<Project>/<config> instead of per-project bin/obj. -->
+    <UseArtifactsOutput>true</UseArtifactsOutput>
+
     <Deterministic>true</Deterministic>
     <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
   </PropertyGroup>

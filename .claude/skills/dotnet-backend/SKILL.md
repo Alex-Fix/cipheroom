@@ -58,7 +58,9 @@ src/server/
 - **Packages:** versions only in `Directory.Packages.props`; free/open-source only. **Not MediatR or AutoMapper**
   (RPL-1.5/commercial since 2025). Mediator = `Mediator.Abstractions`/`Mediator.SourceGenerator` (MIT).
 - **Build:** `Directory.Build.props` sets net10.0, nullable, warnings as errors, `AnalysisLevel=latest-recommended`,
-  `EnforceCodeStyleInBuild`. Fix analyzer findings rather than suppressing; tests may use underscores (CA1707 off).
+  `EnforceCodeStyleInBuild`, `UseArtifactsOutput` (all output under `artifacts/{bin,obj,publish}/<Project>/<config>`,
+  gitignored — there are no per-project bin/obj folders). Fix analyzer findings rather than suppressing; tests may
+  use underscores (CA1707 off).
 
 ## Commands
 - Run: `dotnet watch --project src/server/Cipheroom.Api` (or `scripts/dev.sh`)
