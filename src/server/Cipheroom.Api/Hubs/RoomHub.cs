@@ -33,7 +33,7 @@ public sealed partial class RoomHub(
         await Groups.AddToGroupAsync(Context.ConnectionId, GroupName(roomId));
         await Clients.OthersInGroup(GroupName(roomId)).ParticipantJoined(self.ToDto());
 
-        logger.LogInformation("Participant {ParticipantId} joined room {RoomId}", self.Id, roomId);
+        LogJoined(logger, self.Id, roomId);
         return new JoinResult(self.Id, others.Select(p => p.ToDto()).ToList());
     }
 
@@ -60,10 +60,16 @@ public sealed partial class RoomHub(
 
         await Groups.RemoveFromGroupAsync(Context.ConnectionId, GroupName(left.RoomId));
         await Clients.Group(GroupName(left.RoomId)).ParticipantLeft(left.Id);
-        logger.LogInformation("Participant {ParticipantId} left room {RoomId}", left.Id, left.RoomId);
+        LogLeft(logger, left.Id, left.RoomId);
     }
 
     private static string GroupName(string roomId) => $"room:{roomId}";
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Participant {ParticipantId} joined room {RoomId}")]
+    private static partial void LogJoined(ILogger logger, string participantId, string roomId);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Participant {ParticipantId} left room {RoomId}")]
+    private static partial void LogLeft(ILogger logger, string participantId, string roomId);
 
     [GeneratedRegex("^[a-z0-9-]{3,64}$")]
     private static partial Regex RoomIdPattern();
