@@ -10,16 +10,18 @@ node_modules/
 dist/
 .angular/
 coverage/
+out-tsc/
+web/tmp/
+__screenshots__/
+*.log
 
-# IDE / OS
-.idea/**/workspace.xml
-.idea/**/tasks.xml
-.idea/**/usage.statistics.xml
-.idea/**/shelf/
+# IDE / OS (editor settings are personal; shared style lives in .editorconfig)
+.idea/
 .vs/
-.vscode/*
-!.vscode/extensions.json
+.vscode/
+.history/
 .DS_Store
+Thumbs.db
 
 # Secrets — never commit
 .env
