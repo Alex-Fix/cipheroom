@@ -1,6 +1,7 @@
 // Renders the app icons in public/ from the SVG masters in src/assets-src/. Run via scripts/icons.sh.
 // Outputs are committed, so builds never need this. Renderer: @resvg/resvg-js (MPL-2.0, devDependency).
 import { Resvg } from '@resvg/resvg-js';
+import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
@@ -54,8 +55,24 @@ const small = load('logo-small.svg');
 // iOS applies its own rounded mask to home-screen icons, so give it the full-bleed artwork (no tile clip).
 const fullBleed = full.replace(' clip-path="url(#tile)"', '');
 
-writeFileSync(out('logo.svg'), full);
-writeFileSync(out('favicon.svg'), small);
-writeFileSync(out('favicon.ico'), ico([16, 32, 48].map((size) => ({ size, data: png(small, size) }))));
-writeFileSync(out('apple-touch-icon.png'), png(fullBleed, 180));
-console.log('icons: logo.svg, favicon.svg, favicon.ico (16/32/48), apple-touch-icon.png (180)');
+const outputs = {
+  'logo.svg': Buffer.from(full),
+  'favicon.svg': Buffer.from(small),
+  'favicon.ico': ico([16, 32, 48].map((size) => ({ size, data: png(small, size) }))),
+  'apple-touch-icon.png': png(fullBleed, 180),
+};
+for (const [name, data] of Object.entries(outputs)) writeFileSync(out(name), data);
+
+// Browsers and Cloudflare cache icons by URL (favicons especially stubbornly): reference them with a content hash
+// so a changed logo is always fetched fresh.
+const version = (name) => createHash('sha256').update(outputs[name]).digest('hex').slice(0, 10);
+const REFERENCES = ['src/index.html', 'src/app/features/home/home.html'];
+for (const file of REFERENCES) {
+  const path = `${web}${file}`;
+  const html = readFileSync(path, 'utf8').replace(
+    /\b(logo\.svg|favicon\.svg|favicon\.ico|apple-touch-icon\.png)(\?v=[0-9a-f]+)?(?=")/g,
+    (_, name) => `${name}?v=${version(name)}`,
+  );
+  writeFileSync(path, html);
+}
+console.log('icons: logo.svg, favicon.svg, favicon.ico (16/32/48), apple-touch-icon.png (180); versioned links updated');
