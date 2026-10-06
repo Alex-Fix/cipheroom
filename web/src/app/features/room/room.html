@@ -7,35 +7,55 @@
     [manualCopy]="manualCopy()"
     (copyLink)="copyLink()"
     (manualCopyClosed)="manualCopy.set(false)"
+    (rejoin)="retry()"
   />
 
   @if (error(); as message) {
-    <p class="error">Could not join: {{ message }}</p>
-  }
-
-  @if (!livekit.canPlaybackAudio()) {
-    <button type="button" class="banner" (click)="livekit.startAudio()">
-      Click to enable audio
-    </button>
-  }
-
-  <section class="grid">
-    @for (tile of livekit.tiles(); track tile.key) {
-      <app-call-tile [tile]="tile" />
+    <nz-result
+      class="join-error"
+      nzStatus="error"
+      nzTitle="Couldn't join the call"
+      [nzSubTitle]="message"
+    >
+      <div nz-result-extra>
+        <button nz-button nzType="primary" class="retry" (click)="retry()">Retry</button>
+        <button nz-button class="home" (click)="leave()">Back to home</button>
+      </div>
+    </nz-result>
+  } @else {
+    @if (!livekit.canPlaybackAudio()) {
+      <nz-alert
+        class="audio-blocked"
+        nzType="info"
+        nzShowIcon
+        nzMessage="Your browser paused call audio until you interact with the page."
+        [nzAction]="enableAudio"
+      />
+      <ng-template #enableAudio>
+        <button nz-button nzType="primary" nzSize="small" (click)="livekit.startAudio()">
+          Enable audio
+        </button>
+      </ng-template>
     }
-  </section>
 
-  <app-call-controls
-    [micEnabled]="livekit.micEnabled()"
-    [cameraEnabled]="livekit.cameraEnabled()"
-    [screenShareEnabled]="livekit.screenShareEnabled()"
-    [canShareScreen]="canShareScreen"
-    (toggleMic)="setDevice('microphone', !livekit.micEnabled())"
-    (toggleCamera)="setDevice('camera', !livekit.cameraEnabled())"
-    (toggleScreenShare)="setDevice('screen', !livekit.screenShareEnabled())"
-    (openDiagnostics)="showDiagnostics.set(true)"
-    (leave)="leave()"
-  />
+    <section class="grid">
+      @for (tile of livekit.tiles(); track tile.key) {
+        <app-call-tile [tile]="tile" />
+      }
+    </section>
+
+    <app-call-controls
+      [micEnabled]="livekit.micEnabled()"
+      [cameraEnabled]="livekit.cameraEnabled()"
+      [screenShareEnabled]="livekit.screenShareEnabled()"
+      [canShareScreen]="canShareScreen"
+      (toggleMic)="setDevice('microphone', !livekit.micEnabled())"
+      (toggleCamera)="setDevice('camera', !livekit.cameraEnabled())"
+      (toggleScreenShare)="setDevice('screen', !livekit.screenShareEnabled())"
+      (openDiagnostics)="showDiagnostics.set(true)"
+      (leave)="leave()"
+    />
+  }
 
   <app-diagnostics-drawer
     [open]="showDiagnostics()"

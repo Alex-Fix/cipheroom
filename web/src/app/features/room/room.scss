@@ -1,35 +1,31 @@
-// Legacy controls — replaced by ng-zorro in call-controls/call-header.
-button {
-  font: inherit;
-  color: var(--text);
-  background: var(--accent);
-  border: 0;
-  border-radius: 8px;
-  padding: 0.5rem 1rem;
-  cursor: pointer;
-
-  &:disabled { opacity: 0.5; cursor: default; }
-  &.ghost { background: transparent; border: 1px solid var(--border); }
-  &.off { background: var(--surface); border: 1px solid var(--border); }
-  &.danger { background: var(--danger); }
-}
-
 .room {
-  display: grid;
-  grid-template-rows: auto auto 1fr auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
   height: 100dvh;
-  gap: 0.75rem;
-  padding: 0.75rem;
+  padding: 12px 16px;
   box-sizing: border-box;
 }
 
 .grid {
+  flex: 1;
+  min-height: 0;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
-  gap: 0.5rem;
+  gap: 8px;
   align-content: center;
   overflow: auto;
 }
 
-.error { color: var(--danger); }
-.banner { width: 100%; }
+.join-error {
+  flex: 1;
+  align-self: center;
+  max-width: 560px;
+}
+
+@media (max-width: 480px) {
+  .room {
+    padding: 8px;
+    gap: 8px;
+  }
+}
