@@ -9,47 +9,53 @@ want private calls without trusting a vendor, and it runs on a home computer wit
 
 > [!WARNING]
 > **Status: early development.** Calls work end to end, but **end-to-end encryption is not enabled yet**: media is
-> protected in transit (DTLS-SRTP) but the media server can technically see it. Don't use Cipheroom for anything
-> sensitive until E2EE lands. See the [roadmap](#roadmap).
+> protected in transit (DTLS-SRTP) but the media server — Cloudflare's Realtime SFU — can technically see it. Don't
+> use Cipheroom for anything sensitive until E2EE lands. See the [roadmap](#roadmap).
 
 ## Features
 
-- 🎥 Group video and audio calls via the [LiveKit](https://livekit.io) SFU (simulcast, adaptive quality)
-- 🖥️ Screen sharing
-- 🏠 Runs at home behind NAT: ingress via Cloudflare Tunnel, media via Cloudflare Realtime TURN
+- 🎥 Group video and audio calls through [Cloudflare Realtime SFU](https://developers.cloudflare.com/realtime/sfu/)
+  (simulcast; up to 4K, quality selectable; highest quality received by default)
+- 🖥️ Screen sharing, camera switching (front/rear on phones), active-speaker highlight, automatic reconnect
+- 🏠 Runs at home behind NAT or CGNAT: nothing at home needs to be reachable — ingress via Cloudflare Tunnel, media
+  straight between browsers and Cloudflare's edge
 - 💸 Free to run: uses only free tiers, with a usage guard planned to keep you inside them
-- 🔍 Built-in connection diagnostics (see whether media goes direct or via relay)
 - 🔐 *(in progress)* End-to-end encryption that no server can break, with verifiable safety codes
 
 ## How it works
 
 ```
-Browser ──HTTPS/WSS──▶ Cloudflare Tunnel ──▶ nginx ─┬─▶ .NET API (SignalR: rooms, keys, chat)
-   │                                               └─▶ LiveKit (signaling, /livekit)
-   └──media (UDP/TCP/TLS)──▶ Cloudflare TURN ◀──outbound── LiveKit (at home)
+Browser ──HTTPS/WSS──▶ Cloudflare Tunnel ──▶ nginx ──▶ .NET API (SignalR: rooms, media negotiation)
+   │                                                     │ HTTPS (app secret, server-side only)
+   └──media (WebRTC; TURN fallback)──▶ Cloudflare Realtime SFU ◀──┘
 ```
+
+The API runs at home and only makes outbound connections. It relays each browser's WebRTC offers to Cloudflare's SFU
+and checks that people only receive tracks from their own room; the media itself never passes through your machine.
 
 | Component | Tech |
 |---|---|
 | Backend | .NET 10, ASP.NET Core, SignalR |
-| Frontend | Angular 22, `livekit-client` |
-| Media server | LiveKit (self-hosted container) |
+| Frontend | Angular 22, plain WebRTC |
+| Media server | Cloudflare Realtime SFU (free tier: 1 TB/month egress, shared with TURN) |
 | Ingress | Cloudflare Tunnel (`cloudflared`) on one hostname |
-| NAT traversal | Cloudflare Realtime TURN (free 1 TB/month) |
+| NAT traversal | Not needed at home; Cloudflare Realtime TURN as fallback for restrictive client networks |
 | Runtime | Docker Compose |
 
-**Privacy model:** the API, LiveKit and the TURN relay are all treated as untrusted. With E2EE, every participant
+**Privacy model:** the API, Cloudflare's SFU and the TURN relay are all treated as untrusted. With E2EE, every participant
 encrypts media in the browser with keys exchanged as signed, encrypted envelopes. Servers only relay ciphertext.
 Metadata (who, when, IP addresses) remains visible to the servers and Cloudflare. Details:
 [`docs/architecture.md`](docs/architecture.md).
 
 ## Quick start (local development)
 
-Requirements: .NET 10 SDK, Node.js (LTS), Docker.
+Requirements: .NET 10 SDK, Node.js (LTS), and a Cloudflare Realtime SFU app (free; see step 2 below) — calls go
+through Cloudflare even in development.
 
 ```bash
 scripts/doctor.sh      # check your toolchain
-scripts/dev.sh         # LiveKit (Docker) + API on :5080 + Angular on :4200
+scripts/secrets.sh     # creates deploy/.env — fill in CF_SFU_APP_ID / CF_SFU_APP_SECRET
+scripts/dev.sh         # API on :5080 + Angular on :4200
 ```
 
 Open http://localhost:4200 in two browser windows and join the same room.
@@ -58,26 +64,28 @@ Open http://localhost:4200 in two browser windows and join the same room.
 
 You need a domain on Cloudflare (the free plan is fine) and a machine running Docker. No port forwarding.
 
-1. **Generate secrets**
+1. **Create `deploy/.env`**
    ```bash
-   scripts/secrets.sh     # creates deploy/.env and a LiveKit key/secret
+   scripts/secrets.sh     # creates deploy/.env and lists what still needs filling in
    ```
-2. **Cloudflare TURN**: Dashboard → Realtime → TURN Server → Create. Put the key ID and API token into
-   `CF_TURN_KEY_ID` and `CF_TURN_API_TOKEN` in `deploy/.env`.
-3. **Cloudflare Tunnel**: Zero Trust → Networks → Tunnels → Create (Cloudflared, Docker).
+2. **Cloudflare Realtime SFU** (required): Dashboard → Realtime → SFU → Create application. Put the app ID and app
+   secret into `CF_SFU_APP_ID` and `CF_SFU_APP_SECRET`.
+3. **Cloudflare TURN** (fallback for strict networks): Dashboard → Realtime → TURN Server → Create. Put the key ID and
+   API token into `CF_TURN_KEY_ID` and `CF_TURN_API_TOKEN`.
+4. **Cloudflare Tunnel**: Zero Trust → Networks → Tunnels → Create (Cloudflared, Docker).
    - Put the token into `TUNNEL_TOKEN`.
    - Add one public hostname, e.g. `call.example.com` → **HTTP** `web:8080`.
    - Use a *first-level* subdomain: the free Universal SSL certificate doesn't cover `a.b.example.com`.
-4. **Hostname**: set `PUBLIC_HOST=call.example.com` and `LIVEKIT_URL=wss://call.example.com/livekit` in `deploy/.env`.
-5. **Start**
+5. **Hostname**: set `PUBLIC_HOST=call.example.com` in `deploy/.env`.
+6. **Start**
    ```bash
    scripts/up.sh --tunnel
    scripts/security-check.sh https://call.example.com
    ```
 
-To check it from real networks, join from a phone on mobile data and open **Diagnostics** in the call. Both
-directions should show `relay`. If a network can't connect, see the contingencies in
-[`docs/architecture.md`](docs/architecture.md#nat--turn--free-no-public-ip).
+To check it from real networks, join from a phone on mobile data (Wi-Fi off) and a laptop in the same room. To test
+the TURN fallback, set `TURN_FORCE_RELAY=true` and run `scripts/up.sh --tunnel` again. Keep an eye on usage: 4K video
+is ~3.6 GB per viewer-hour against the 1 TB/month free tier — set up a Cloudflare billing notification.
 
 ### Operations
 
@@ -85,20 +93,22 @@ directions should show `relay`. If a network can't connect, see the contingencie
 |---|---|
 | `scripts/up.sh [--tunnel]` | Build and start the stack |
 | `scripts/down.sh` | Stop everything |
-| `scripts/logs.sh [service]` | Follow logs (`api`, `web`, `livekit`, `cloudflared`) |
+| `scripts/logs.sh [service]` | Follow logs (`api`, `web`, `cloudflared`) |
 | `scripts/test.sh [--server\|--web]` | Run tests |
 | `scripts/lint.sh [--fix]` | Formatting and lint |
 | `scripts/security-check.sh [url]` | Secret scan, dependency audit, security headers |
-| `scripts/secrets.sh [--force]` | Generate (or rotate) LiveKit credentials |
+| `scripts/secrets.sh` | Create `deploy/.env` and list required values that are still empty |
 
 ## Roadmap
 
-- [x] Group calls through LiveKit with Cloudflare TURN relay (no public IP)
+- [x] Group calls through Cloudflare Realtime SFU — nothing at home reachable from the internet (works behind CGNAT)
+- [x] Quality selection (up to 4K), simulcast, automatic reconnect
 - [x] Single-hostname deployment via Cloudflare Tunnel
 - [ ] **End-to-end encryption**: device identities, sender keys, rotation on join/leave, safety codes
 - [ ] Lobby and host admission
 - [ ] End-to-end encrypted chat
-- [ ] TURN usage guard (stay inside the free tier)
+- [ ] Usage guard for the Cloudflare Realtime free tier (SFU + TURN)
+- [ ] Connection diagnostics panel (hidden since the SFU switch)
 - [ ] "Source" link in the UI (AGPL §13)
 - [ ] MLS-based group keys for large rooms
 
@@ -108,7 +118,7 @@ directions should show `relay`. If a network can't connect, see the contingencie
 src/          .NET API (Domain, Application, Infrastructure, Api)
 tests/        .NET tests, one project per layer
 web/          Angular app
-deploy/       Docker Compose, nginx, LiveKit config
+deploy/       Docker Compose, nginx
 scripts/      dev and ops scripts
 docs/         architecture, signaling protocol, design plans
 .claude/      Claude Code skills and settings used to develop this project
@@ -137,4 +147,5 @@ If you run a modified version as a network service, you must offer its source co
 
 The logo and app icons are licensed separately under [CC BY-SA 4.0](LICENSE-ASSETS.md).
 
-Third-party components keep their own licenses. Notably, LiveKit is Apache-2.0 and is used as an unmodified container.
+Third-party components keep their own licenses. Media runs on Cloudflare Realtime (a hosted service, used within its
+free tier); everything that runs on your machine is open source.

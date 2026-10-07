@@ -1,6 +1,6 @@
 ---
 name: angular-frontend
-description: Conventions and scaffolding for the Cipheroom Angular frontend (standalone components, signals, SignalR client, livekit-client, crypto service boundaries, dev proxy, nginx Dockerfile). Use when creating or modifying anything under web/.
+description: Conventions and scaffolding for the Cipheroom Angular frontend (standalone components, signals, SignalR client, WebRTC media service, crypto service boundaries, dev proxy, nginx Dockerfile). Use when creating or modifying anything under web/.
 ---
 
 # Angular frontend
@@ -8,7 +8,7 @@ description: Conventions and scaffolding for the Cipheroom Angular frontend (sta
 ## Scaffold (first time only)
 ```bash
 npx @angular/cli@latest new web --directory web --routing --style=less --ssr=false --skip-git
-cd web && npm i @microsoft/signalr livekit-client
+cd web && npm i @microsoft/signalr
 ```
 Add `web/proxy.conf.json` proxying `/api` and `/hubs` (with `"ws": true`) to `http://localhost:5080`,
 and reference it from `angular.json` → `serve.options.proxyConfig`.
@@ -20,16 +20,18 @@ web/
     app.ts .html .less .spec.ts   root shell (router outlet)
     core/                app-wide singletons and providers — never import from features/
       signaling/         signaling.service.ts, signaling.types.ts   (SignalR wrapper, typed)
-      livekit/           livekit.service.ts, cameras.ts, ice-path.ts (Room, tracks → signals; see `livekit-media`)
-      settings/          display-name.ts                            (browser-local preferences)
+      media/             media.service.ts (one RTCPeerConnection to the SFU → signals; see `media`) + pure helpers:
+                         serial-queue, subscriptions, layers, quality, speaking, audio-playback, cameras, ice-path
+      settings/          display-name.ts, video-quality.ts          (browser-local preferences)
       ui/                icons.ts (static ng-zorro icon registry), theme.service.ts (OS appearance / forced dark)
-      crypto/            (planned) identity, sender keys, key provider, safety code, chat crypto (see `e2ee-media`)
-    shared/              reusable directives/pipes and pure template helpers (track.directive.ts, initials.ts)
+      crypto/            (planned) identity, sender keys, frame-crypto worker, safety code, chat crypto (`e2ee-media`)
+    shared/              reusable directives/pipes and pure template helpers (track.directive.ts,
+                         element-size.directive.ts, initials.ts)
     features/            routed screens; a feature never imports from another feature
       home/              home.ts .html .less .spec.ts, room-id.ts
       room/              room.ts .html .less .spec.ts (container), call-status.ts, participant-changes.ts,
                          device-error.ts, and one folder per child component:
-        call-header/  call-tile/  call-controls/  participants-panel/  diagnostics-drawer/
+        call-header/  call-tile/  call-controls/  participants-panel/  diagnostics-drawer/ (hidden for now)
   src/styles.less        global tokens/styles;  src/theme/  ng-zorro light/dark themes
   design/                logo masters for scripts/icons.sh (not part of the build)
 ```
@@ -49,9 +51,12 @@ web/
   `inject()` for DI, new control flow (`@if`, `@for`).
 - Zoneless change detection if the CLI default supports it; WebRTC/SignalR callbacks then just set signals.
 - Services in `core/` are `providedIn: 'root'` except room-scoped state, which is provided on the room route.
-- Video tiles: `track.attach(videoEl)` / `track.detach()` in a directive tied to the element lifecycle. Local preview muted.
-- LiveKit callbacks run outside Angular's knowledge — only ever write to signals from them.
-- E2EE worker: `new Worker(new URL('livekit-client/e2ee-worker', import.meta.url))` — check the Angular builder bundles it.
+- Media elements: `TrackDirective` sets `srcObject` for a `MediaStreamTrack`; audio plays through `AudioPlayback`
+  (autoplay unlock). Tiles report their size with `ElementSizeDirective` → `MediaService.setTileSize`.
+- WebRTC callbacks (`ontrack`, `onconnectionstatechange`, stats timers) only ever write to signals.
+- Only `MediaService` touches the peer connection, senders and receivers (see the `media` skill for its rules).
+- E2EE worker (planned): `new Worker(new URL('./frame-crypto.worker', import.meta.url))` — check the Angular builder
+  bundles it; CSP already allows `worker-src 'self' blob:`.
 - Only `core/crypto` touches key material. Components get booleans/strings (e.g. safety code), never keys.
 - Feature containers (e.g. `Room`) inject services; their child components are presentational (inputs/outputs only).
 
@@ -92,5 +97,5 @@ Design: `docs/plans/2026-10-06-ngzorro-ui-design.md` (see "Revision: Apple-style
 ## Dockerfile
 Multi-stage: `node:lts-alpine` build → `nginx:alpine` serving `dist/web/browser`, SPA fallback
 (`try_files $uri /index.html`), proxy `/api` and `/hubs` (WebSocket upgrade headers) to `api:8080`.
-Security headers: strict CSP (`script-src 'self'`, `worker-src 'self' blob:`, `connect-src 'self'` — LiveKit is same-origin under `/livekit/`), `Referrer-Policy: no-referrer`,
+Security headers: strict CSP (`script-src 'self'`, `worker-src 'self' blob:`, `connect-src 'self'` — WebRTC media to the SFU isn't governed by `connect-src`), `Referrer-Policy: no-referrer`,
 `Permissions-Policy: camera=(self), microphone=(self), display-capture=(self)`.

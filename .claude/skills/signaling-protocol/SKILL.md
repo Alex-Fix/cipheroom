@@ -5,7 +5,8 @@ description: How to add or change a SignalR app-signaling message in Cipheroom (
 
 # Changing the signaling protocol
 
-SignalR carries **app** signaling only. Media signaling (SDP/ICE) belongs to LiveKit — never add it here.
+SignalR is the only signaling channel: rooms, media negotiation with the SFU (the api relays SDP to Cloudflare — see
+the `media` skill) and, later, key envelopes and chat. SDP is opaque to the api: validate size/shape, never log it.
 
 A protocol change is incomplete unless **all** of these are updated in the same change:
 
