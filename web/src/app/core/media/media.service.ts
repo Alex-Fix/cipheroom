@@ -12,7 +12,6 @@ import {
 } from '../signaling/signaling.types';
 import { AudioPlayback } from './audio-playback';
 import { receiveLayer } from './layers';
-import { cameraCodecOrder } from './codecs';
 import { CallParticipant, Diagnostics, MediaState, Tile } from './media.types';
 import { VideoQuality, cameraEncodings, captureConstraints, supportedQualities } from './quality';
 import { SerialQueue } from './serial-queue';
@@ -331,7 +330,7 @@ export class MediaService implements OnDestroy {
         direction: 'sendonly',
         ...(source === 'camera' ? { sendEncodings: cameraEncodings(captureHeight(track)) } : {}),
       });
-      if (source === 'camera') preferCameraCodecs(transceiver);
+      if (source === 'camera') preferVp8(transceiver);
       try {
         await pc.setLocalDescription(await pc.createOffer());
         const answer = await this.signaling.publishTracks(pc.localDescription!.sdp, [
@@ -684,16 +683,15 @@ async function updateBitrates(sender: RTCRtpSender, height: number): Promise<voi
   await sender.setParameters(parameters);
 }
 
-/** H.264 first (hardware encoders, iOS), VP8 as the fallback — see `cameraCodecOrder`. */
-function preferCameraCodecs(transceiver: RTCRtpTransceiver): void {
-  const capabilities = (side: typeof RTCRtpReceiver | typeof RTCRtpSender | undefined) =>
-    side?.getCapabilities?.('video')?.codecs;
-  const codecs = capabilities(typeof RTCRtpReceiver === 'undefined' ? undefined : RTCRtpReceiver);
+/** VP8 first: simulcast support everywhere, and simple to frame-encrypt later (E2EE). */
+function preferVp8(transceiver: RTCRtpTransceiver): void {
+  const codecs =
+    typeof RTCRtpReceiver !== 'undefined'
+      ? RTCRtpReceiver.getCapabilities?.('video')?.codecs
+      : undefined;
   if (!codecs || !transceiver.setCodecPreferences) return;
-  const sendable =
-    capabilities(typeof RTCRtpSender === 'undefined' ? undefined : RTCRtpSender) ?? [];
-  const canSendH264 = sendable.some((c) => c.mimeType.toLowerCase() === 'video/h264');
-  transceiver.setCodecPreferences(cameraCodecOrder(codecs, canSendH264));
+  const isVp8 = (c: { mimeType: string }) => /vp8/i.test(c.mimeType);
+  transceiver.setCodecPreferences([...codecs.filter(isVp8), ...codecs.filter((c) => !isVp8(c))]);
 }
 
 /**
