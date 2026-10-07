@@ -1,0 +1,11 @@
+/* Web workers (e.g. core/crypto/frame-crypto.worker.ts): webworker globals instead of the DOM. */
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["es2022", "webworker"],
+    "types": []
+  },
+  "include": [
+    "src/**/*.worker.ts"
+  ]
+}

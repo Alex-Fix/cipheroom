@@ -1,4 +1,7 @@
 import { Injectable, OnDestroy, computed, effect, inject, signal, untracked } from '@angular/core';
+import { e2eeSpikeMode } from '../crypto/e2ee-spike';
+import { MediaKind } from '../crypto/frame-codec';
+import { FrameCrypto, frameTransformApi } from '../crypto/frame-transforms';
 import { Camera, CameraFacing, cameraFacing, hasRearCamera } from './cameras';
 import { selectedIcePath } from './ice-path';
 import { loadVideoQuality, saveVideoQuality } from '../settings/video-quality';
@@ -39,7 +42,8 @@ export interface Self {
  *   4K) as f/h/q simulcast, and receive the highest layer of every camera on screen (`q` when hidden).
  * - Recovery: ICE restart on connection loss; after two failed attempts `state` becomes 'disconnected' and the
  *   room rejoins.
- * - E2EE (next milestone) hooks in where senders and receivers are created.
+ * - E2EE: every sender and receiver gets the frame-crypto transform as it's created (`FrameCrypto`). SPIKE: only
+ *   with `?e2ee=spike`, using a fixed test key (docs/plans/2026-10-07-e2ee-media-design.md, step 1).
  */
 @Injectable()
 export class MediaService implements OnDestroy {
@@ -49,6 +53,7 @@ export class MediaService implements OnDestroy {
   private readonly speakingDetector = new SpeakingDetector();
 
   private pc?: RTCPeerConnection;
+  private frameCrypto?: FrameCrypto;
   private statsTimer?: ReturnType<typeof setInterval>;
   private statsTicks = 0;
   private recoveryTimer?: ReturnType<typeof setTimeout>;
@@ -150,11 +155,13 @@ export class MediaService implements OnDestroy {
 
   /** Opens the peer connection for a joined participant. Media is published later, per device. */
   connect(config: RtcConfig, self: Self): void {
+    this.frameCrypto = createFrameCrypto();
     const pc = new RTCPeerConnection({
       // Empty list (local dev): the SFU's own candidates are enough without TURN.
       ...(config.iceServers.length ? { iceServers: config.iceServers } : {}),
       iceTransportPolicy: config.forceRelay ? 'relay' : 'all',
       bundlePolicy: 'max-bundle',
+      ...this.frameCrypto?.peerConnectionConfig,
     });
     this.pc = pc;
     pc.ontrack = (event) => this.onRemoteTrack(event);
@@ -275,6 +282,8 @@ export class MediaService implements OnDestroy {
     document.removeEventListener('visibilitychange', this.onVisibilityChange);
     this.pc?.close();
     this.pc = undefined;
+    this.frameCrypto?.terminate();
+    this.frameCrypto = undefined;
     Object.values(this.localTracks()).forEach((t) => t?.stop());
     this.placeholders.forEach((t) => t.stop());
     this.placeholders.clear();
@@ -358,7 +367,9 @@ export class MediaService implements OnDestroy {
         direction: 'sendonly',
         ...(source === 'camera' ? { sendEncodings: cameraEncodings(captureHeight(track)) } : {}),
       });
-      if (source === 'camera') preferVp8(transceiver);
+      // Before the first frame leaves: frames are only ever sent encrypted.
+      this.frameCrypto?.attachSender(transceiver.sender, track.kind as MediaKind);
+      if (track.kind === 'video') preferVp8(transceiver);
       try {
         await pc.setLocalDescription(await pc.createOffer());
         const answer = await this.signaling.publishTracks(pc.localDescription!.sdp, [
@@ -540,6 +551,7 @@ export class MediaService implements OnDestroy {
   }
 
   private onRemoteTrack(event: RTCTrackEvent): void {
+    this.frameCrypto?.attachReceiver(event.receiver, event.track.kind as MediaKind);
     const key = event.transceiver.mid ? this.midToKey.get(event.transceiver.mid) : undefined;
     if (!key) return;
     this.remoteTracks.update((tracks) => new Map(tracks).set(key, event.track));
@@ -712,7 +724,23 @@ async function updateBitrates(sender: RTCRtpSender, height: number): Promise<voi
   await sender.setParameters(parameters);
 }
 
-/** VP8 first: simulcast support everywhere, and simple to frame-encrypt later (E2EE). */
+/**
+ * SPIKE: frame crypto with the fixed test key when `?e2ee=spike` / `?e2ee=passthrough` is set. Never falls back to
+ * plaintext: a browser without encoded transforms can't join then.
+ */
+function createFrameCrypto(): FrameCrypto | undefined {
+  const mode = e2eeSpikeMode();
+  if (!mode) return undefined;
+  const api = frameTransformApi();
+  if (!api) throw new Error("This browser can't encrypt calls.");
+  // Counts and codec names only — never frame contents or keys.
+  return new FrameCrypto(api, mode === 'passthrough', (stats) =>
+    console.info(`[cipheroom] e2ee ${mode} (${api})`, stats),
+  );
+}
+
+/** VP8 first for every video (camera and screen): simulcast support everywhere, and frame encryption keeps its
+ * fixed-size payload header in the clear (E2EE). */
 function preferVp8(transceiver: RTCRtpTransceiver): void {
   const codecs =
     typeof RTCRtpReceiver !== 'undefined'
