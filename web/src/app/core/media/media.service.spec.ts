@@ -27,7 +27,10 @@ class FakePeerConnection {
     return t;
   }
 
-  async createOffer() {
+  readonly offers: (RTCOfferOptions | undefined)[] = [];
+
+  async createOffer(options?: RTCOfferOptions) {
+    this.offers.push(options);
     return { type: 'offer' as const, sdp: `v=0 offer ${this.transceivers.length}` };
   }
 
@@ -50,8 +53,16 @@ class FakePeerConnection {
     this.signalingState = d.type === 'offer' ? 'have-remote-offer' : 'stable';
   }
 
+  stats = new Map<string, object>();
+
   async getStats() {
-    return new Map();
+    return this.stats;
+  }
+
+  /** Simulates the network changing the connection state. */
+  setConnectionState(state: RTCPeerConnectionState) {
+    this.connectionState = state;
+    this.onconnectionstatechange?.();
   }
 
   close() {
@@ -97,6 +108,8 @@ function setup() {
     renegotiate: vi.fn().mockResolvedValue(undefined),
     unsubscribeTracks: vi.fn().mockResolvedValue(undefined),
     setTrackMuted: vi.fn().mockResolvedValue(undefined),
+    selectVideoLayer: vi.fn().mockResolvedValue(undefined),
+    restartIce: vi.fn().mockResolvedValue('v=0 restart answer'),
   };
   const mic = fakeTrack('audio');
   const camera = fakeTrack('video', 'FaceTime HD Camera');
@@ -259,5 +272,145 @@ describe('MediaService', () => {
     expect(mic.stop).toHaveBeenCalled();
     expect(media.tiles()).toEqual([]);
     expect(media.state()).toBe('disconnected');
+  });
+
+  describe('quality and recovery', () => {
+    beforeEach(() => vi.useFakeTimers());
+    afterEach(() => vi.useRealTimers());
+
+    async function withBobsCamera() {
+      const ctx = setup();
+      ctx.signaling.subscribeTracks.mockResolvedValue({
+        offerSdp: null,
+        tracks: [{ participantId: 'bob', source: 'camera', mid: '6' }],
+      });
+      ctx.participants.set([
+        {
+          id: 'bob',
+          displayName: 'Bob',
+          tracks: [{ source: 'camera', kind: 'video', muted: false }],
+        },
+      ]);
+      await settle();
+      return ctx;
+    }
+
+    it('requests the layer a remote camera tile needs, debounced', async () => {
+      const { media, signaling } = await withBobsCamera();
+
+      media.setTileSize('bob:camera', 200);
+      media.setTileSize('bob:camera', 1200);
+      await vi.advanceTimersByTimeAsync(500);
+
+      expect(signaling.selectVideoLayer).toHaveBeenCalledTimes(1);
+      expect(signaling.selectVideoLayer).toHaveBeenCalledWith('6', 'f');
+
+      // Same layer again: nothing to send. Local tiles never request layers.
+      media.setTileSize('bob:camera', 1100);
+      media.setTileSize('me:camera', 50);
+      await vi.advanceTimersByTimeAsync(500);
+      expect(signaling.selectVideoLayer).toHaveBeenCalledTimes(1);
+    });
+
+    it('drops to the smallest layer while the tab is hidden', async () => {
+      const { media, signaling } = await withBobsCamera();
+      media.setTileSize('bob:camera', 1200);
+      await vi.advanceTimersByTimeAsync(500);
+
+      vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+      document.dispatchEvent(new Event('visibilitychange'));
+      await vi.advanceTimersByTimeAsync(500);
+
+      expect(signaling.selectVideoLayer).toHaveBeenLastCalledWith('6', 'q');
+    });
+
+    it('marks speaking participants from audio levels', async () => {
+      const { media, signaling, participants, pc } = setup();
+      signaling.subscribeTracks.mockResolvedValue({
+        offerSdp: null,
+        tracks: [{ participantId: 'bob', source: 'microphone', mid: '5' }],
+      });
+      participants.set([
+        {
+          id: 'bob',
+          displayName: 'Bob',
+          tracks: [{ source: 'microphone', kind: 'audio', muted: false }],
+        },
+      ]);
+      await settle();
+      pc.ontrack!({
+        transceiver: { mid: '5' } as RTCRtpTransceiver,
+        track: { id: 'bob-mic' } as MediaStreamTrack,
+      });
+
+      pc.stats.set('in', {
+        type: 'inbound-rtp',
+        kind: 'audio',
+        trackIdentifier: 'bob-mic',
+        audioLevel: 0.3,
+      });
+      await vi.advanceTimersByTimeAsync(250);
+
+      expect(media.participants().find((p) => p.identity === 'bob')!.isSpeaking).toBe(true);
+      expect(media.tiles().find((t) => t.key === 'bob:camera')!.isSpeaking).toBe(true);
+
+      pc.stats.set('in', {
+        type: 'inbound-rtp',
+        kind: 'audio',
+        trackIdentifier: 'bob-mic',
+        audioLevel: 0,
+      });
+      await vi.advanceTimersByTimeAsync(1500);
+      expect(media.participants().find((p) => p.identity === 'bob')!.isSpeaking).toBe(false);
+    });
+
+    it('restarts ICE when the connection fails and recovers', async () => {
+      const { media, signaling, pc } = setup();
+
+      pc.setConnectionState('failed');
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(media.state()).toBe('reconnecting');
+      expect(pc.offers.at(-1)).toEqual({ iceRestart: true });
+      expect(signaling.restartIce).toHaveBeenCalledWith('v=0 offer 0');
+      expect(pc.remoteDescriptions.at(-1)).toEqual({ type: 'answer', sdp: 'v=0 restart answer' });
+
+      pc.setConnectionState('connected');
+      expect(media.state()).toBe('connected');
+    });
+
+    it('waits briefly before restarting after a short disconnect', async () => {
+      const { signaling, pc } = setup();
+
+      pc.setConnectionState('disconnected');
+      await vi.advanceTimersByTimeAsync(1000);
+      pc.setConnectionState('connected');
+      await vi.advanceTimersByTimeAsync(5000);
+
+      expect(signaling.restartIce).not.toHaveBeenCalled();
+    });
+
+    it('gives up after two restarts so the room can rejoin', async () => {
+      const { media, signaling, pc } = setup();
+
+      pc.setConnectionState('failed');
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(10_000);
+      await vi.advanceTimersByTimeAsync(10_000);
+
+      expect(signaling.restartIce).toHaveBeenCalledTimes(2);
+      expect(media.state()).toBe('disconnected');
+    });
+
+    it('a rejected restart ends the call state as disconnected', async () => {
+      const { media, signaling, pc } = setup();
+      signaling.restartIce.mockRejectedValue(new Error('No media session.'));
+
+      pc.setConnectionState('failed');
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(media.state()).toBe('disconnected');
+      expect(pc.signalingState).toBe('stable');
+    });
   });
 });
