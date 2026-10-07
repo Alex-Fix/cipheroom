@@ -190,14 +190,30 @@ export class Room implements OnInit, OnDestroy {
       const { selfId } = await this.signaling.joinRoom(this.roomId(), displayName);
       this.media.connect(await this.signaling.getRtcConfig(), { id: selfId, displayName });
       this.joined.set(true);
-      await Promise.all([
-        devices.microphone ? this.setDevice('microphone', true) : undefined,
-        devices.camera ? this.setDevice('camera', true) : undefined,
-      ]);
+      await this.publishOwnTracks(devices);
+      this.media.startReceiving();
     } catch (e) {
       // Shown via interpolation only — never through nz-message (renders HTML).
       this.error.set(e instanceof Error ? e.message : String(e));
     }
+  }
+
+  /**
+   * Publishes our microphone and camera before we receive anyone else's tracks: iOS Safari can't add them once the
+   * connection began by answering the SFU. Devices that should be off are still published — the microphone muted,
+   * the camera as muted placeholder frames — so turning them on later never needs a new negotiation.
+   */
+  private async publishOwnTracks(devices: { microphone: boolean; camera: boolean }): Promise<void> {
+    await Promise.all([
+      this.setDevice('microphone', true).then(() =>
+        devices.microphone || !this.media.micEnabled()
+          ? undefined
+          : this.setDevice('microphone', false),
+      ),
+      devices.camera ? this.setDevice('camera', true) : undefined,
+    ]);
+    // Camera off, denied or missing: reserve its slot anyway.
+    if (!this.media.cameraEnabled()) await this.media.reserveCamera().catch(() => undefined);
   }
 
   /** Same devices as before; gives up (Try Again screen) after a few attempts in a row. */

@@ -32,6 +32,9 @@ export interface Self {
  *   track is disabled or swapped (placeholder frames keep the SFU track alive) and others learn it from TrackMuted.
  * - Subscriptions follow `SignalingService.participants`: newly published tracks are pulled, gone ones dropped.
  * - Every SFU/peer-connection mutation runs through one queue: negotiations must never overlap.
+ * - Negotiation order: our own tracks are published before we receive anyone else's (`startReceiving`). iOS Safari
+ *   can't add a camera once the connection began by answering the SFU's offer; the camera transceiver is therefore
+ *   always negotiated up front (`reserveCamera`), and later device changes only swap tracks.
  * - Quality: we send the camera at the chosen quality (`videoQuality`, default auto = best the camera has, up to
  *   4K) as f/h/q simulcast, and receive the highest layer of every camera on screen (`q` when hidden).
  * - Recovery: ICE restart on connection loss; after two failed attempts `state` becomes 'disconnected' and the
@@ -67,6 +70,8 @@ export class MediaService implements OnDestroy {
   private readonly placeholders = new Map<TrackSource, MediaStreamTrack>();
 
   private readonly self = signal<Self | undefined>(undefined);
+  /** Pulling others' tracks starts only after our own publishes (see class docs). */
+  private readonly receiving = signal(false);
   /** Real local capture tracks (not placeholders), by source. */
   private readonly localTracks = signal<Partial<Record<TrackSource, MediaStreamTrack>>>({});
   private readonly remoteTracks = signal<ReadonlyMap<TrackKey, MediaStreamTrack>>(new Map());
@@ -139,7 +144,7 @@ export class MediaService implements OnDestroy {
     // Follow the room: pull newly published tracks, drop ones that went away.
     effect(() => {
       const participants = this.signaling.participants();
-      if (this.self()) untracked(() => this.syncSubscriptions(participants));
+      if (this.self() && this.receiving()) untracked(() => this.syncSubscriptions(participants));
     });
   }
 
@@ -172,6 +177,23 @@ export class MediaService implements OnDestroy {
     if (!key.endsWith(':camera')) return;
     this.tileWidths.set(key, width);
     this.scheduleLayer(key);
+  }
+
+  /** Starts receiving the room's tracks. Call once our own devices have been published (or failed to). */
+  startReceiving(): void {
+    this.receiving.set(true);
+  }
+
+  /**
+   * Publishes the camera without capturing (placeholder frames, muted) when it isn't on, so turning it on later is a
+   * track swap rather than a new negotiation after we've started receiving.
+   */
+  async reserveCamera(): Promise<void> {
+    if (this.senders.has('camera')) return;
+    const placeholder = blankVideoTrack();
+    if (!placeholder) return;
+    await this.publish('camera', placeholder, { placeholder: true });
+    await this.signaling.setTrackMuted('camera', true);
   }
 
   /** Rejects with the browser's DOMException (e.g. NotAllowedError) when the device can't be used. */
@@ -260,6 +282,7 @@ export class MediaService implements OnDestroy {
     this.subscriptions.clear();
     this.midToKey.clear();
     this.self.set(undefined);
+    this.receiving.set(false);
     this.localTracks.set({});
     this.remoteTracks.set(new Map());
     this.speaking.set(new Set());
@@ -323,7 +346,12 @@ export class MediaService implements OnDestroy {
     }
   }
 
-  private publish(source: TrackSource, track: MediaStreamTrack): Promise<void> {
+  /** `placeholder`: the track is placeholder frames, not a capture (kept in `placeholders`, not shown locally). */
+  private publish(
+    source: TrackSource,
+    track: MediaStreamTrack,
+    { placeholder = false } = {},
+  ): Promise<void> {
     return this.queue.run(async () => {
       const pc = this.requirePc();
       const transceiver = pc.addTransceiver(track, {
@@ -346,7 +374,8 @@ export class MediaService implements OnDestroy {
         throw e;
       }
       this.senders.set(source, transceiver);
-      this.setLocalTrack(source, track);
+      if (placeholder) this.placeholders.set(source, track);
+      else this.setLocalTrack(source, track);
     });
   }
 

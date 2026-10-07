@@ -36,7 +36,12 @@ function fakeMedia() {
     setCamera: vi.fn().mockResolvedValue(undefined),
     setScreenShare: vi.fn().mockResolvedValue(undefined),
     startAudio: vi.fn().mockResolvedValue(undefined),
+    startReceiving: vi.fn(),
+    reserveCamera: vi.fn().mockResolvedValue(undefined),
   };
+  // Like the real service: a device that turned on reports enabled.
+  media.setMicrophone.mockImplementation(async (on: boolean) => media.micEnabled.set(on));
+  media.setCamera.mockImplementation(async (on: boolean) => media.cameraEnabled.set(on));
   // A new peer connection starts out connected (see MediaService.connect).
   media.connect.mockImplementation(() => media.state.set('connected'));
   return media;
@@ -104,7 +109,28 @@ describe('Room', () => {
     );
     expect(media.setMicrophone).toHaveBeenCalledWith(true);
     expect(media.setCamera).toHaveBeenCalledWith(true);
+    expect(media.reserveCamera).not.toHaveBeenCalled();
     expect(el.querySelector('app-call-controls')).not.toBeNull();
+  });
+
+  it("publishes its own tracks before receiving anyone else's (iOS Safari needs that order)", async () => {
+    const order: string[] = [];
+    await setup({
+      tweak: (lk) => {
+        lk.setMicrophone.mockImplementation(async () => void order.push('mic'));
+        lk.setCamera.mockImplementation(async () => void order.push('camera'));
+        lk.startReceiving.mockImplementation(() => order.push('receive'));
+      },
+    });
+    expect(order).toEqual(['mic', 'camera', 'receive']);
+  });
+
+  it('reserves the camera when it could not be turned on, then starts receiving', async () => {
+    const { media } = await setup({
+      tweak: (lk) => lk.setCamera.mockRejectedValue(new DOMException('denied', 'NotAllowedError')),
+    });
+    expect(media.reserveCamera).toHaveBeenCalledOnce();
+    expect(media.startReceiving).toHaveBeenCalledOnce();
   });
 
   it('sends people without a name to the home screen, keeping the room', async () => {
@@ -224,7 +250,8 @@ describe('Room', () => {
 
       expect(media.disconnect).toHaveBeenCalled();
       expect(signaling.joinRoom).toHaveBeenCalledTimes(2);
-      expect(media.setMicrophone).not.toHaveBeenCalled();
+      // The muted microphone is published again, then muted: unmuting later needs no new negotiation.
+      expect(media.setMicrophone.mock.calls).toEqual([[true], [false]]);
       expect(media.setCamera).toHaveBeenCalledWith(true);
     });
 

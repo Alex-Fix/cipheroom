@@ -130,6 +130,7 @@ function setup() {
   });
   const media = TestBed.inject(MediaService);
   media.connect(config, { id: 'me', displayName: 'Alex' });
+  media.startReceiving();
   return { media, signaling, participants, mic, camera, pc: FakePeerConnection.last };
 }
 
@@ -534,6 +535,70 @@ describe('MediaService', () => {
       participants.set([]);
       await vi.advanceTimersByTimeAsync(60_000);
       expect(signaling.subscribeTracks).toHaveBeenCalledTimes(3);
+    });
+  });
+
+  describe('negotiation order', () => {
+    it('does not pull anyone else before startReceiving', async () => {
+      const participants = signal<ParticipantDto[]>([
+        {
+          id: 'bob',
+          displayName: 'Bob',
+          tracks: [{ source: 'camera', kind: 'video', muted: false }],
+        },
+      ]);
+      const signaling = {
+        participants,
+        subscribeTracks: vi.fn().mockResolvedValue({ offerSdp: null, tracks: [] }),
+      };
+      vi.stubGlobal('RTCPeerConnection', FakePeerConnection);
+      TestBed.configureTestingModule({
+        providers: [MediaService, { provide: SignalingService, useValue: signaling }],
+      });
+      const media = TestBed.inject(MediaService);
+
+      media.connect(config, { id: 'me', displayName: 'Alex' });
+      await settle();
+      expect(signaling.subscribeTracks).not.toHaveBeenCalled();
+
+      media.startReceiving();
+      await settle();
+      expect(signaling.subscribeTracks).toHaveBeenCalledOnce();
+    });
+
+    it('reserves the camera with muted placeholder frames; turning it on later is a track swap', async () => {
+      const placeholder = fakeTrack('video', '', 180);
+      // jsdom has no canvas capture: provide one for the placeholder.
+      Object.defineProperty(HTMLCanvasElement.prototype, 'captureStream', {
+        configurable: true,
+        value: () => ({ getVideoTracks: () => [placeholder] }),
+      });
+      onTestFinished(() => {
+        delete (HTMLCanvasElement.prototype as { captureStream?: unknown }).captureStream;
+      });
+      vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null);
+      const { media, signaling, pc } = setup();
+
+      await media.reserveCamera();
+
+      expect(signaling.publishTracks).toHaveBeenCalledWith('v=0 offer 1', [
+        { mid: '0', source: 'camera' },
+      ]);
+      expect(signaling.setTrackMuted).toHaveBeenCalledWith('camera', true);
+      expect(media.cameraEnabled()).toBe(false);
+      expect(media.tiles()[0].video).toBeUndefined();
+
+      await media.setCamera(true);
+
+      expect(signaling.publishTracks).toHaveBeenCalledOnce();
+      expect(pc.transceivers[0].sender.replaceTrack).toHaveBeenCalled();
+      expect(placeholder.stop).toHaveBeenCalled();
+      expect(signaling.setTrackMuted).toHaveBeenLastCalledWith('camera', false);
+      expect(media.cameraEnabled()).toBe(true);
+
+      // Already reserved / published: nothing to do.
+      await media.reserveCamera();
+      expect(signaling.publishTracks).toHaveBeenCalledOnce();
     });
   });
 });
