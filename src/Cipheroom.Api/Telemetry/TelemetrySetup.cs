@@ -43,7 +43,8 @@ public static class TelemetrySetup
                 .AddAspNetCoreInstrumentation()
                 .AddHttpClientInstrumentation()
                 .AddRuntimeInstrumentation())
-            .WithLogging();
+            // Readable text in Loki, not just the template. Our messages hold ids, hashes and method names only.
+            .WithLogging(configureBuilder: null, configureOptions: o => o.IncludeFormattedMessage = true);
 
         if (!string.IsNullOrWhiteSpace(builder.Configuration["OTEL_EXPORTER_OTLP_ENDPOINT"]))
             telemetry.UseOtlpExporter();

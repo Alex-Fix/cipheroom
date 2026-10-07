@@ -155,8 +155,13 @@ Trace ↔ logs links in Grafana via trace id.
 
 ### 4. Data and state
 
-All telemetry lives in named Docker volumes at home. Retention: 7 days and a size cap per store (Prometheus, Loki,
-Tempo ~5 GB each). Nothing survives beyond that; nothing leaves the machine except the Analytics API queries
+All telemetry lives in named Docker volumes at home. Retention: 7 days in every store; Prometheus also has a 5 GB
+size cap (Loki and Tempo only expire by time — their volume is small at our scale; the host dashboard shows disk).
+The collector reports its own health (received / exported / failed per signal) to Prometheus. The api exports
+metrics every 30 s (`OTEL_METRIC_EXPORT_INTERVAL`), matching the scrape interval. Images are pinned: collector-contrib
+0.162.0, Prometheus v3.15.0, Loki 3.7.8, Tempo 2.10.8 (3.x later), Grafana 13.2.3, node-exporter v1.12.1, cAdvisor
+v0.55.1. On Docker Desktop, cAdvisor needs the Docker and containerd sockets mounted explicitly
+(`/var/run` resolves to macOS). Nothing survives beyond that; nothing leaves the machine except the Analytics API queries
 (outbound, read-only, our own account's numbers).
 
 ### 5. Failure modes

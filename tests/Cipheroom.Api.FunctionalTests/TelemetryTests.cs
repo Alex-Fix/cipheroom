@@ -134,6 +134,18 @@ public sealed class TelemetryTests(WebApplicationFactory<Program> factory) : ICl
     }
 
     [Fact]
+    public void Room_gauges_report_zero_before_anyone_joins()
+    {
+        var host = Host();
+        using var rooms = new MetricCollector<int>(
+            host.Services.GetRequiredService<IMeterFactory>(), CipheroomMetrics.MeterName, "cipheroom.rooms.active");
+
+        rooms.RecordObservableInstruments();
+
+        Assert.Equal(0, rooms.LastMeasurement?.Value);
+    }
+
+    [Fact]
     public void Room_hashes_are_keyed_stable_and_short()
     {
         var ids = new TelemetryIds(Options.Create(new TelemetryOptions { Secret = Secret }));

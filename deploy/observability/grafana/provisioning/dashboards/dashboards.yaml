@@ -1,0 +1,11 @@
+# Dashboards are JSON files in git (deploy/observability/grafana/dashboards), read-only in Grafana.
+apiVersion: 1
+
+providers:
+  - name: cipheroom
+    folder: Cipheroom
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+    options:
+      path: /var/lib/grafana/dashboards

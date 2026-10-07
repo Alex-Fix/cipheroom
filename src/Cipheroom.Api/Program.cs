@@ -4,6 +4,7 @@ using Cipheroom.Api.Hubs.Filters;
 using Cipheroom.Api.Telemetry;
 using Cipheroom.Application;
 using Cipheroom.Application.Common.Behaviours;
+using Cipheroom.Application.Common.Telemetry;
 using Cipheroom.Infrastructure;
 using Mediator;
 using Microsoft.AspNetCore.SignalR;
@@ -47,6 +48,9 @@ builder.Services.AddProblemDetails();
 builder.Services.AddHealthChecks();
 
 var app = builder.Build();
+
+// Created at startup, not on the first hub call: the room and participant gauges then read 0 instead of nothing.
+app.Services.GetRequiredService<CipheroomMetrics>();
 
 app.UseForwardedHeaders();
 app.UseExceptionHandler();
