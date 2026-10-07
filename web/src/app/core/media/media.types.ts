@@ -17,6 +17,8 @@ export interface Tile {
   micMuted: boolean;
   /** Mirror the preview: only your own front-facing camera (a mirrored rear camera would show text backwards). */
   mirror: boolean;
+  /** Remote only: we don't have this participant's media key yet, so their frames are dropped (never shown raw). */
+  securing: boolean;
 }
 
 /** One person in the call — i.e. someone who can receive your audio and video. */

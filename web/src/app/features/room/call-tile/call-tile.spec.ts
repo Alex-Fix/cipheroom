@@ -14,6 +14,7 @@ function tile(overrides: Partial<Tile> = {}): Tile {
     isSpeaking: false,
     micMuted: false,
     mirror: false,
+    securing: false,
     ...overrides,
   };
 }
@@ -40,6 +41,13 @@ describe('CallTile', () => {
     const el = render(tile());
     expect(el.querySelector('.monogram')?.textContent).toContain('AP');
     expect(el.querySelector('video')).toBeNull();
+  });
+
+  it('shows "Securing…" and no video until the participant’s key arrived', () => {
+    const el = render(tile({ video: fakeTrack(), securing: true }));
+    expect(el.querySelector('.securing')?.textContent).toContain('Securing…');
+    expect(el.querySelector('video')).toBeNull();
+    expect(el.querySelector('.monogram')).not.toBeNull();
   });
 
   it('shows video instead of the monogram, mirrored when asked (front camera)', () => {

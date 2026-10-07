@@ -27,6 +27,21 @@ async function setup() {
 }
 
 describe('Home', () => {
+  // A browser that can do encrypted calls (jsdom has WebCrypto Ed25519/X25519 but no encoded transforms).
+  beforeEach(() => vi.stubGlobal('RTCRtpScriptTransform', class {}));
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('tells browsers that can’t encrypt calls they can’t join, and disables Join', async () => {
+    vi.stubGlobal('RTCRtpScriptTransform', undefined);
+    vi.stubGlobal('RTCRtpSender', class {});
+    const { el, type, submit, fixture } = await setup();
+    await type('name', 'Alex');
+    await fixture.whenStable();
+
+    expect(el.textContent).toContain("This browser can't join encrypted calls.");
+    expect(submit.disabled).toBe(true);
+  });
+
   it('shows a validation message for an invalid room id and disables Join', async () => {
     const { el, type, submit } = await setup();
     await type('name', 'Alex');

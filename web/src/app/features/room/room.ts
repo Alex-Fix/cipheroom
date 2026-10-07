@@ -189,13 +189,18 @@ export class Room implements OnInit, OnDestroy {
     this.error.set(undefined);
     try {
       const displayName = loadDisplayName();
-      const identity = await this.crypto.identityBundle(this.roomId());
-      const { selfId } = await this.signaling.joinRoom(this.roomId(), displayName, identity);
-      this.media.connect(await this.signaling.getRtcConfig(), { id: selfId, displayName });
+      const roomId = this.roomId();
+      // Fails before joining when this browser can't encrypt: nobody ever sees us join unencrypted.
+      const identity = await this.crypto.identityBundle(roomId);
+      const { selfId } = await this.signaling.joinRoom(roomId, displayName, identity);
+      const frames = await this.crypto.start(roomId, selfId);
+      this.media.connect(await this.signaling.getRtcConfig(), { id: selfId, displayName }, frames);
       this.joined.set(true);
       await this.publishOwnTracks(devices);
       this.media.startReceiving();
     } catch (e) {
+      // Leave at once (e.g. encryption couldn't start): others must not see us half-joined.
+      await this.teardown();
       // Shown via interpolation only — never through nz-message (renders HTML).
       this.error.set(e instanceof Error ? e.message : String(e));
     }
@@ -241,6 +246,7 @@ export class Room implements OnInit, OnDestroy {
   private async teardown(): Promise<void> {
     this.joined.set(false);
     await this.media.disconnect();
+    this.crypto.stop();
     await this.signaling.leave();
   }
 }

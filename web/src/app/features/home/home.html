@@ -53,7 +53,11 @@
       </div>
     </div>
 
-    @if (roomModel.invalid && roomModel.dirty) {
+    @if (!supported()) {
+      <p class="footnote error" role="alert">
+        {{ unsupportedMessage }} Use a current Chrome, Safari or Firefox.
+      </p>
+    } @else if (roomModel.invalid && roomModel.dirty) {
       <p class="footnote error" role="alert">
         Room names use 3–64 characters: lowercase letters, digits and dashes.
       </p>
@@ -70,11 +74,11 @@
       nzSize="large"
       class="join"
       type="submit"
-      [disabled]="!name().trim() || !validRoom()"
+      [disabled]="!supported() || !name().trim() || !validRoom()"
     >
       Join
     </button>
   </form>
 
-  <p class="e2ee"><nz-icon nzType="lock" /> Self-hosted · end-to-end encryption in progress</p>
+  <p class="e2ee"><nz-icon nzType="lock" /> Self-hosted · end-to-end encrypted</p>
 </main>

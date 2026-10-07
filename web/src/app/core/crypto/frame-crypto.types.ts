@@ -11,7 +11,7 @@ export interface TransformOptions {
   kind: MediaKind;
   /** Receivers: whose keys decrypt it (unset until known — frames are dropped meanwhile). */
   participantId?: string;
-  /** Spike only: receive without decrypting, to prove the SFU carries ciphertext. */
+  /** Debug (`?e2ee=passthrough`): receive without decrypting, to prove the SFU carries ciphertext. */
   passThrough?: boolean;
 }
 

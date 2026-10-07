@@ -154,7 +154,7 @@ describe('FrameCryptor', () => {
     expect(await bob.decrypt(r, await aliceSends('audio', new Uint8Array(40)))).toBeDefined();
   });
 
-  it('passes received frames through undecrypted in pass-through mode (spike)', async () => {
+  it('passes received frames through undecrypted in pass-through mode (debug flag)', async () => {
     const sent = await aliceSends('audio', new Uint8Array(40));
     const before = new Uint8Array(sent.data).slice();
     const r = { ...receiver('audio', 'alice'), passThrough: true };

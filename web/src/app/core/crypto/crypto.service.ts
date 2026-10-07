@@ -18,6 +18,7 @@ import {
 } from './identity';
 import { SENDER_KEY_BYTES } from './keyring';
 import { SafetyCode, safetyCode } from './safety-code';
+import { E2EE_UNSUPPORTED } from './support';
 
 /** Bursts of joins/leaves within this window cause one rotation. */
 export const ROTATION_DEBOUNCE_MS = 300;
@@ -91,7 +92,8 @@ export class CryptoService implements OnDestroy {
 
   /**
    * Our public identity for this room, created on first use and kept for the call: a rejoin reuses it, so the
-   * safety code doesn't change. Rejects when this browser lacks Ed25519/X25519 — there are no unencrypted calls.
+   * safety code doesn't change. Rejects when this browser can't do encrypted calls (no encoded transforms or no
+   * Ed25519/X25519) — call it before joining; there are no unencrypted calls.
    */
   async identityBundle(roomId: string): Promise<IdentityBundle> {
     return (await this.ensureIdentity(roomId)).bundle;
@@ -106,7 +108,7 @@ export class CryptoService implements OnDestroy {
     this.stop();
     const identity = await this.ensureIdentity(roomId);
     const api = frameTransformApi();
-    if (!api) throw new Error(UNSUPPORTED);
+    if (!api) throw new Error(E2EE_UNSUPPORTED);
 
     const session: Session = {
       roomId,
@@ -151,6 +153,7 @@ export class CryptoService implements OnDestroy {
   }
 
   private async ensureIdentity(roomId: string): Promise<Identity> {
+    if (!frameTransformApi()) throw new Error(E2EE_UNSUPPORTED);
     if (!this.identity || this.identityRoom !== roomId) {
       this.identityRoom = roomId;
       this.identity = createIdentity(roomId);
@@ -159,7 +162,7 @@ export class CryptoService implements OnDestroy {
       return await this.identity;
     } catch {
       this.identity = undefined;
-      throw new Error(UNSUPPORTED);
+      throw new Error(E2EE_UNSUPPORTED);
     }
   }
 
@@ -313,8 +316,6 @@ export class CryptoService implements OnDestroy {
     if (run === this.safetyCodeRun) this.safetyCode.set(code);
   }
 }
-
-const UNSUPPORTED = "This browser can't encrypt calls.";
 
 function without(ids: ReadonlySet<string>, id: string): ReadonlySet<string> {
   if (!ids.has(id)) return ids;

@@ -159,7 +159,7 @@ describe('CryptoService', () => {
         new DOMException('', 'NotSupportedError'),
       );
       await expect(crypto.identityBundle(ROOM)).rejects.toThrow(
-        "This browser can't encrypt calls.",
+        "This browser can't join encrypted calls.",
       );
     });
 
@@ -167,7 +167,7 @@ describe('CryptoService', () => {
       const alice = server.client('alice');
       vi.stubGlobal('RTCRtpScriptTransform', undefined);
       vi.stubGlobal('RTCRtpSender', class {});
-      await expect(server.join(alice)).rejects.toThrow("This browser can't encrypt calls.");
+      await expect(server.join(alice)).rejects.toThrow("This browser can't join encrypted calls.");
     });
   });
 

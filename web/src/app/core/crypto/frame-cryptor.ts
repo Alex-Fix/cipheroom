@@ -18,7 +18,7 @@ export interface ReceiverState {
   kind: MediaKind;
   /** Whose keys decrypt this receiver; unset until the page knows (frames are dropped meanwhile). */
   participantId?: string;
-  /** Spike only: receive without decrypting (proves the SFU carries ciphertext). */
+  /** Debug (`?e2ee=passthrough`): receive without decrypting (proves the SFU carries ciphertext). */
   passThrough?: boolean;
   /** Frames were dropped for lack of a key: ask for a keyframe once it arrives. */
   waitingForKey: boolean;

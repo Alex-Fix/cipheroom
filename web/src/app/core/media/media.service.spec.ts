@@ -2,6 +2,8 @@ import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { SignalingService } from '../signaling/signaling.service';
 import { IdentityDto, ParticipantDto, RtcConfig } from '../signaling/signaling.types';
+import { CryptoService } from '../crypto/crypto.service';
+import { FrameCrypto } from '../crypto/frame-transforms';
 import { MediaService } from './media.service';
 
 /** Public keys only; the shape is all these tests need. */
@@ -107,6 +109,30 @@ function fakeTrack(kind: 'audio' | 'video', label = '', height = 720, maxHeight 
 
 const config: RtcConfig = { iceServers: [], forceRelay: false };
 
+/** CryptoService's frame transforms: records what gets attached. */
+function fakeFrames() {
+  return {
+    peerConnectionConfig: { encodedInsertableStreams: true },
+    attachSender: vi.fn(),
+    attachReceiver: vi.fn(),
+    terminate: vi.fn(),
+  };
+}
+
+/** Everyone counts as secured unless a test says otherwise. */
+function fakeCrypto() {
+  return { secured: signal<ReadonlySet<string>>(new Set(['bob'])) };
+}
+
+function bobWithCamera(): ParticipantDto {
+  return {
+    id: 'bob',
+    displayName: 'Bob',
+    identity,
+    tracks: [{ source: 'camera', kind: 'video', muted: false }],
+  };
+}
+
 function setup() {
   const participants = signal<ParticipantDto[]>([]);
   const signaling = {
@@ -132,13 +158,28 @@ function setup() {
   vi.stubGlobal('RTCPeerConnection', FakePeerConnection);
   vi.stubGlobal('navigator', { ...navigator, mediaDevices: devices });
 
+  const frames = fakeFrames();
+  const crypto = fakeCrypto();
   TestBed.configureTestingModule({
-    providers: [MediaService, { provide: SignalingService, useValue: signaling }],
+    providers: [
+      MediaService,
+      { provide: SignalingService, useValue: signaling },
+      { provide: CryptoService, useValue: crypto },
+    ],
   });
   const media = TestBed.inject(MediaService);
-  media.connect(config, { id: 'me', displayName: 'Alex' });
+  media.connect(config, { id: 'me', displayName: 'Alex' }, frames as unknown as FrameCrypto);
   media.startReceiving();
-  return { media, signaling, participants, mic, camera, pc: FakePeerConnection.last };
+  return {
+    media,
+    signaling,
+    participants,
+    mic,
+    camera,
+    pc: FakePeerConnection.last,
+    frames,
+    crypto,
+  };
 }
 
 /** Lets effects run and queued negotiations settle. */
@@ -566,11 +607,19 @@ describe('MediaService', () => {
       };
       vi.stubGlobal('RTCPeerConnection', FakePeerConnection);
       TestBed.configureTestingModule({
-        providers: [MediaService, { provide: SignalingService, useValue: signaling }],
+        providers: [
+          MediaService,
+          { provide: SignalingService, useValue: signaling },
+          { provide: CryptoService, useValue: fakeCrypto() },
+        ],
       });
       const media = TestBed.inject(MediaService);
 
-      media.connect(config, { id: 'me', displayName: 'Alex' });
+      media.connect(
+        config,
+        { id: 'me', displayName: 'Alex' },
+        fakeFrames() as unknown as FrameCrypto,
+      );
       await settle();
       expect(signaling.subscribeTracks).not.toHaveBeenCalled();
 
@@ -615,65 +664,38 @@ describe('MediaService', () => {
     });
   });
 
-  describe('with frame encryption (spike flag)', () => {
-    class FakeWorker {
-      static last: FakeWorker;
-      readonly posted: unknown[] = [];
-      terminated = false;
-      constructor() {
-        FakeWorker.last = this;
-      }
-      postMessage(message: unknown) {
-        this.posted.push(message);
-      }
-      addEventListener() {}
-      terminate() {
-        this.terminated = true;
-      }
-    }
-    class FakeScriptTransform {
-      constructor(
-        readonly worker: unknown,
-        readonly options: { side: string; kind: string; participantId?: string },
-      ) {}
-    }
-    const options = (target: object) =>
-      (target as { transform?: FakeScriptTransform }).transform?.options;
-
-    beforeEach(() => {
-      sessionStorage.setItem('cipheroom.e2eeSpike', 'spike');
-      vi.stubGlobal('Worker', FakeWorker);
-      vi.stubGlobal('RTCRtpScriptTransform', FakeScriptTransform);
+  describe('end-to-end encryption', () => {
+    it('opens the connection with the frame transforms’ settings', () => {
+      const { pc, frames } = setup();
+      expect(pc.config).toMatchObject(frames.peerConnectionConfig);
     });
-    afterEach(() => sessionStorage.clear());
 
     it('encrypts every sender from its first frame', async () => {
-      const { media, pc } = setup();
+      const { media, pc, frames } = setup();
       await media.setMicrophone(true);
-      await media.reserveCamera().catch(() => undefined);
+      await media.setCamera(true);
 
-      expect(options(pc.transceivers[0].sender)).toMatchObject({ side: 'send', kind: 'audio' });
-      expect(FakeWorker.last.posted[0]).toMatchObject({ type: 'setSendKey', keyIndex: 0 });
+      expect(frames.attachSender.mock.calls).toEqual([
+        [pc.transceivers[0].sender, 'audio'],
+        [pc.transceivers[1].sender, 'video'],
+      ]);
     });
 
-    it('decrypts every receiver with its participant’s keys, installed as they join and dropped as they leave', async () => {
-      const { signaling, participants, pc } = setup();
+    it('never publishes without frame transforms', async () => {
+      const { media, signaling } = setup();
+      await media.disconnect();
+      await expect(media.setMicrophone(true)).rejects.toThrow();
+      expect(signaling.publishTracks).not.toHaveBeenCalled();
+    });
+
+    it('decrypts every receiver with the keys of the participant it carries', async () => {
+      const { signaling, participants, pc, frames } = setup();
       signaling.subscribeTracks.mockResolvedValue({
         offerSdp: 'v=0 sfu offer',
         tracks: [{ participantId: 'bob', source: 'camera', mid: '6' }],
       });
-      participants.set([
-        {
-          id: 'bob',
-          displayName: 'Bob',
-          identity,
-          tracks: [{ source: 'camera', kind: 'video', muted: false }],
-        },
-      ]);
+      participants.set([bobWithCamera()]);
       await settle();
-      expect(FakeWorker.last.posted).toContainEqual(
-        expect.objectContaining({ type: 'setReceiveKey', participantId: 'bob', keyIndex: 0 }),
-      );
 
       const receiver = {} as RTCRtpReceiver;
       pc.ontrack!({
@@ -681,30 +703,24 @@ describe('MediaService', () => {
         receiver,
         track: fakeTrack('video'),
       });
-      expect(options(receiver)).toMatchObject({
-        side: 'receive',
-        kind: 'video',
-        participantId: 'bob',
-      });
-
-      participants.set([]);
-      await settle();
-      expect(FakeWorker.last.posted).toContainEqual({
-        type: 'removeParticipant',
-        participantId: 'bob',
-      });
+      expect(frames.attachReceiver).toHaveBeenCalledWith(receiver, 'video', 'bob');
     });
 
-    it('refuses to connect without encoded transforms — never falls back to plaintext', () => {
-      vi.stubGlobal('RTCRtpScriptTransform', undefined);
-      vi.stubGlobal('RTCRtpSender', class {});
-      expect(() => setup()).toThrow("This browser can't encrypt calls.");
+    it('shows remote tiles as securing until that participant’s key arrived', async () => {
+      const { media, participants, crypto } = setup();
+      crypto.secured.set(new Set());
+      participants.set([bobWithCamera()]);
+      expect(media.tiles().find((t) => t.key === 'bob:camera')?.securing).toBe(true);
+      expect(media.tiles().find((t) => t.isLocal)?.securing).toBe(false);
+
+      crypto.secured.set(new Set(['bob']));
+      expect(media.tiles().find((t) => t.key === 'bob:camera')?.securing).toBe(false);
     });
 
-    it('stops the worker when the call ends', async () => {
-      const { media } = setup();
+    it('leaves the worker to CryptoService when the call ends', async () => {
+      const { media, frames } = setup();
       await media.disconnect();
-      expect(FakeWorker.last.terminated).toBe(true);
+      expect(frames.terminate).not.toHaveBeenCalled();
     });
   });
 });

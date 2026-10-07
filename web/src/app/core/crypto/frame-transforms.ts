@@ -1,4 +1,5 @@
 import { InjectionToken } from '@angular/core';
+import { passThroughRequested } from './e2ee-debug';
 import { MediaKind } from './frame-codec';
 import { FrameStats, TransformOptions, WorkerRequest } from './frame-crypto.types';
 
@@ -36,7 +37,7 @@ export class FrameCrypto {
 
   constructor(
     private readonly api: FrameTransformApi,
-    /** Spike only: receive without decrypting (proves the SFU carries ciphertext). */
+    /** Debug (`?e2ee=passthrough`): receive without decrypting (proves the SFU carries ciphertext). */
     private readonly passThrough = false,
     onStats?: (stats: FrameStats) => void,
   ) {
@@ -120,5 +121,13 @@ export class FrameCrypto {
 /** Creates the call's FrameCrypto (replaced in tests: the real one starts a worker). */
 export const FRAME_CRYPTO_FACTORY = new InjectionToken<(api: FrameTransformApi) => FrameCrypto>(
   'FrameCryptoFactory',
-  { factory: () => (api) => new FrameCrypto(api) },
+  {
+    factory: () => (api) => {
+      const passThrough = passThroughRequested();
+      // Counts and codec names only — never frame contents or keys.
+      const log = (stats: FrameStats) =>
+        console.info(`[cipheroom] e2ee passthrough (${api})`, stats);
+      return new FrameCrypto(api, passThrough, passThrough ? log : undefined);
+    },
+  },
 );
