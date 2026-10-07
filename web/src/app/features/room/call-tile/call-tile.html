@@ -1,8 +1,12 @@
 @let t = tile();
-@if (t.video) {
+<!-- Securing: their key hasn't arrived, frames are being dropped — show the monogram, not a frozen frame. -->
+@if (t.video && !t.securing) {
   <video [appTrack]="t.video" autoplay playsinline [muted]="true" [class.mirror]="t.mirror"></video>
 } @else {
   <div class="monogram" aria-hidden="true">{{ initials() }}</div>
+}
+@if (t.securing) {
+  <div class="securing" role="status"><nz-icon nzType="lock" /> Securing…</div>
 }
 @if (t.audio) {
   <audio [appTrack]="t.audio" autoplay></audio>

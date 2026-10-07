@@ -10,7 +10,9 @@ import {
   AnswerDto,
   ClientEvents,
   HubMethods,
+  IdentityDto,
   JoinResult,
+  KeyEnvelopeDto,
   ParticipantDto,
   PublishTrackDto,
   RtcConfig,
@@ -21,9 +23,13 @@ import {
   VideoLayer,
 } from './signaling.types';
 
+/** A key envelope for us; `fromId` is who the server says sent it (verified against the envelope's signature). */
+export type KeyEnvelopeListener = (fromId: string, blob: string) => void;
+
 /**
- * All signaling over SignalR: rooms, and media negotiation with the SFU (the api relays SDP to Cloudflare; it never
- * sees media or keys). `participants` mirrors the room, including who publishes which tracks.
+ * All signaling over SignalR: rooms, media negotiation with the SFU (the api relays SDP to Cloudflare) and E2EE key
+ * envelopes (opaque to the api). The api never sees media or keys. `participants` mirrors the room, including who
+ * publishes which tracks and everyone's public identity.
  */
 @Injectable({ providedIn: 'root' })
 export class SignalingService {
@@ -31,10 +37,17 @@ export class SignalingService {
 
   readonly connected = signal(false);
   readonly participants = signal<ParticipantDto[]>([]);
+  private readonly keyEnvelopeListeners = new Set<KeyEnvelopeListener>();
 
-  async joinRoom(roomId: string, displayName: string): Promise<JoinResult> {
+  /** `identity`: our public keys for this call (from CryptoService); required — there are no unencrypted joins. */
+  async joinRoom(roomId: string, displayName: string, identity: IdentityDto): Promise<JoinResult> {
     const connection = await this.ensureConnected();
-    const result = await connection.invoke<JoinResult>(HubMethods.JoinRoom, roomId, displayName);
+    const result = await connection.invoke<JoinResult>(
+      HubMethods.JoinRoom,
+      roomId,
+      displayName,
+      identity,
+    );
     this.participants.set(result.participants);
     return result;
   }
@@ -80,6 +93,17 @@ export class SignalingService {
     await this.invoke(HubMethods.SelectVideoLayer, mid, layer);
   }
 
+  /** Sends sender-key envelopes, each relayed to its recipient only. One rotation = one call. */
+  async sendKeyEnvelopes(envelopes: KeyEnvelopeDto[]): Promise<void> {
+    await this.invoke(HubMethods.SendKeyEnvelopes, envelopes);
+  }
+
+  /** Envelopes addressed to us. Returns a function that removes the listener. */
+  onKeyEnvelope(listener: KeyEnvelopeListener): () => void {
+    this.keyEnvelopeListeners.add(listener);
+    return () => this.keyEnvelopeListeners.delete(listener);
+  }
+
   async leave(): Promise<void> {
     const connection = this.connection;
     this.connection = undefined;
@@ -114,6 +138,9 @@ export class SignalingService {
     );
     connection.on(ClientEvents.TrackMuted, (id: string, source: TrackSource, muted: boolean) =>
       this.participants.update((list) => withTrackMuted(list, id, source, muted)),
+    );
+    connection.on(ClientEvents.KeyEnvelopeReceived, (fromId: string, blob: string) =>
+      this.keyEnvelopeListeners.forEach((listener) => listener(fromId, blob)),
     );
     connection.onclose(() => this.connected.set(false));
 

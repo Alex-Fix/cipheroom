@@ -14,6 +14,7 @@ import { Router } from '@angular/router';
 import { NzButtonModule } from 'ng-zorro-antd/button';
 import { NzIconModule } from 'ng-zorro-antd/icon';
 import { NzMessageService } from 'ng-zorro-antd/message';
+import { CryptoService } from '../../core/crypto/crypto.service';
 import { MediaService } from '../../core/media/media.service';
 import { CallParticipant } from '../../core/media/media.types';
 import { VideoQuality } from '../../core/media/quality';
@@ -41,7 +42,7 @@ import { ParticipantsPanel } from './participants-panel/participants-panel';
     NzIconModule,
     ParticipantsPanel,
   ],
-  providers: [MediaService],
+  providers: [MediaService, CryptoService],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './room.html',
   styleUrl: './room.less',
@@ -55,6 +56,7 @@ export class Room implements OnInit, OnDestroy {
   private readonly message = inject(NzMessageService);
   private readonly theme = inject(ThemeService);
   protected readonly media = inject(MediaService);
+  protected readonly crypto = inject(CryptoService);
 
   protected readonly error = signal<string | undefined>(undefined);
   protected readonly showParticipants = signal(false);
@@ -77,6 +79,8 @@ export class Room implements OnInit, OnDestroy {
 
   private baseline?: readonly CallParticipant[];
   private noticeId = 0;
+  /** Last safety code seen in this call (kept across rejoins: a code that differs afterwards did change). */
+  private lastSafetyCode?: string;
 
   constructor() {
     // Every join and leave is announced (ghost-participant defence, docs/architecture.md). The first snapshot after
@@ -93,6 +97,17 @@ export class Room implements OnInit, OnDestroy {
         left.forEach((p) => this.notify(`${p.name} left`));
       }
       this.baseline = participants;
+    });
+
+    // A new safety code means the set of keys in the call changed: invite everyone to compare again.
+    effect(() => {
+      const code = this.crypto.safetyCode();
+      if (!code) return;
+      const current = `${code.emoji.map((e) => e.symbol).join('')} ${code.digits}`;
+      if (this.lastSafetyCode && current !== this.lastSafetyCode) {
+        untracked(() => this.notify('Safety code changed — compare it again'));
+      }
+      this.lastSafetyCode = current;
     });
 
     // Lost the media connection (ICE restarts gave up) or the signaling connection: rejoin from scratch.
@@ -187,12 +202,18 @@ export class Room implements OnInit, OnDestroy {
     this.error.set(undefined);
     try {
       const displayName = loadDisplayName();
-      const { selfId } = await this.signaling.joinRoom(this.roomId(), displayName);
-      this.media.connect(await this.signaling.getRtcConfig(), { id: selfId, displayName });
+      const roomId = this.roomId();
+      // Fails before joining when this browser can't encrypt: nobody ever sees us join unencrypted.
+      const identity = await this.crypto.identityBundle(roomId);
+      const { selfId } = await this.signaling.joinRoom(roomId, displayName, identity);
+      const frames = await this.crypto.start(roomId, selfId);
+      this.media.connect(await this.signaling.getRtcConfig(), { id: selfId, displayName }, frames);
       this.joined.set(true);
       await this.publishOwnTracks(devices);
       this.media.startReceiving();
     } catch (e) {
+      // Leave at once (e.g. encryption couldn't start): others must not see us half-joined.
+      await this.teardown();
       // Shown via interpolation only — never through nz-message (renders HTML).
       this.error.set(e instanceof Error ? e.message : String(e));
     }
@@ -238,6 +259,7 @@ export class Room implements OnInit, OnDestroy {
   private async teardown(): Promise<void> {
     this.joined.set(false);
     await this.media.disconnect();
+    this.crypto.stop();
     await this.signaling.leave();
   }
 }

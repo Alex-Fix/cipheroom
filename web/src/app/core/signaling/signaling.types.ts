@@ -12,10 +12,24 @@ export interface TrackDto {
   muted: boolean;
 }
 
+/** A participant's public E2EE keys for this call (base64url), self-signed by their browser. Public keys only. */
+export interface IdentityDto {
+  ed25519Pub: string;
+  x25519Pub: string;
+  sig: string;
+}
+
 export interface ParticipantDto {
   id: string;
   displayName: string;
   tracks: TrackDto[];
+  identity: IdentityDto;
+}
+
+/** A sender-key envelope for one recipient; `blob` is opaque to the server (signed, encrypted end to end). */
+export interface KeyEnvelopeDto {
+  toId: string;
+  blob: string;
 }
 
 export interface JoinResult {
@@ -71,6 +85,7 @@ export const HubMethods = {
   UnsubscribeTracks: 'UnsubscribeTracks',
   SetTrackMuted: 'SetTrackMuted',
   SelectVideoLayer: 'SelectVideoLayer',
+  SendKeyEnvelopes: 'SendKeyEnvelopes',
 } as const;
 
 /** Server → client events. */
@@ -80,4 +95,5 @@ export const ClientEvents = {
   TracksPublished: 'TracksPublished',
   TracksUnpublished: 'TracksUnpublished',
   TrackMuted: 'TrackMuted',
+  KeyEnvelopeReceived: 'KeyEnvelopeReceived',
 } as const;

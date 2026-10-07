@@ -1,13 +1,16 @@
 import { withTrackMuted, withTracksPublished, withTracksUnpublished } from './participants';
-import { ParticipantDto, TrackDto } from './signaling.types';
+import { IdentityDto, ParticipantDto, TrackDto } from './signaling.types';
+
+/** Public keys only; the shape is all these tests need. */
+const identity: IdentityDto = { ed25519Pub: 'ed', x25519Pub: 'x', sig: 'sig' };
 
 const mic: TrackDto = { source: 'microphone', kind: 'audio', muted: false };
 const cam: TrackDto = { source: 'camera', kind: 'video', muted: false };
 const screen: TrackDto = { source: 'screen', kind: 'video', muted: false };
 
 const room = (): ParticipantDto[] => [
-  { id: 'a', displayName: 'Alice', tracks: [mic] },
-  { id: 'b', displayName: 'Bob', tracks: [] },
+  { id: 'a', displayName: 'Alice', identity, tracks: [mic] },
+  { id: 'b', displayName: 'Bob', identity, tracks: [] },
 ];
 
 describe('participant track updates', () => {

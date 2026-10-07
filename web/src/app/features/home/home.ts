@@ -5,6 +5,7 @@ import { NzButtonModule } from 'ng-zorro-antd/button';
 import { NzIconModule } from 'ng-zorro-antd/icon';
 import { NzInputModule } from 'ng-zorro-antd/input';
 import { NzTooltipModule } from 'ng-zorro-antd/tooltip';
+import { E2EE_UNSUPPORTED, e2eeSupported } from '../../core/crypto/support';
 import { loadDisplayName, saveDisplayName } from '../../core/settings/display-name';
 import { newRoomId } from './room-id';
 
@@ -22,6 +23,13 @@ export class Home {
   protected readonly roomId = signal(
     inject(ActivatedRoute).snapshot.queryParamMap.get('room') ?? newRoomId(),
   );
+  /** Calls are always end-to-end encrypted: browsers that can't do that can't join. */
+  protected readonly supported = signal(true);
+  protected readonly unsupportedMessage = E2EE_UNSUPPORTED;
+
+  constructor() {
+    void e2eeSupported().then((ok) => this.supported.set(ok));
+  }
 
   protected validRoom(): boolean {
     return /^[a-z0-9-]{3,64}$/.test(this.roomId());
@@ -33,7 +41,7 @@ export class Home {
 
   protected join(): void {
     const name = this.name().trim();
-    if (!name || !this.validRoom()) return;
+    if (!name || !this.validRoom() || !this.supported()) return;
     saveDisplayName(name);
     void this.router.navigate(['/r', this.roomId()]);
   }

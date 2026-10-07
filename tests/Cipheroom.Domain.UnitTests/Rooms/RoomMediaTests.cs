@@ -38,7 +38,7 @@ public sealed class RoomMediaTests
     [Fact]
     public void Publishing_requires_a_media_session()
     {
-        var carol = _room.Join("conn-c", new DisplayName("Carol"));
+        var carol = _room.Join("conn-c", new DisplayName("Carol"), TestIdentity.Keys);
         Assert.Throws<InvalidOperationException>(() => _room.Publish(carol.Id, [(TrackSource.Camera, "0")]));
     }
 
@@ -65,7 +65,7 @@ public sealed class RoomMediaTests
     public void Unknown_own_or_foreign_tracks_cannot_be_subscribed()
     {
         _room.Publish(_alice.Id, [(TrackSource.Camera, "1")]);
-        var stranger = new Room(new RoomId("room-2")).Join("conn-x", new DisplayName("X"));
+        var stranger = new Room(new RoomId("room-2")).Join("conn-x", new DisplayName("X"), TestIdentity.Keys);
 
         foreach (var (who, source) in new[] { (_alice.Id, TrackSource.Screen), (_bob.Id, TrackSource.Camera), (stranger.Id, TrackSource.Camera) })
         {
@@ -139,5 +139,5 @@ public sealed class RoomMediaTests
         Assert.Equal(valid, TrackSources.IsValid(value));
 
     private Participant Joined(string connectionId, string name, string sessionId) =>
-        _room.AttachSfuSession(_room.Join(connectionId, new DisplayName(name)).Id, sessionId);
+        _room.AttachSfuSession(_room.Join(connectionId, new DisplayName(name), TestIdentity.Keys).Id, sessionId);
 }

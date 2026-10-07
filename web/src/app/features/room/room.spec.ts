@@ -3,6 +3,8 @@ import { TestBed } from '@angular/core/testing';
 import { provideRouter, Router } from '@angular/router';
 import { provideNzIcons } from 'ng-zorro-antd/icon';
 import { NzMessageService } from 'ng-zorro-antd/message';
+import { CryptoService } from '../../core/crypto/crypto.service';
+import { SafetyCode } from '../../core/crypto/safety-code';
 import { MediaService } from '../../core/media/media.service';
 import { CallParticipant, MediaState } from '../../core/media/media.types';
 import { SignalingService } from '../../core/signaling/signaling.service';
@@ -47,6 +49,31 @@ function fakeMedia() {
   return media;
 }
 
+/** Our public keys for the call (CryptoService); the room only passes them on. */
+const identity = { ed25519Pub: 'ed', x25519Pub: 'x', sig: 'sig' };
+/** CryptoService's frame transforms, handed from CryptoService.start to MediaService.connect. */
+const frames = { peerConnectionConfig: {} };
+
+function fakeCrypto() {
+  return {
+    identityBundle: vi.fn().mockResolvedValue(identity),
+    start: vi.fn().mockResolvedValue(frames),
+    stop: vi.fn(),
+    safetyCode: signal<SafetyCode | undefined>(undefined),
+    unverified: signal<ReadonlySet<string>>(new Set()),
+  };
+}
+
+const safetyCode = (digits: string): SafetyCode => ({
+  emoji: [
+    { symbol: '🐙', name: 'octopus' },
+    { symbol: '🌵', name: 'cactus' },
+    { symbol: '🚲', name: 'bicycle' },
+    { symbol: '🔑', name: 'key' },
+  ],
+  digits,
+});
+
 function fakeSignaling() {
   return {
     connected: signal(true),
@@ -60,6 +87,7 @@ async function setup(
   opts: {
     name?: string;
     tweak?: (lk: ReturnType<typeof fakeMedia>, sig: ReturnType<typeof fakeSignaling>) => void;
+    crypto?: (crypto: ReturnType<typeof fakeCrypto>) => void;
   } = {},
 ) {
   if (opts.name === undefined) localStorage.setItem(DISPLAY_NAME_KEY, 'Alex');
@@ -69,6 +97,8 @@ async function setup(
   const signaling = fakeSignaling();
   opts.tweak?.(media, signaling);
   const message = { error: vi.fn(), success: vi.fn() };
+  const crypto = fakeCrypto();
+  opts.crypto?.(crypto);
 
   TestBed.configureTestingModule({
     imports: [Room],
@@ -80,7 +110,12 @@ async function setup(
     ],
   });
   TestBed.overrideComponent(Room, {
-    set: { providers: [{ provide: MediaService, useValue: media }] },
+    set: {
+      providers: [
+        { provide: MediaService, useValue: media },
+        { provide: CryptoService, useValue: crypto },
+      ],
+    },
   });
 
   const router = TestBed.inject(Router);
@@ -88,6 +123,8 @@ async function setup(
   const fixture = TestBed.createComponent(Room);
   fixture.componentRef.setInput('roomId', 'abc-123');
   await fixture.whenStable();
+  // The join runs as a promise chain from ngOnInit: let it finish.
+  for (let i = 0; i < 10; i++) await Promise.resolve();
   fixture.detectChanges();
   return {
     fixture,
@@ -96,21 +133,47 @@ async function setup(
     signaling,
     message,
     navigate,
+    crypto,
   };
 }
 
 describe('Room', () => {
   it('joins, connects and turns on mic and camera', async () => {
-    const { signaling, media, el } = await setup();
-    expect(signaling.joinRoom).toHaveBeenCalledWith('abc-123', 'Alex');
+    const { signaling, media, el, crypto } = await setup();
+    expect(crypto.identityBundle).toHaveBeenCalledWith('abc-123');
+    expect(signaling.joinRoom).toHaveBeenCalledWith('abc-123', 'Alex', identity);
+    expect(crypto.start).toHaveBeenCalledWith('abc-123', 'me');
     expect(media.connect).toHaveBeenCalledWith(
       { iceServers: [], forceRelay: false },
       { id: 'me', displayName: 'Alex' },
+      frames,
     );
     expect(media.setMicrophone).toHaveBeenCalledWith(true);
     expect(media.setCamera).toHaveBeenCalledWith(true);
     expect(media.reserveCamera).not.toHaveBeenCalled();
     expect(el.querySelector('app-call-controls')).not.toBeNull();
+  });
+
+  it('never joins when this browser can’t encrypt', async () => {
+    const { signaling, media, el } = await setup({
+      crypto: (c) =>
+        c.identityBundle.mockRejectedValue(new Error("This browser can't join encrypted calls.")),
+    });
+    expect(signaling.joinRoom).not.toHaveBeenCalled();
+    expect(media.connect).not.toHaveBeenCalled();
+    expect(el.textContent).toContain("This browser can't join encrypted calls.");
+  });
+
+  it('leaves at once when encryption can’t start after joining — never connects media', async () => {
+    const { signaling, media, crypto, el } = await setup({
+      crypto: (c) =>
+        c.start.mockRejectedValue(new Error("This browser can't join encrypted calls.")),
+    });
+    expect(signaling.joinRoom).toHaveBeenCalledOnce();
+    expect(media.connect).not.toHaveBeenCalled();
+    expect(crypto.stop).toHaveBeenCalled();
+    expect(signaling.leave).toHaveBeenCalled();
+    expect(el.textContent).toContain("This browser can't join encrypted calls.");
   });
 
   it("publishes its own tracks before receiving anyone else's (iOS Safari needs that order)", async () => {
@@ -203,6 +266,21 @@ describe('Room', () => {
     media.participants.set([person('Alex', true), person('<b>Eve</b>')]);
     fixture.detectChanges();
     expect(notices()).toContain('Bob left');
+  });
+
+  it('shows the encryption state and announces a changed safety code', async () => {
+    const { el, fixture, crypto } = await setup();
+    const notices = () => [...el.querySelectorAll('.notice')].map((n) => n.textContent!.trim());
+    expect(el.querySelector('.e2ee')?.textContent).toContain('Securing…');
+
+    crypto.safetyCode.set(safetyCode('1111 2222'));
+    fixture.detectChanges();
+    expect(el.querySelector('.e2ee.secure')?.textContent).toContain('Encrypted');
+    expect(notices()).toEqual([]);
+
+    crypto.safetyCode.set(safetyCode('3333 4444'));
+    fixture.detectChanges();
+    expect(notices()).toEqual(['Safety code changed — compare it again']);
   });
 
   it('flips the camera and reports a busy camera as a toast', async () => {

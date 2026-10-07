@@ -1,4 +1,7 @@
 import { Injectable, OnDestroy, computed, effect, inject, signal, untracked } from '@angular/core';
+import { CryptoService } from '../crypto/crypto.service';
+import { MediaKind } from '../crypto/frame-codec';
+import { FrameCrypto } from '../crypto/frame-transforms';
 import { Camera, CameraFacing, cameraFacing, hasRearCamera } from './cameras';
 import { selectedIcePath } from './ice-path';
 import { loadVideoQuality, saveVideoQuality } from '../settings/video-quality';
@@ -16,7 +19,7 @@ import { CallParticipant, Diagnostics, MediaState, Tile } from './media.types';
 import { VideoQuality, cameraEncodings, captureConstraints, supportedQualities } from './quality';
 import { SerialQueue } from './serial-queue';
 import { SpeakingDetector, sameMembers } from './speaking';
-import { TrackKey, subscriptionDiff, trackKey } from './subscriptions';
+import { TrackKey, participantOf, subscriptionDiff, trackKey } from './subscriptions';
 
 /** Who we are in the room (from JoinRoom). */
 export interface Self {
@@ -39,7 +42,9 @@ export interface Self {
  *   4K) as f/h/q simulcast, and receive the highest layer of every camera on screen (`q` when hidden).
  * - Recovery: ICE restart on connection loss; after two failed attempts `state` becomes 'disconnected' and the
  *   room rejoins.
- * - E2EE (next milestone) hooks in where senders and receivers are created.
+ * - E2EE: every sender and receiver gets CryptoService's frame transform as it's created, before any frame flows
+ *   (`FrameCrypto`, passed to `connect`). Media is never sent or played unencrypted; remote tiles show `securing`
+ *   until that participant's key arrived.
  */
 @Injectable()
 export class MediaService implements OnDestroy {
@@ -49,6 +54,9 @@ export class MediaService implements OnDestroy {
   private readonly speakingDetector = new SpeakingDetector();
 
   private pc?: RTCPeerConnection;
+  private readonly crypto = inject(CryptoService);
+  /** CryptoService's frame transforms for this connection. */
+  private frames?: FrameCrypto;
   private statsTimer?: ReturnType<typeof setInterval>;
   private statsTicks = 0;
   private recoveryTimer?: ReturnType<typeof setTimeout>;
@@ -129,6 +137,7 @@ export class MediaService implements OnDestroy {
         // Never play our own microphone back.
         micMuted: !this.micEnabled(),
         mirror: this.cameraFacing() !== 'environment',
+        securing: false,
       },
     ];
     if (this.screenShareEnabled() && local.screen) {
@@ -136,7 +145,10 @@ export class MediaService implements OnDestroy {
     }
     const remote = this.remoteTracks();
     const speaking = this.speaking();
-    for (const p of this.signaling.participants()) tiles.push(...remoteTiles(p, remote, speaking));
+    const secured = this.crypto.secured();
+    for (const p of this.signaling.participants()) {
+      tiles.push(...remoteTiles(p, remote, speaking, !secured.has(p.id)));
+    }
     return tiles;
   });
 
@@ -148,13 +160,18 @@ export class MediaService implements OnDestroy {
     });
   }
 
-  /** Opens the peer connection for a joined participant. Media is published later, per device. */
-  connect(config: RtcConfig, self: Self): void {
+  /**
+   * Opens the peer connection for a joined participant, with `frames` (from CryptoService.start) on every sender and
+   * receiver. Media is published later, per device.
+   */
+  connect(config: RtcConfig, self: Self, frames: FrameCrypto): void {
+    this.frames = frames;
     const pc = new RTCPeerConnection({
       // Empty list (local dev): the SFU's own candidates are enough without TURN.
       ...(config.iceServers.length ? { iceServers: config.iceServers } : {}),
       iceTransportPolicy: config.forceRelay ? 'relay' : 'all',
       bundlePolicy: 'max-bundle',
+      ...frames.peerConnectionConfig,
     });
     this.pc = pc;
     pc.ontrack = (event) => this.onRemoteTrack(event);
@@ -275,6 +292,8 @@ export class MediaService implements OnDestroy {
     document.removeEventListener('visibilitychange', this.onVisibilityChange);
     this.pc?.close();
     this.pc = undefined;
+    // The worker belongs to CryptoService (stopped with the call's keys).
+    this.frames = undefined;
     Object.values(this.localTracks()).forEach((t) => t?.stop());
     this.placeholders.forEach((t) => t.stop());
     this.placeholders.clear();
@@ -358,7 +377,9 @@ export class MediaService implements OnDestroy {
         direction: 'sendonly',
         ...(source === 'camera' ? { sendEncodings: cameraEncodings(captureHeight(track)) } : {}),
       });
-      if (source === 'camera') preferVp8(transceiver);
+      // Before the first frame leaves: frames are only ever sent encrypted.
+      this.requireFrames().attachSender(transceiver.sender, track.kind as MediaKind);
+      if (track.kind === 'video') preferVp8(transceiver);
       try {
         await pc.setLocalDescription(await pc.createOffer());
         const answer = await this.signaling.publishTracks(pc.localDescription!.sdp, [
@@ -418,6 +439,7 @@ export class MediaService implements OnDestroy {
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
       await this.signaling.renegotiate(answer.sdp!);
+      this.tagReceivers(pc);
     }
     if (stale.length) await this.signaling.unsubscribeTracks(stale);
 
@@ -541,12 +563,41 @@ export class MediaService implements OnDestroy {
 
   private onRemoteTrack(event: RTCTrackEvent): void {
     const key = event.transceiver.mid ? this.midToKey.get(event.transceiver.mid) : undefined;
+    // Before the first frame is decoded; untagged receivers drop frames until they're assigned.
+    this.frames?.attachReceiver(
+      event.receiver,
+      event.track.kind as MediaKind,
+      key && participantOf(key),
+    );
     if (!key) return;
     this.remoteTracks.update((tracks) => new Map(tracks).set(key, event.track));
   }
 
+  /**
+   * Tags every receiving transceiver with the participant whose track it now carries: the SFU may reuse a receiver
+   * for another participant's track without a new `ontrack`.
+   */
+  private tagReceivers(pc: RTCPeerConnection): void {
+    if (!this.frames) return;
+    for (const t of pc.getTransceivers()) {
+      const key = t.mid ? this.midToKey.get(t.mid) : undefined;
+      if (key)
+        this.frames.attachReceiver(
+          t.receiver,
+          t.receiver.track.kind as MediaKind,
+          participantOf(key),
+        );
+    }
+  }
+
   private setLocalTrack(source: TrackSource, track: MediaStreamTrack | undefined): void {
     this.localTracks.update((tracks) => ({ ...tracks, [source]: track }));
+  }
+
+  private requireFrames(): FrameCrypto {
+    // Never send a frame we can't encrypt.
+    if (!this.frames) throw new Error('Not connected.');
+    return this.frames;
   }
 
   private requirePc(): RTCPeerConnection {
@@ -655,6 +706,7 @@ function remoteTiles(
   p: ParticipantDto,
   remote: ReadonlyMap<TrackKey, MediaStreamTrack>,
   speaking: ReadonlySet<string>,
+  securing: boolean,
 ): Tile[] {
   const track = (source: TrackSource) => p.tracks.find((t) => t.source === source);
   const camera = track('camera');
@@ -672,10 +724,13 @@ function remoteTiles(
       audio: remote.get(trackKey(p.id, 'microphone')),
       micMuted: !mic || mic.muted,
       mirror: false,
+      securing,
     },
   ];
   const screenTrack = screen && !screen.muted ? remote.get(trackKey(p.id, 'screen')) : undefined;
-  if (screenTrack) tiles.push(screenTile(p.id, p.displayName, p.displayName, false, screenTrack));
+  if (screenTrack) {
+    tiles.push({ ...screenTile(p.id, p.displayName, p.displayName, false, screenTrack), securing });
+  }
   return tiles;
 }
 
@@ -696,6 +751,7 @@ function screenTile(
     video,
     micMuted: true,
     mirror: false,
+    securing: false,
   };
 }
 
@@ -712,7 +768,8 @@ async function updateBitrates(sender: RTCRtpSender, height: number): Promise<voi
   await sender.setParameters(parameters);
 }
 
-/** VP8 first: simulcast support everywhere, and simple to frame-encrypt later (E2EE). */
+/** VP8 first for every video (camera and screen): simulcast support everywhere, and frame encryption keeps its
+ * fixed-size payload header in the clear (E2EE). */
 function preferVp8(transceiver: RTCRtpTransceiver): void {
   const codecs =
     typeof RTCRtpReceiver !== 'undefined'

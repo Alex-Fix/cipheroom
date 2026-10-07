@@ -1,8 +1,13 @@
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { SignalingService } from '../signaling/signaling.service';
-import { ParticipantDto, RtcConfig } from '../signaling/signaling.types';
+import { IdentityDto, ParticipantDto, RtcConfig } from '../signaling/signaling.types';
+import { CryptoService } from '../crypto/crypto.service';
+import { FrameCrypto } from '../crypto/frame-transforms';
 import { MediaService } from './media.service';
+
+/** Public keys only; the shape is all these tests need. */
+const identity: IdentityDto = { ed25519Pub: 'ed', x25519Pub: 'x', sig: 'sig' };
 
 /** Just enough of RTCPeerConnection: transceivers get mids on setLocalDescription, like the real one. */
 class FakePeerConnection {
@@ -19,6 +24,10 @@ class FakePeerConnection {
 
   constructor(readonly config: RTCConfiguration) {
     FakePeerConnection.last = this;
+  }
+
+  getTransceivers() {
+    return this.transceivers;
   }
 
   addTransceiver(track: MediaStreamTrack, init: RTCRtpTransceiverInit) {
@@ -100,6 +109,30 @@ function fakeTrack(kind: 'audio' | 'video', label = '', height = 720, maxHeight 
 
 const config: RtcConfig = { iceServers: [], forceRelay: false };
 
+/** CryptoService's frame transforms: records what gets attached. */
+function fakeFrames() {
+  return {
+    peerConnectionConfig: { encodedInsertableStreams: true },
+    attachSender: vi.fn(),
+    attachReceiver: vi.fn(),
+    terminate: vi.fn(),
+  };
+}
+
+/** Everyone counts as secured unless a test says otherwise. */
+function fakeCrypto() {
+  return { secured: signal<ReadonlySet<string>>(new Set(['bob'])) };
+}
+
+function bobWithCamera(): ParticipantDto {
+  return {
+    id: 'bob',
+    displayName: 'Bob',
+    identity,
+    tracks: [{ source: 'camera', kind: 'video', muted: false }],
+  };
+}
+
 function setup() {
   const participants = signal<ParticipantDto[]>([]);
   const signaling = {
@@ -125,13 +158,28 @@ function setup() {
   vi.stubGlobal('RTCPeerConnection', FakePeerConnection);
   vi.stubGlobal('navigator', { ...navigator, mediaDevices: devices });
 
+  const frames = fakeFrames();
+  const crypto = fakeCrypto();
   TestBed.configureTestingModule({
-    providers: [MediaService, { provide: SignalingService, useValue: signaling }],
+    providers: [
+      MediaService,
+      { provide: SignalingService, useValue: signaling },
+      { provide: CryptoService, useValue: crypto },
+    ],
   });
   const media = TestBed.inject(MediaService);
-  media.connect(config, { id: 'me', displayName: 'Alex' });
+  media.connect(config, { id: 'me', displayName: 'Alex' }, frames as unknown as FrameCrypto);
   media.startReceiving();
-  return { media, signaling, participants, mic, camera, pc: FakePeerConnection.last };
+  return {
+    media,
+    signaling,
+    participants,
+    mic,
+    camera,
+    pc: FakePeerConnection.last,
+    frames,
+    crypto,
+  };
 }
 
 /** Lets effects run and queued negotiations settle. */
@@ -219,6 +267,7 @@ describe('MediaService', () => {
       {
         id: 'bob',
         displayName: 'Bob',
+        identity,
         tracks: [
           { source: 'microphone', kind: 'audio', muted: false },
           { source: 'camera', kind: 'video', muted: false },
@@ -252,6 +301,7 @@ describe('MediaService', () => {
       {
         id: 'bob',
         displayName: 'Bob',
+        identity,
         tracks: [{ source: 'camera', kind: 'video', muted: false }],
       },
     ]);
@@ -290,6 +340,7 @@ describe('MediaService', () => {
         {
           id: 'bob',
           displayName: 'Bob',
+          identity,
           tracks: [{ source: 'camera', kind: 'video', muted: false }],
         },
       ]);
@@ -336,6 +387,7 @@ describe('MediaService', () => {
         {
           id: 'bob',
           displayName: 'Bob',
+          identity,
           tracks: [{ source: 'microphone', kind: 'audio', muted: false }],
         },
       ]);
@@ -484,6 +536,7 @@ describe('MediaService', () => {
     const bob: ParticipantDto = {
       id: 'bob',
       displayName: 'Bob',
+      identity,
       tracks: [
         { source: 'microphone', kind: 'audio', muted: false },
         { source: 'camera', kind: 'video', muted: false },
@@ -544,6 +597,7 @@ describe('MediaService', () => {
         {
           id: 'bob',
           displayName: 'Bob',
+          identity,
           tracks: [{ source: 'camera', kind: 'video', muted: false }],
         },
       ]);
@@ -553,11 +607,19 @@ describe('MediaService', () => {
       };
       vi.stubGlobal('RTCPeerConnection', FakePeerConnection);
       TestBed.configureTestingModule({
-        providers: [MediaService, { provide: SignalingService, useValue: signaling }],
+        providers: [
+          MediaService,
+          { provide: SignalingService, useValue: signaling },
+          { provide: CryptoService, useValue: fakeCrypto() },
+        ],
       });
       const media = TestBed.inject(MediaService);
 
-      media.connect(config, { id: 'me', displayName: 'Alex' });
+      media.connect(
+        config,
+        { id: 'me', displayName: 'Alex' },
+        fakeFrames() as unknown as FrameCrypto,
+      );
       await settle();
       expect(signaling.subscribeTracks).not.toHaveBeenCalled();
 
@@ -599,6 +661,66 @@ describe('MediaService', () => {
       // Already reserved / published: nothing to do.
       await media.reserveCamera();
       expect(signaling.publishTracks).toHaveBeenCalledOnce();
+    });
+  });
+
+  describe('end-to-end encryption', () => {
+    it('opens the connection with the frame transforms’ settings', () => {
+      const { pc, frames } = setup();
+      expect(pc.config).toMatchObject(frames.peerConnectionConfig);
+    });
+
+    it('encrypts every sender from its first frame', async () => {
+      const { media, pc, frames } = setup();
+      await media.setMicrophone(true);
+      await media.setCamera(true);
+
+      expect(frames.attachSender.mock.calls).toEqual([
+        [pc.transceivers[0].sender, 'audio'],
+        [pc.transceivers[1].sender, 'video'],
+      ]);
+    });
+
+    it('never publishes without frame transforms', async () => {
+      const { media, signaling } = setup();
+      await media.disconnect();
+      await expect(media.setMicrophone(true)).rejects.toThrow();
+      expect(signaling.publishTracks).not.toHaveBeenCalled();
+    });
+
+    it('decrypts every receiver with the keys of the participant it carries', async () => {
+      const { signaling, participants, pc, frames } = setup();
+      signaling.subscribeTracks.mockResolvedValue({
+        offerSdp: 'v=0 sfu offer',
+        tracks: [{ participantId: 'bob', source: 'camera', mid: '6' }],
+      });
+      participants.set([bobWithCamera()]);
+      await settle();
+
+      const receiver = {} as RTCRtpReceiver;
+      pc.ontrack!({
+        transceiver: { mid: '6' } as RTCRtpTransceiver,
+        receiver,
+        track: fakeTrack('video'),
+      });
+      expect(frames.attachReceiver).toHaveBeenCalledWith(receiver, 'video', 'bob');
+    });
+
+    it('shows remote tiles as securing until that participant’s key arrived', async () => {
+      const { media, participants, crypto } = setup();
+      crypto.secured.set(new Set());
+      participants.set([bobWithCamera()]);
+      expect(media.tiles().find((t) => t.key === 'bob:camera')?.securing).toBe(true);
+      expect(media.tiles().find((t) => t.isLocal)?.securing).toBe(false);
+
+      crypto.secured.set(new Set(['bob']));
+      expect(media.tiles().find((t) => t.key === 'bob:camera')?.securing).toBe(false);
+    });
+
+    it('leaves the worker to CryptoService when the call ends', async () => {
+      const { media, frames } = setup();
+      await media.disconnect();
+      expect(frames.terminate).not.toHaveBeenCalled();
     });
   });
 });

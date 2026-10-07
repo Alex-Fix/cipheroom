@@ -21,7 +21,7 @@ against both: leaking content and burning the free tier are both security bugs.
 
 | Adversary | Can | Mitigation |
 |---|---|---|
-| **Malicious or compromised server** (api, Cloudflare SFU) | Read metadata, drop or reorder messages, inject participants, swap public keys | E2EE + signed envelopes + safety codes + TOFU pinning (`e2ee-media`) |
+| **Malicious or compromised server** (api, Cloudflare SFU) | Read metadata, drop or reorder messages, inject participants, swap public keys | E2EE + signed envelopes + safety codes; TOFU pinning later (`e2ee-media`) |
 | **Malicious participant** | Spam the hub, oversized payloads, impersonate names, flood TURN | Input validation, rate limits, per-room caps, host admission (lobby) |
 | **Internet attacker** | Hit public endpoints, open rooms to burn quota, probe the LAN via TURN | Media/TURN only after joining, short TTLs, usage guard, Cloudflare TURN refuses private IPs |
 | **Network attacker** | Sniff or modify traffic | TLS at Cloudflare, DTLS-SRTP + E2EE for media |

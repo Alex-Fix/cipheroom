@@ -15,4 +15,7 @@ public interface IRoomClient
     Task TracksUnpublished(string participantId, IReadOnlyList<string> sources);
 
     Task TrackMuted(string participantId, string source, bool muted);
+
+    /// <summary>A sender-key envelope for this client only; <paramref name="fromId"/> is set by the server.</summary>
+    Task KeyEnvelopeReceived(string fromId, string blob);
 }

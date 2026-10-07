@@ -4,8 +4,8 @@
 
 - Self-hosted with `docker compose up` on a home machine: **no public IP**, **zero running cost** (free tiers only, no
   rented VMs). Nothing at home has to be reachable from the internet.
-- Media and chat are end-to-end encrypted: neither our server, Cloudflare's SFU, nor any TURN relay can decrypt them
-  (planned — see "Encryption model").
+- Media is end-to-end encrypted: neither our server, Cloudflare's SFU, nor any TURN relay can decrypt it (see
+  "Encryption model"; chat will use the same keys).
 - Standards-based (WebRTC, WebCrypto), no closed SDKs. Everything that runs at home is open source; media is
   forwarded by Cloudflare Realtime (hosted, free tier) — see [the SFU design](plans/2026-10-07-cloudflare-sfu-design.md).
 
@@ -17,7 +17,7 @@
  │ UI (grid, controls)          │  HTTPS / WSS        │ cloudflared  tunnel ingress      │
  │ SignalingService (SignalR) ──┼── Cloudflare ──────▶│ web          nginx + Angular     │
  │ MediaService (WebRTC)        │   Tunnel            │ api          .NET 10 + SignalR   │
- │ CryptoService (planned)      │                     └───────────────┬──────────────────┘
+ │ CryptoService (E2EE keys)    │                     └───────────────┬──────────────────┘
  └──────────────┬───────────────┘                                     │ outbound HTTPS only
                 │ media (WebRTC, DTLS-SRTP)    ┌──────────────────────┴───┐  (SFU API, app secret)
                 └─────────────────────────────▶│ Cloudflare Realtime SFU  │
@@ -27,14 +27,14 @@
 
 | Service | Role | Sees |
 |---|---|---|
-| `api` (.NET 10, SignalR) | rooms, presence, **SFU proxy** (relays SDP, checks every track belongs to the caller's room), ICE config; later lobby, encrypted-chat and key-envelope relay | metadata, SDP (client IPs), public keys, ciphertext blobs |
-| Cloudflare Realtime SFU | forwards media between browsers, simulcast layer selection | DTLS-SRTP-decrypted frames (plaintext until E2EE; ciphertext after), metadata |
+| `api` (.NET 10, SignalR) | rooms, presence, **SFU proxy** (relays SDP, checks every track belongs to the caller's room), ICE config, **key-envelope relay** (to the recipient only, within the room); later lobby and encrypted chat | metadata, SDP (client IPs), public keys, opaque envelopes |
+| Cloudflare Realtime SFU | forwards media between browsers, simulcast layer selection | end-to-end encrypted frames (codec payload header in the clear), metadata |
 | Cloudflare TURN | fallback relay for client networks that block direct UDP | DTLS-SRTP packets |
 | `web` | static Angular app (ng-zorro UI, icons bundled — no runtime CDN fetches) + security headers | nothing sensitive |
 | `cloudflared` | one public HTTPS hostname → `web` (which proxies `/api`, `/hubs` to the api) | TLS-terminated HTTP/WS |
 
 **One signaling channel:** SignalR (`/hubs/room`) carries everything — rooms, media negotiation (the api relays offers
-and answers to the SFU with its app secret, which never reaches clients) and, later, key envelopes and chat. Media
+and answers to the SFU with its app secret, which never reaches clients), key envelopes and, later, chat. Media
 flows browser ⇄ Cloudflare edge and never passes through the home machine. Protocol:
 [`signaling-protocol.md`](signaling-protocol.md).
 
@@ -62,61 +62,76 @@ Cipheroom.Api ──► Cipheroom.Application ──► Cipheroom.Domain
 
 ## Join flow
 
-**Today** (open rooms, no E2EE yet):
+**Today** (open rooms, end-to-end encrypted media):
 
-1. `JoinRoom(roomId, displayName)` → own participant id + everyone already there, with their tracks.
-2. `GetRtcConfig()` → Cloudflare STUN/TURN servers; the browser opens one `RTCPeerConnection`.
-3. The browser **publishes its own tracks first** (`PublishTracks`): microphone and camera (f/h/q simulcast, VP8);
+1. The browser creates its per-call identity (`CryptoService`); a browser that can't encrypt stops here.
+2. `JoinRoom(roomId, displayName, identity)` → own participant id + everyone already there, with their tracks and
+   public identities. `CryptoService.start` then starts the frame worker with our first sender key and sends it to
+   everyone in envelopes (`SendKeyEnvelopes`); everyone else rotates and sends us theirs.
+3. `GetRtcConfig()` → Cloudflare STUN/TURN servers; the browser opens one `RTCPeerConnection`, with the frame
+   transforms on every sender and receiver.
+4. The browser **publishes its own tracks first** (`PublishTracks`): microphone and camera (f/h/q simulcast, VP8);
    devices that are off are published muted / as placeholder frames. iOS Safari can't add a camera once the
    connection began by answering the SFU, so this order is a rule.
-4. Then it **receives** others: `SubscribeTracks` → SFU offer → answer (`Renegotiate`); new and removed tracks arrive
+5. Then it **receives** others: `SubscribeTracks` → SFU offer → answer (`Renegotiate`); new and removed tracks arrive
    as `TracksPublished` / `TracksUnpublished` / `ParticipantLeft`.
-5. Recovery: ICE restart in place (Cloudflare keeps the session 30 s), otherwise a full rejoin.
+6. Recovery: ICE restart in place (Cloudflare keeps the session 30 s), otherwise a full rejoin.
 
-**Target** flow adds before step 2: device identity, `JoinLobby` with a signed identity bundle and host admission;
-and after step 3: sender keys exchanged over SignalR, media flowing only once keys are in place.
+**Target** flow adds `JoinLobby` with host admission before joining.
 
 ## Encryption model
 
-> **Status: planned.** Nothing below is implemented yet; calls currently rely on DTLS-SRTP only, so Cloudflare's SFU
-> can see media (see the README warning). This section is the target design.
+Design and rationale: [`plans/2026-10-07-e2ee-media-design.md`](plans/2026-10-07-e2ee-media-design.md). All crypto
+lives in `web/src/app/core/crypto/` (WebCrypto only); the api only relays public keys and opaque envelopes.
 
-**Frame encryption is ours** (since the SFU switch there is no LiveKit worker): one worker in
-`web/src/app/core/crypto/`, AES-GCM via WebCrypto, applied with encoded transforms (`RTCRtpScriptTransform`,
-`createEncodedStreams` fallback) to every sender and receiver `MediaService` creates. The codec payload header stays in
-the clear so the SFU can forward (VP8: 10 bytes on keyframes, 3 otherwise; Opus: none). No custom primitives — only
-the framing is ours, and it gets its own design doc and the `e2ee-media` checklist. Browsers without encoded
-transforms can't join encrypted rooms; never fall back to plaintext.
+**Frame encryption is ours:** one worker (`frame-crypto.worker.ts`), AES-GCM-256, applied with encoded transforms
+(`RTCRtpScriptTransform`, `createEncodedStreams` fallback on Chrome) to every sender and receiver `MediaService`
+creates — before any frame flows. Frame layout: `[clear header][ciphertext + tag][counter 8 B][keyIndex 1 B]`; the
+VP8 payload header (10 bytes on keyframes, 3 otherwise) stays in the clear so the SFU can forward and switch layers;
+Opus has none. Every video transceiver prefers VP8; other codecs are dropped, never sent raw. Frames without a key
+are dropped on both sides. Browsers without encoded transforms or Ed25519/X25519 can't join; there's no plaintext
+fallback.
 
 ### Identities
-- Per device: Ed25519 signing key + X25519 agreement key (WebCrypto; P-256 fallback when unsupported).
-  Private keys are non-extractable `CryptoKey`s stored in IndexedDB.
-- Public bundle `{ participantId, ed25519Pub, x25519Pub, createdAt }` is self-signed and relayed by the server,
-  which can store it but not forge it.
+- **Per call** (not per device): Ed25519 signing key + X25519 agreement key, non-extractable, in memory only —
+  calls can't be linked by key. Reused for a rejoin within the same call, so the safety code stays stable.
+- Public bundle `{ ed25519Pub, x25519Pub, sig }`, `sig` over the room id and both keys; sent with `JoinRoom`,
+  relayed in every `ParticipantDto`. The server checks only the shape and can't forge it. A bundle that doesn't
+  verify → that participant gets no keys and is flagged in the UI.
 
 ### Sender keys
-- Each participant generates a random 256-bit **sender key** with a `keyIndex`.
-- It's delivered to each other participant in an **envelope**:
-  ephemeral X25519 ⟶ ECDH with recipient key ⟶ HKDF-SHA-256 ⟶ AES-GCM over
-  `senderKey ‖ keyIndex ‖ roomId ‖ epoch`, the envelope signed with the sender's Ed25519 key.
-- Receiver verifies signature → decrypts → installs the key for `(participantId, keyIndex)` in the frame worker.
-- **Rotation:** on every **join** (newcomers can't read earlier media) and every **leave** (leavers can't read
-  later media). Old indexes stay in the worker's keyring briefly so switching is glitch-free.
-- Chat uses the same sender keys with a separate HKDF label.
+- Each participant has a random 256-bit **sender key** per `epoch` (`keyIndex = epoch mod 16`); the worker derives
+  the AES media key with HKDF (`cipheroom/media/v1`). One IV counter per key, shared by all our tracks.
+- Delivered to each other participant in an **envelope**: ephemeral X25519 ⟶ X25519 with the recipient's key ⟶
+  HKDF-SHA-256 (salt = room id) ⟶ AES-GCM over the sender key, AAD = room, epoch, key index, from, to; Ed25519-signed.
+  Everything signed or hashed uses labelled, length-prefixed fields (`encoding.ts`).
+- Receiver checks the signature first (against the sender's identity as shown), then room, sender, recipient and a
+  strictly increasing epoch; only then does the key reach the worker.
+- **Rotation** on every **join** (newcomers can't read earlier media) and **leave** (leavers can't read later
+  media), debounced (300 ms) into one `SendKeyEnvelopes` call; we switch 500 ms after the server accepted it (at
+  once if sending failed). Receivers keep a sender's previous key for 10 s; a missing key → frames dropped, tile
+  shows "Securing…", keyframe requested when it arrives.
 
 ### Authentication (anti-MITM)
-A malicious server could inject a ghost participant or swap public keys. Defences:
-- **Safety code** — emoji/digits from a hash of all participants' identity keys, shown in-call; compare out loud.
-- **TOFU pinning** — remember contacts' identity keys; warn loudly if one changes.
-- Clients only send envelopes to participants shown in the UI; joins always trigger a visible notice.
+A malicious server could inject a ghost participant, swap public keys, or show people different participant sets.
+Defences:
+- **Safety code** — 4 named emoji + 8 digits from a hash of the room id and every participant's Ed25519 key
+  (ours included), behind the header's "Encrypted" badge; a toast asks to compare again whenever it changes.
+- Every join and leave is announced; keys go only to participants shown in the call.
+- Later: **TOFU pinning** of contacts' keys (needs identities that persist across calls).
 
 ### Later: MLS
 For very large rooms / multi-device, swap sender-key distribution for MLS (RFC 9420). Only `CryptoService` changes;
 the frame worker's key interface stays the same.
 
 ### Known limits
-- Metadata (who, when, IPs, bandwidth, who publishes which tracks) is visible to the api and Cloudflare.
-- Server-side recording/transcription is impossible by design.
+- Metadata (who, when, IPs, bandwidth, who publishes which tracks, frame sizes and timing, the RTP audio-level
+  header) is visible to the api and Cloudflare.
+- A malicious server can drop envelopes or hide a leave (calls break, or a leaver keeps getting keys until the next
+  rotation) — visible as "who's in the call", never a decryption.
+- Not independently audited. Server-side recording/transcription is impossible by design.
+- Debug: `?e2ee=passthrough` makes one browser skip decrypting what it receives (others look broken there) — a
+  check that the SFU carries ciphertext; what it sends stays encrypted.
 
 ## Media path — free, no public IP
 
@@ -144,4 +159,4 @@ behind the same seams — `MediaService` in the browser and the `ISfu` port in t
   `REALTIME_MONTHLY_HARD_LIMIT_GB` (refuse new calls).
 - Also set a Cloudflare billing notification as a second safety net.
 
-With E2EE in place, Cloudflare's SFU and TURN see only ciphertext + metadata.
+Cloudflare's SFU and TURN see only end-to-end encrypted frames + metadata.

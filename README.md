@@ -8,9 +8,11 @@ Cipheroom is a Zoom / Telegram-style video calling app you run on your own machi
 want private calls without trusting a vendor, and it runs on a home computer with **no public IP and zero running cost**.
 
 > [!WARNING]
-> **Status: early development.** Calls work end to end, but **end-to-end encryption is not enabled yet**: media is
-> protected in transit (DTLS-SRTP) but the media server — Cloudflare's Realtime SFU — can technically see it. Don't
-> use Cipheroom for anything sensitive until E2EE lands. See the [roadmap](#roadmap).
+> **Status: early development.** Every call is end-to-end encrypted: audio and video are encrypted in the browser,
+> so neither your server nor Cloudflare's media server can see or hear them. The encryption is our own design on
+> standard WebCrypto primitives and **hasn't been independently audited** yet. Compare the in-call safety code
+> out loud when it matters, and remember that metadata (who, when, IP addresses) stays visible to the servers.
+> See the [roadmap](#roadmap).
 
 ## Features
 
@@ -20,7 +22,8 @@ want private calls without trusting a vendor, and it runs on a home computer wit
 - 🏠 Runs at home behind NAT or CGNAT: nothing at home needs to be reachable — ingress via Cloudflare Tunnel, media
   straight between browsers and Cloudflare's edge
 - 💸 Free to run: uses only free tiers, with a usage guard planned to keep you inside them
-- 🔐 *(in progress)* End-to-end encryption that no server can break, with verifiable safety codes
+- 🔐 End-to-end encrypted media: per-call keys, rotated whenever someone joins or leaves, and a safety code to
+  compare out loud. Browsers that can't encrypt can't join — calls never fall back to unencrypted
 
 ## How it works
 
@@ -42,7 +45,7 @@ and checks that people only receive tracks from their own room; the media itself
 | NAT traversal | Not needed at home; Cloudflare Realtime TURN as fallback for restrictive client networks |
 | Runtime | Docker Compose |
 
-**Privacy model:** the API, Cloudflare's SFU and the TURN relay are all treated as untrusted. With E2EE, every participant
+**Privacy model:** the API, Cloudflare's SFU and the TURN relay are all treated as untrusted. Every participant
 encrypts media in the browser with keys exchanged as signed, encrypted envelopes. Servers only relay ciphertext.
 Metadata (who, when, IP addresses) remains visible to the servers and Cloudflare. Details:
 [`docs/architecture.md`](docs/architecture.md).
@@ -104,7 +107,8 @@ is ~3.6 GB per viewer-hour against the 1 TB/month free tier — set up a Cloudfl
 - [x] Group calls through Cloudflare Realtime SFU — nothing at home reachable from the internet (works behind CGNAT)
 - [x] Quality selection (up to 4K), simulcast, automatic reconnect
 - [x] Single-hostname deployment via Cloudflare Tunnel
-- [ ] **End-to-end encryption**: device identities, sender keys, rotation on join/leave, safety codes
+- [x] **End-to-end encryption**: per-call identities, sender keys, rotation on join/leave, safety codes
+- [ ] Remember contacts' keys across calls (TOFU) — today identities are fresh per call
 - [ ] Lobby and host admission
 - [ ] End-to-end encrypted chat
 - [ ] Usage guard for the Cloudflare Realtime free tier (SFU + TURN)

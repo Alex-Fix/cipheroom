@@ -9,6 +9,7 @@ namespace Cipheroom.Domain.Rooms;
 public sealed class Room(RoomId id)
 {
     public const string UnknownTrack = "Unknown track.";
+    public const string InvalidKeyEnvelope = "Invalid key envelope.";
 
     private readonly List<Participant> _participants = [];
 
@@ -19,13 +20,13 @@ public sealed class Room(RoomId id)
     public bool IsEmpty => _participants.Count == 0;
 
     /// <summary>Adds a participant with a fresh random id. Returns the new participant.</summary>
-    public Participant Join(string connectionId, DisplayName displayName)
+    public Participant Join(string connectionId, DisplayName displayName, IdentityKeys identity)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionId);
         if (_participants.Exists(p => p.ConnectionId == connectionId))
             throw new InvalidOperationException("Connection is already in this room.");
 
-        var participant = new Participant(ParticipantId.New(), Id, connectionId, displayName);
+        var participant = new Participant(ParticipantId.New(), Id, connectionId, displayName, identity);
         _participants.Add(participant);
         return participant;
     }
@@ -147,6 +148,19 @@ public sealed class Room(RoomId id)
             throw new DomainException(UnknownTrack);
 
         return new RemoteTrack(publisher.Id, publisher.SfuSessionId, track);
+    }
+
+    /// <summary>
+    /// Who a participant's key envelopes go to: each must be someone else in this room, so envelopes can never be
+    /// relayed outside it. Throws <see cref="DomainException"/> otherwise.
+    /// </summary>
+    public IReadOnlyList<Participant> EnvelopeRecipients(ParticipantId senderId, IReadOnlyCollection<ParticipantId> recipientIds)
+    {
+        Get(senderId);
+        var recipients = recipientIds.Select(id => id == senderId ? null : Find(id)).ToArray();
+        if (recipients.Any(r => r is null))
+            throw new DomainException(InvalidKeyEnvelope);
+        return recipients!;
     }
 
     public Participant? Find(ParticipantId id) => _participants.Find(p => p.Id == id);

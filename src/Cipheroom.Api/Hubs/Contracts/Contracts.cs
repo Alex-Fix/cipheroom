@@ -14,10 +14,20 @@ public sealed record TrackDto(string Source, string Kind, bool Muted)
     public static TrackDto From(PublishedTrack t) => new(t.Source.ToWire(), t.Kind == TrackKind.Audio ? "audio" : "video", t.Muted);
 }
 
-public sealed record ParticipantDto(string Id, string DisplayName, IReadOnlyList<TrackDto> Tracks)
+/// <summary>A participant's public E2EE keys for this call (base64url), self-signed by their browser.</summary>
+public sealed record IdentityDto(string? Ed25519Pub, string? X25519Pub, string? Sig)
 {
-    public static ParticipantDto From(Participant p) => new(p.Id.Value, p.DisplayName.Value, [.. p.Tracks.Select(TrackDto.From)]);
+    public static IdentityDto From(IdentityKeys k) => new(k.Ed25519Pub, k.X25519Pub, k.Sig);
 }
+
+public sealed record ParticipantDto(string Id, string DisplayName, IReadOnlyList<TrackDto> Tracks, IdentityDto Identity)
+{
+    public static ParticipantDto From(Participant p) =>
+        new(p.Id.Value, p.DisplayName.Value, [.. p.Tracks.Select(TrackDto.From)], IdentityDto.From(p.Identity));
+}
+
+/// <summary>A sender-key envelope for one recipient. <c>Blob</c> is opaque to the server (signed, encrypted).</summary>
+public sealed record KeyEnvelopeDto(string? ToId, string? Blob);
 
 public sealed record JoinResult(string SelfId, IReadOnlyList<ParticipantDto> Participants);
 

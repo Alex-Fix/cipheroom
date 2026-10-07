@@ -29,11 +29,11 @@ public sealed class RoomHubTests(WebApplicationFactory<Program> factory) : IClas
         alice.On<ParticipantDto>("ParticipantJoined", p => joined.Writer.TryWrite(p));
         alice.On<string>("ParticipantLeft", id => left.Writer.TryWrite(id));
 
-        var aliceJoin = await alice.InvokeAsync<JoinResult>("JoinRoom", "room-1", "Alice", Ct);
+        var aliceJoin = await alice.InvokeAsync<JoinResult>("JoinRoom", "room-1", "Alice", TestIdentity.Dto, Ct);
         Assert.Empty(aliceJoin.Participants);
 
         var bob = await ConnectAsync();
-        var bobJoin = await bob.InvokeAsync<JoinResult>("JoinRoom", "room-1", "  Bob ", Ct);
+        var bobJoin = await bob.InvokeAsync<JoinResult>("JoinRoom", "room-1", "  Bob ", TestIdentity.Dto, Ct);
 
         var bobAsSeenByAlice = await joined.Reader.ReadAsync(Timeout());
         Assert.Equal((bobJoin.SelfId, "Bob"), (bobAsSeenByAlice.Id, bobAsSeenByAlice.DisplayName));
@@ -53,13 +53,13 @@ public sealed class RoomHubTests(WebApplicationFactory<Program> factory) : IClas
         var left = Channel.CreateUnbounded<string>();
         alice.On<string>("ParticipantLeft", id => left.Writer.TryWrite(id));
 
-        await alice.InvokeAsync<JoinResult>("JoinRoom", "room-leave", "Alice", Ct);
-        var bobJoin = await bob.InvokeAsync<JoinResult>("JoinRoom", "room-leave", "Bob", Ct);
+        await alice.InvokeAsync<JoinResult>("JoinRoom", "room-leave", "Alice", TestIdentity.Dto, Ct);
+        var bobJoin = await bob.InvokeAsync<JoinResult>("JoinRoom", "room-leave", "Bob", TestIdentity.Dto, Ct);
 
         await bob.InvokeAsync("LeaveRoom", Ct);
         Assert.Equal(bobJoin.SelfId, await left.Reader.ReadAsync(Timeout()));
 
-        var rejoin = await bob.InvokeAsync<JoinResult>("JoinRoom", "room-leave-2", "Bob", Ct);
+        var rejoin = await bob.InvokeAsync<JoinResult>("JoinRoom", "room-leave-2", "Bob", TestIdentity.Dto, Ct);
         Assert.Empty(rejoin.Participants);
     }
 
@@ -67,7 +67,7 @@ public sealed class RoomHubTests(WebApplicationFactory<Program> factory) : IClas
     public async Task Participant_ids_are_random_hex_not_connection_ids()
     {
         await using var connection = await ConnectAsync();
-        var join = await connection.InvokeAsync<JoinResult>("JoinRoom", "room-ids", "Alice", Ct);
+        var join = await connection.InvokeAsync<JoinResult>("JoinRoom", "room-ids", "Alice", TestIdentity.Dto, Ct);
 
         Assert.Matches("^[0-9a-f]{16}$", join.SelfId);
         Assert.NotEqual(connection.ConnectionId, join.SelfId);
@@ -80,7 +80,7 @@ public sealed class RoomHubTests(WebApplicationFactory<Program> factory) : IClas
 
         await AssertHubErrorAsync("Join a room first.", () => connection.InvokeAsync<RtcConfig>("GetRtcConfig", Ct));
 
-        await connection.InvokeAsync<JoinResult>("JoinRoom", "room-2", "Carol", Ct);
+        await connection.InvokeAsync<JoinResult>("JoinRoom", "room-2", "Carol", TestIdentity.Dto, Ct);
         var config = await connection.InvokeAsync<RtcConfig>("GetRtcConfig", Ct);
 
         Assert.Empty(config.IceServers);
@@ -97,7 +97,7 @@ public sealed class RoomHubTests(WebApplicationFactory<Program> factory) : IClas
         await using var connection = await ConnectAsync();
         await AssertHubErrorAsync(
             "Invalid room id.",
-            () => connection.InvokeAsync<JoinResult>("JoinRoom", roomId, "Dave", Ct));
+            () => connection.InvokeAsync<JoinResult>("JoinRoom", roomId, "Dave", TestIdentity.Dto, Ct));
     }
 
     [Theory]
@@ -109,7 +109,7 @@ public sealed class RoomHubTests(WebApplicationFactory<Program> factory) : IClas
         await using var connection = await ConnectAsync();
         await AssertHubErrorAsync(
             "Display name must be 1-64 characters.",
-            () => connection.InvokeAsync<JoinResult>("JoinRoom", "room-3", displayName, Ct));
+            () => connection.InvokeAsync<JoinResult>("JoinRoom", "room-3", displayName, TestIdentity.Dto, Ct));
     }
 
     [Fact]
@@ -118,17 +118,17 @@ public sealed class RoomHubTests(WebApplicationFactory<Program> factory) : IClas
         await using var connection = await ConnectAsync();
         await AssertHubErrorAsync(
             "Display name must be 1-64 characters.",
-            () => connection.InvokeAsync<JoinResult>("JoinRoom", "room-3", new string('a', 65), Ct));
+            () => connection.InvokeAsync<JoinResult>("JoinRoom", "room-3", new string('a', 65), TestIdentity.Dto, Ct));
     }
 
     [Fact]
     public async Task Joining_twice_is_rejected()
     {
         await using var connection = await ConnectAsync();
-        await connection.InvokeAsync<JoinResult>("JoinRoom", "room-4", "Eve", Ct);
+        await connection.InvokeAsync<JoinResult>("JoinRoom", "room-4", "Eve", TestIdentity.Dto, Ct);
         await AssertHubErrorAsync(
             "Already in a room.",
-            () => connection.InvokeAsync<JoinResult>("JoinRoom", "room-5", "Eve", Ct));
+            () => connection.InvokeAsync<JoinResult>("JoinRoom", "room-5", "Eve", TestIdentity.Dto, Ct));
     }
 
     [Fact]

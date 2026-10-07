@@ -1,0 +1,21 @@
+@let c = code();
+<ol class="emoji" aria-label="Safety code emoji">
+  @for (e of c.emoji; track $index) {
+    <li>
+      <span class="symbol" aria-hidden="true">{{ e.symbol }}</span>
+      <span class="name">{{ e.name }}</span>
+    </li>
+  }
+</ol>
+<p class="digits" aria-label="Safety code digits">{{ c.digits }}</p>
+<p class="hint">
+  Everyone in the call sees the same code. Compare it out loud — if anyone's is different, someone
+  may be listening in.
+</p>
+@if (unverified() > 0) {
+  <p class="warning" role="alert">
+    <nz-icon nzType="exclamation-circle" />
+    {{ unverified() }} {{ unverified() === 1 ? 'participant' : 'participants' }} couldn't be
+    verified and can't see or hear you.
+  </p>
+}

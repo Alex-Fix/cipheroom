@@ -1,4 +1,5 @@
 using Cipheroom.Api.Hubs.Contracts;
+using Cipheroom.Application.Keys.Commands.SendKeyEnvelopes;
 using Cipheroom.Application.Media.Commands.PublishTracks;
 using Cipheroom.Application.Media.Commands.Renegotiate;
 using Cipheroom.Application.Media.Commands.RestartIce;
@@ -22,9 +23,15 @@ namespace Cipheroom.Api.Hubs;
 /// </summary>
 public sealed partial class RoomHub(IMediator mediator, ILogger<RoomHub> logger) : Hub<IRoomClient>
 {
-    public async Task<JoinResult> JoinRoom(string? roomId, string? displayName)
+    public async Task<JoinResult> JoinRoom(string? roomId, string? displayName, IdentityDto? identity)
     {
-        var result = await mediator.Send(new JoinRoomCommand(Context.ConnectionId, roomId, displayName), Context.ConnectionAborted);
+        var result = await mediator.Send(
+            new JoinRoomCommand(
+                Context.ConnectionId,
+                roomId,
+                displayName,
+                identity is null ? null : new IdentityInput(identity.Ed25519Pub, identity.X25519Pub, identity.Sig)),
+            Context.ConnectionAborted);
         var self = result.Self;
 
         await Groups.AddToGroupAsync(Context.ConnectionId, GroupName(self.RoomId.Value));
@@ -80,6 +87,17 @@ public sealed partial class RoomHub(IMediator mediator, ILogger<RoomHub> logger)
 
     public async Task SelectVideoLayer(string? mid, string? rid) =>
         await mediator.Send(new SelectVideoLayerCommand(Context.ConnectionId, mid, rid), Context.ConnectionAborted);
+
+    // End-to-end keys. Envelopes are relayed to their recipient only; they are never stored or logged.
+
+    public async Task SendKeyEnvelopes(IReadOnlyList<KeyEnvelopeDto?>? envelopes)
+    {
+        var result = await mediator.Send(
+            new SendKeyEnvelopesCommand(Context.ConnectionId, envelopes?.Select(e => e is null ? null : new KeyEnvelopeInput(e.ToId, e.Blob)).ToArray()),
+            Context.ConnectionAborted);
+
+        await Task.WhenAll(result.Deliveries.Select(d => Clients.Client(d.ConnectionId).KeyEnvelopeReceived(result.FromId.Value, d.Blob)));
+    }
 
     public override async Task OnDisconnectedAsync(Exception? exception)
     {

@@ -9,53 +9,56 @@ Read `docs/architecture.md` → "Encryption model". Invariant: **no server (api,
 key, frame, or chat message.**
 
 ## Who does what
-- **Frame encryption is ours** since the move to Cloudflare Realtime SFU (no LiveKit worker any more): one worker
-  in `web/src/app/core/crypto/`, AES-GCM via WebCrypto, applied with encoded transforms (`RTCRtpScriptTransform`,
-  `createEncodedStreams` fallback) on every sender and receiver `MediaService` creates. No custom ciphers, no
-  homemade primitives — only the framing (what stays in the clear, IV layout) is ours, and it gets a design doc first.
-- **Us** (`web/src/app/core/crypto/`):
-  - `identity.ts` — create/load device identity (non-extractable keys in IndexedDB), sign bundle.
-  - `sender-keys.ts` — generate, rotate, envelope encrypt/decrypt, signature verify.
-  - `frame-crypto.worker.ts` — per-frame AES-GCM; keys per `(participantId, keyIndex)`.
-  - `safety-code.ts` — emoji/digit code from all identity keys.
-  - `chat-crypto.ts` — AES-GCM chat with HKDF-derived key (label `cipheroom/chat/v1`).
+Design: `docs/plans/2026-10-07-e2ee-media-design.md`. Everything lives in `web/src/app/core/crypto/`:
+- `crypto.service.ts` — **the boundary** (provided per room route): per-call identity, our sender keys and rotation,
+  incoming envelopes, the worker's keyring, `safetyCode` / `secured` / `unverified` signals. `start(roomId, selfId)`
+  after JoinRoom returns the frame transforms for MediaService; `stop()` ends the session (identity kept for rejoin).
+- `identity.ts` — per-call Ed25519 + X25519 (non-extractable, memory only), self-signed bundle, `verifyIdentity`.
+- `envelopes.ts` — `sealEnvelope` / `openEnvelope` with typed rejections.
+- `safety-code.ts` — 4 named emoji + 8 digits; `SAFETY_EMOJI` order is part of the format.
+- `encoding.ts` — base64url and `fields(...)` (labelled, length-prefixed) for everything signed, AAD or hashed.
+- `frame-codec.ts` (frame layout) · `keyring.ts` · `frame-cryptor.ts` (per-frame logic) · `frame-crypto.worker.ts`
+  (thin wiring) · `frame-transforms.ts` (`FrameCrypto`: attaches the worker, transfers keys) · `support.ts`
+  (`e2eeSupported`) · `e2ee-debug.ts` (`?e2ee=passthrough`).
+- Planned: `chat-crypto.ts` — AES-GCM chat with an HKDF-derived key (label `cipheroom/chat/v1`).
 
 ## Frame transform
-- Keys per sender: our own key under our participant id, each remote participant's under theirs, selected by the
-  `keyIndex` carried in the frame trailer. Media key = `HKDF(senderKey, info="cipheroom/media/v1")`, non-extractable.
-- Leave the codec payload header in the clear so the SFU can still route/packetize: VP8 (the camera codec) has a
-  short fixed header (keyframe 10 bytes, delta 3 bytes, as LiveKit's worker does); Opus needs none. If a codec other
-  than VP8/Opus is ever negotiated (e.g. H.264 — NAL unit headers must stay clear), the worker must handle it or the
-  sender must refuse.
-- Unique IV per frame per key (sender id ‖ counter); never reuse a key across rooms or epochs.
-- Unsupported browser (no encoded transforms) → can't join an encrypted room; never fall back to plaintext.
+- One worker for all transforms (both APIs), so counters are per key, not per track. Keys per sender: ours (send)
+  and each remote participant's by `keyIndex` from the frame trailer; receivers are tagged with their participant
+  and retagged if the SFU reuses them. Media key = `HKDF(senderKey, info="cipheroom/media/v1")`, non-extractable;
+  one per sender key, shared by all of that sender's tracks.
+- Layout `[clear header][ciphertext + 16 B tag][counter 8 B][keyIndex 1 B]`, IV = `0⁴ ‖ counter`, AAD = clear
+  header ‖ trailer. VP8 header stays clear (keyframe 10 B, delta 3 B — P bit of byte 0); Opus none. Any other codec
+  → dropped (every video transceiver prefers VP8). If H.264 is ever needed, the worker must learn NAL headers first.
+- No key → drop (send and receive). Missing key arrives → keyframe request; 10 failures in a row → keyframe request.
+- Unsupported browser (no encoded transforms / Ed25519 / X25519) → can't join; never fall back to plaintext.
 
 ## Envelope format (v1)
 ```
-envelope = {
-  v: 1, roomId, epoch, keyIndex, fromId, toId,
-  ephPub,                         // X25519 ephemeral public key
-  iv, ct,                         // AES-GCM(HKDF(ECDH(eph, recipientX25519), salt=roomId, info="cipheroom/env/v1"), senderKey)
-  sig                             // Ed25519 over canonical JSON of all fields above
-}
+blob = base64url(JSON { v: 1, roomId, epoch, keyIndex, fromId, toId, eph, iv, ct, sig })   ~550 chars, ≤ 1 KB
+k    = HKDF-SHA-256(X25519(eph, recipient x25519), salt = roomId, info = "cipheroom/env/v1")
+aad  = fields("cipheroom/env-header/v1", roomId, epoch, keyIndex, fromId, toId)
+ct   = AES-GCM(k, iv, aad, senderKey)
+sig  = Ed25519(sender identity, fields("cipheroom/env-sig/v1", aad, eph, iv, ct))
 ```
-- AAD for AES-GCM = canonical `{v, roomId, epoch, keyIndex, fromId, toId}`.
-- Reject: bad signature, unknown/unpinned-changed sender identity, `toId` ≠ self, stale epoch, replayed `(fromId, keyIndex)`.
+- `keyIndex = epoch mod 16`. Check the signature first (against the identity shown in the call), then: room,
+  inner `fromId` = relayed `fromId`, `toId` = self, epoch > last accepted from that sender.
 
 ## Rotation
-- On `ParticipantJoined` / `ParticipantLeft`: generate new sender key, `keyIndex = (keyIndex + 1) % keyringSize`,
-  send envelopes to all *current* participants, switch own encryption after a short delay (~500 ms) so receivers
-  have the key. Debounce rapid join/leave bursts.
-- Never reuse a sender key across rooms or epochs.
+- On every join and leave (debounced 300 ms): new random key, `epoch + 1`, one envelope per *verified* participant
+  in one `SendKeyEnvelopes` call, switch 500 ms after the server accepted it — at once if sending failed (a leaver
+  must never keep reading). The very first key is used immediately.
+- Receivers keep a sender's previous key for 10 s. A leaver's keys are removed from the worker at once.
+- Never reuse a sender key across rooms, epochs or sessions (each rotation draws a fresh random key).
 
 ## Checklist (run on every crypto-related change)
 - [ ] No key, envelope plaintext, or identity private key in: SignalR payloads (except signed envelopes), HTTP, `console.*`, error reports, localStorage.
 - [ ] Private keys created with `extractable: false`.
 - [ ] Can't join/publish if E2EE setup fails — no silent unencrypted fallback.
-- [ ] Every envelope signature verified before use; identity changes surface a warning.
+- [ ] Every envelope signature verified before use; identities that don't verify get no keys and are flagged.
 - [ ] Safety code recomputed and shown whenever participant set changes.
 - [ ] No SFU data channels for app data (chat goes over SignalR, encrypted) — they're outside our key management.
 - [ ] Every sender and receiver `MediaService` creates gets the transform before media flows (incl. placeholder and
-      replaced tracks).
+      replaced tracks, and receivers the SFU reuses).
 - [ ] Only WebCrypto primitives; no `Math.random`, no custom ciphers.
 - [ ] Tests: envelope round trip, tampered envelope → reject, wrong recipient → reject, rotation on leave excludes leaver.

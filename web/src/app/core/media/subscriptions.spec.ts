@@ -1,15 +1,19 @@
-import { ParticipantDto } from '../signaling/signaling.types';
+import { IdentityDto, ParticipantDto } from '../signaling/signaling.types';
 import { subscriptionDiff, TrackKey } from './subscriptions';
+
+/** Public keys only; the shape is all these tests need. */
+const identity: IdentityDto = { ed25519Pub: 'ed', x25519Pub: 'x', sig: 'sig' };
 
 const alice: ParticipantDto = {
   id: 'a',
   displayName: 'Alice',
+  identity,
   tracks: [
     { source: 'microphone', kind: 'audio', muted: false },
     { source: 'camera', kind: 'video', muted: true },
   ],
 };
-const bob: ParticipantDto = { id: 'b', displayName: 'Bob', tracks: [] };
+const bob: ParticipantDto = { id: 'b', displayName: 'Bob', identity, tracks: [] };
 
 describe('subscriptionDiff', () => {
   it('subscribes to every published track not yet known, muted or not', () => {

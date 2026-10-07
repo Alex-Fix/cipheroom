@@ -2,7 +2,18 @@ import { TestBed } from '@angular/core/testing';
 import { provideNzIcons } from 'ng-zorro-antd/icon';
 import { APP_ICONS } from '../../../core/ui/icons';
 import { CallHeader } from './call-header';
+import { SafetyCode } from '../../../core/crypto/safety-code';
 import { CallStatus } from '../call-status';
+
+const code: SafetyCode = {
+  emoji: [
+    { symbol: '🐙', name: 'octopus' },
+    { symbol: '🌵', name: 'cactus' },
+    { symbol: '🚲', name: 'bicycle' },
+    { symbol: '🔑', name: 'key' },
+  ],
+  digits: '4821 9037',
+};
 
 function render(status: CallStatus, extra: Record<string, unknown> = {}) {
   TestBed.configureTestingModule({ imports: [CallHeader], providers: [provideNzIcons(APP_ICONS)] });
@@ -27,14 +38,37 @@ describe('CallHeader', () => {
     expect(el.querySelector('.count')?.textContent?.trim()).toBe('2');
   });
 
-  it('is honest about encryption', () => {
-    expect(render('connected').el.querySelector('.e2ee')?.textContent).toContain(
-      'Not encrypted yet',
+  it('shows no lock until encryption is running', () => {
+    const e2ee = render('connected').el.querySelector('.e2ee');
+    expect(e2ee?.textContent).toContain('Securing…');
+    expect(e2ee?.classList).not.toContain('secure');
+  });
+
+  it('shows the status and the safety code in the top bar', () => {
+    const badge = render('connected', { safetyCode: code }).el.querySelector('button.e2ee.secure')!;
+    expect(badge.textContent).toContain('Encrypted');
+    expect(badge.querySelector('.code-emoji')?.textContent?.replace(/\s/g, '')).toBe('🐙🌵🚲🔑');
+    expect(badge.querySelector('.code-digits')?.textContent).toBe('4821 9037');
+    expect(badge.getAttribute('aria-label')).toBe(
+      'End-to-end encrypted. Safety code: octopus, cactus, bicycle, key, 4821 9037. Show details',
     );
-    TestBed.resetTestingModule();
-    expect(
-      render('connected', { encrypted: true }).el.querySelector('.e2ee')?.textContent,
-    ).toContain('Encrypted');
+  });
+
+  it('opens the safety code details from the Encrypted badge', async () => {
+    const { el, fixture } = render('connected', { safetyCode: code });
+    const badge = el.querySelector<HTMLButtonElement>('button.e2ee.secure')!;
+
+    badge.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(document.querySelector('app-safety-code .digits')?.textContent).toBe('4821 9037');
+  });
+
+  it('flags unverified participants on the badge', () => {
+    const badge = render('connected', { safetyCode: code, unverified: 1 }).el.querySelector(
+      '.e2ee',
+    );
+    expect(badge?.classList).toContain('warn');
   });
 
   it('offers Rejoin only when disconnected', () => {
