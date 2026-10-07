@@ -1,4 +1,19 @@
 <Solution>
+  <Folder Name="/workspace/">
+    <File Path=".dockerignore" />
+    <File Path=".editorconfig" />
+    <File Path="Directory.Build.props" />
+    <File Path="Directory.Packages.props" />
+    <File Path="global.json" />
+  </Folder>
+  <Folder Name="/deploy/">
+    <File Path="deploy/docker-compose.yml" />
+    <File Path="deploy/docker-compose.dev.yml" />
+  </Folder>
+  <Folder Name="/docs/">
+    <File Path="docs/architecture.md" />
+    <File Path="docs/signaling-protocol.md" />
+  </Folder>
   <Folder Name="/src/">
     <Project Path="src/Cipheroom.Domain/Cipheroom.Domain.csproj" />
     <Project Path="src/Cipheroom.Application/Cipheroom.Application.csproj" />
