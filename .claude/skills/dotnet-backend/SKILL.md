@@ -1,6 +1,6 @@
 ---
 name: dotnet-backend
-description: Conventions for the Cipheroom .NET 10 backend — Clean Architecture (Domain/Application/Infrastructure/Api), Mediator commands/queries with FluentValidation, SignalR hubs and filters, LiveKit token + ICE issuance, xUnit v3 tests per layer, chiseled Dockerfile. Use when creating or modifying anything under src/ or tests/.
+description: Conventions for the Cipheroom .NET 10 backend — Clean Architecture (Domain/Application/Infrastructure/Api), Mediator commands/queries with FluentValidation, SignalR hubs and filters, Cloudflare SFU proxy + ICE issuance, xUnit v3 tests per layer, chiseled Dockerfile. Use when creating or modifying anything under src/ or tests/.
 ---
 
 # .NET backend
@@ -12,16 +12,18 @@ Design: `docs/plans/2026-10-06-backend-clean-architecture-design.md`.
 src/
   Cipheroom.Domain/          entities, value objects, rules. No project or package references.
     Common/DomainException.cs
-    Rooms/RoomId.cs DisplayName.cs ParticipantId.cs Participant.cs Room.cs
+    Rooms/RoomId.cs DisplayName.cs ParticipantId.cs Participant.cs Room.cs (aggregate: members, tracks, subscriptions)
+    Rooms/TrackSource.cs PublishedTrack.cs
   Cipheroom.Application/     → Domain. Mediator.Abstractions, FluentValidation, Logging.Abstractions
     Common/Behaviours/       UnhandledException, Logging, Validation (pipeline order set in Api/Program.cs)
-    Common/Exceptions/       NotFoundException
-    Common/Interfaces/       ports: IRoomStore, ILiveKitTokenIssuer, IIceServerProvider
+    Common/Exceptions/       NotFoundException, MediaServerException
+    Common/Interfaces/       ports: IRoomStore (InRoom = atomic room changes), ISfu, IIceServerProvider
+    Media/                   MediaRules (limits, constant messages) + Publish/Subscribe/… commands
     <Feature>/Commands|Queries/<UseCase>/<UseCase>Command.cs   record + validator + handler in one file
     DependencyInjection.cs   AddApplication() (validators)
   Cipheroom.Infrastructure/  → Application. Adapters + options; AddInfrastructure()
-    Rooms/InMemoryRoomStore.cs   Rtc/LiveKitTokenIssuer.cs  Rtc/IceServerProviders.cs  Rtc/RtcOptions.cs
-    Rtc/Cloudflare/CloudflareTurnClient.cs   typed HttpClient + source-generated JSON
+    Rooms/InMemoryRoomStore.cs   Rtc/CloudflareSfu.cs (ISfu)  Rtc/IceServerProviders.cs  Rtc/RtcOptions.cs
+    Rtc/Cloudflare/CloudflareSfuClient.cs CloudflareTurnClient.cs   typed HttpClients + source-generated JSON
   Cipheroom.Api/             → Application, Infrastructure. Composition root; Mediator.SourceGenerator runs here
     Hubs/RoomHub.cs IRoomClient.cs Contracts/   (wire contract — see signaling-protocol skill)
     Hubs/Filters/HubRateLimitFilter.cs HubExceptionFilter.cs
@@ -51,7 +53,7 @@ tests/                       one project per layer; Directory.Build.props adds x
 - **Logging:** `[LoggerMessage]` source-generated methods (CA1848). Log ids and types, **never request values** —
   no display names, envelopes, ciphertext, tokens or TURN credentials. Guard expensive arguments with `IsEnabled`.
 - **Options:** `AddOptions<T>().BindConfiguration(...).ValidateDataAnnotations().ValidateOnStart()`. Env vars use `__`
-  (`LiveKit__ApiSecret`); compose maps `.env` names onto them.
+  (`Sfu__Cloudflare__AppSecret`); compose maps `.env` names onto them.
 - **Time:** inject `TimeProvider`; tests use `FakeTimeProvider`.
 - **Outbound HTTP:** one **typed client per external API** in Infrastructure (e.g. `Rtc/Cloudflare/CloudflareTurnClient`):
   it only speaks HTTP and returns the API's DTOs; an adapter maps them to Application types. Base address (from
@@ -84,6 +86,8 @@ restore), then sources, then publishes. Runtime: `mcr.microsoft.com/dotnet/aspne
 non-root `$APP_UID`), port 8080, `HEALTHCHECK CMD ["dotnet", "Cipheroom.Api.dll", "--health"]`. Add new layer projects
 to the COPY lines.
 
-## LiveKit + ICE
-Token and ICE rules: `livekit-media` skill. `GetRtcConfig` only for joined participants (`NotFoundException`
-otherwise). Verify LiveKit webhook signatures before trusting usage data (future usage guard).
+## Media (Cloudflare SFU) + ICE
+Rules in the `media` skill. Media commands check the caller's room in the `Room` aggregate *before* calling `ISfu`;
+SDP is validated (size, `v=0`) and never logged; SFU failures become `MediaServerException` ("Media server
+unavailable."). SFU POST/PUT are never retried. `GetRtcConfig` only for joined participants (`NotFoundException`
+otherwise).

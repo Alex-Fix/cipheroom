@@ -13,9 +13,6 @@ namespace Cipheroom.Api.FunctionalTests;
 public sealed class HardeningTests(WebApplicationFactory<Program> factory) : IClassFixture<WebApplicationFactory<Program>>
 {
     private readonly WebApplicationFactory<Program> _factory = factory.WithWebHostBuilder(b => b
-        .UseSetting("LiveKit:Url", "ws://livekit.test")
-        .UseSetting("LiveKit:ApiKey", "testkey")
-        .UseSetting("LiveKit:ApiSecret", "test-secret-that-is-at-least-32-bytes-long")
         // Tiny bucket that doesn't refill during the test.
         .UseSetting("RateLimiting:Hub:TokenLimit", "2")
         .UseSetting("RateLimiting:Hub:TokensPerSecond", "1")

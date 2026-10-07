@@ -15,9 +15,6 @@ namespace Cipheroom.Api.FunctionalTests;
 public sealed class RoomHubTests(WebApplicationFactory<Program> factory) : IClassFixture<WebApplicationFactory<Program>>
 {
     private readonly WebApplicationFactory<Program> _factory = factory.WithWebHostBuilder(b => b
-        .UseSetting("LiveKit:Url", "ws://livekit.test")
-        .UseSetting("LiveKit:ApiKey", "testkey")
-        .UseSetting("LiveKit:ApiSecret", "test-secret-that-is-at-least-32-bytes-long")
         .UseSetting("Turn:Cloudflare:KeyId", "")
         .UseSetting("Turn:Cloudflare:ApiToken", ""));
 
@@ -39,8 +36,10 @@ public sealed class RoomHubTests(WebApplicationFactory<Program> factory) : IClas
         var bobJoin = await bob.InvokeAsync<JoinResult>("JoinRoom", "room-1", "  Bob ", Ct);
 
         var bobAsSeenByAlice = await joined.Reader.ReadAsync(Timeout());
-        Assert.Equal(new ParticipantDto(bobJoin.SelfId, "Bob"), bobAsSeenByAlice);
-        Assert.Equal([new ParticipantDto(aliceJoin.SelfId, "Alice")], bobJoin.Participants);
+        Assert.Equal((bobJoin.SelfId, "Bob"), (bobAsSeenByAlice.Id, bobAsSeenByAlice.DisplayName));
+        Assert.Empty(bobAsSeenByAlice.Tracks);
+        var aliceAsSeenByBob = Assert.Single(bobJoin.Participants);
+        Assert.Equal((aliceJoin.SelfId, "Alice"), (aliceAsSeenByBob.Id, aliceAsSeenByBob.DisplayName));
 
         await bob.DisposeAsync();
         Assert.Equal(bobJoin.SelfId, await left.Reader.ReadAsync(Timeout()));
@@ -75,7 +74,7 @@ public sealed class RoomHubTests(WebApplicationFactory<Program> factory) : IClas
     }
 
     [Fact]
-    public async Task Rtc_config_requires_joining_and_returns_token_without_relay_when_turn_unconfigured()
+    public async Task Rtc_config_requires_joining_and_has_no_relay_when_turn_is_unconfigured()
     {
         await using var connection = await ConnectAsync();
 
@@ -84,8 +83,6 @@ public sealed class RoomHubTests(WebApplicationFactory<Program> factory) : IClas
         await connection.InvokeAsync<JoinResult>("JoinRoom", "room-2", "Carol", Ct);
         var config = await connection.InvokeAsync<RtcConfig>("GetRtcConfig", Ct);
 
-        Assert.Equal("ws://livekit.test", config.LivekitUrl);
-        Assert.NotEmpty(config.Token);
         Assert.Empty(config.IceServers);
         Assert.False(config.ForceRelay);
     }

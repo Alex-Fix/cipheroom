@@ -8,4 +8,11 @@ public interface IRoomClient
     Task ParticipantJoined(ParticipantDto participant);
 
     Task ParticipantLeft(string participantId);
+
+    Task TracksPublished(string participantId, IReadOnlyList<TrackDto> tracks);
+
+    /// <param name="sources">microphone / camera / screen.</param>
+    Task TracksUnpublished(string participantId, IReadOnlyList<string> sources);
+
+    Task TrackMuted(string participantId, string source, bool muted);
 }

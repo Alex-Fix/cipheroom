@@ -1,27 +1,34 @@
 ---
 name: e2ee-media
-description: End-to-end encryption for Cipheroom — device identities (Ed25519/X25519), sender keys, signed key envelopes over SignalR, rotation on join/leave, LiveKit per-participant key provider, safety codes, and a security review checklist. Use whenever touching web/src/app/core/crypto, the key provider, key envelopes, chat encryption, or anything that could leak key material.
+description: End-to-end encryption for Cipheroom — device identities (Ed25519/X25519), sender keys, signed key envelopes over SignalR, rotation on join/leave, our frame-encryption worker (encoded transforms), safety codes, and a security review checklist. Use whenever touching web/src/app/core/crypto, the frame transform, key envelopes, chat encryption, or anything that could leak key material.
 ---
 
 # E2EE
 
-Read `docs/architecture.md` → "Encryption model". Invariant: **no server (api, LiveKit, TURN) ever sees a plaintext
+Read `docs/architecture.md` → "Encryption model". Invariant: **no server (api, Cloudflare SFU, TURN) ever sees a plaintext
 key, frame, or chat message.**
 
 ## Who does what
-- **LiveKit E2EE worker**: frame encryption (AES-GCM, encoded transforms). We don't write frame crypto.
+- **Frame encryption is ours** since the move to Cloudflare Realtime SFU (no LiveKit worker any more): one worker
+  in `web/src/app/core/crypto/`, AES-GCM via WebCrypto, applied with encoded transforms (`RTCRtpScriptTransform`,
+  `createEncodedStreams` fallback) on every sender and receiver `MediaService` creates. No custom ciphers, no
+  homemade primitives — only the framing (what stays in the clear, IV layout) is ours, and it gets a design doc first.
 - **Us** (`web/src/app/core/crypto/`):
   - `identity.ts` — create/load device identity (non-extractable keys in IndexedDB), sign bundle.
   - `sender-keys.ts` — generate, rotate, envelope encrypt/decrypt, signature verify.
-  - `cipheroom-key-provider.ts` — LiveKit key provider in **per-participant** mode.
+  - `frame-crypto.worker.ts` — per-frame AES-GCM; keys per `(participantId, keyIndex)`.
   - `safety-code.ts` — emoji/digit code from all identity keys.
   - `chat-crypto.ts` — AES-GCM chat with HKDF-derived key (label `cipheroom/chat/v1`).
 
-## Key provider
-Extend LiveKit's `BaseKeyProvider` with `{ sharedKey: false, ratchetWindowSize: 0 }` and feed it keys:
-`this.onSetEncryptionKey(cryptoKey, participantIdentity, keyIndex)` — local participant's own key uses its own identity.
-(Verify exact names against the installed `livekit-client`; don't use `ExternalE2EEKeyProvider` — it's shared-key.)
-Media key = `HKDF(senderKey, info="cipheroom/media/v1")` imported as raw AES key material per LiveKit's expectation.
+## Frame transform
+- Keys per sender: our own key under our participant id, each remote participant's under theirs, selected by the
+  `keyIndex` carried in the frame trailer. Media key = `HKDF(senderKey, info="cipheroom/media/v1")`, non-extractable.
+- Leave the codec payload header in the clear so the SFU can still route/packetize: VP8 (the camera codec) has a
+  short fixed header (keyframe 10 bytes, delta 3 bytes, as LiveKit's worker does); Opus needs none. If a codec other
+  than VP8/Opus is ever negotiated (e.g. H.264 — NAL unit headers must stay clear), the worker must handle it or the
+  sender must refuse.
+- Unique IV per frame per key (sender id ‖ counter); never reuse a key across rooms or epochs.
+- Unsupported browser (no encoded transforms) → can't join an encrypted room; never fall back to plaintext.
 
 ## Envelope format (v1)
 ```
@@ -47,6 +54,8 @@ envelope = {
 - [ ] Can't join/publish if E2EE setup fails — no silent unencrypted fallback.
 - [ ] Every envelope signature verified before use; identity changes surface a warning.
 - [ ] Safety code recomputed and shown whenever participant set changes.
-- [ ] LiveKit token has `canPublishData: false` (data channel is outside our key mgmt).
+- [ ] No SFU data channels for app data (chat goes over SignalR, encrypted) — they're outside our key management.
+- [ ] Every sender and receiver `MediaService` creates gets the transform before media flows (incl. placeholder and
+      replaced tracks).
 - [ ] Only WebCrypto primitives; no `Math.random`, no custom ciphers.
 - [ ] Tests: envelope round trip, tampered envelope → reject, wrong recipient → reject, rotation on leave excludes leaver.

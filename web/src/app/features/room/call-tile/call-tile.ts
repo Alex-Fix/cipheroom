@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
 import { NzIconModule } from 'ng-zorro-antd/icon';
-import { Tile } from '../../../core/livekit/livekit.service';
+import { Tile } from '../../../core/media/media.types';
 import { initials } from '../../../shared/initials';
 import { TrackDirective } from '../../../shared/track.directive';
 

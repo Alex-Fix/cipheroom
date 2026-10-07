@@ -25,13 +25,13 @@ Every idea gets checked against these before approaches are proposed. Name any c
 
 | Constraint | Ask |
 |---|---|
-| **E2EE invariant** | Does any server (api, LiveKit, TURN, Cloudflare) need plaintext media, chat, or keys? If yes it's a design change, not a feature. |
+| **E2EE invariant** | Does any server (api, Cloudflare SFU/TURN/tunnel) need plaintext media, chat, or keys? If yes it's a design change, not a feature. |
 | **$0 running cost** | Does it need a paid service, a rented VM, or push us past Cloudflare's 1 TB/mo free tier? (No Oracle.) |
 | **No public IP** | Does it need inbound ports? Only HTTP/WS via the tunnel is available; media only via Cloudflare TURN. |
 | **Self-hostable + open source** | Any closed SDK or third-party SaaS dependency? |
-| **Untrusted server** | Can a malicious api/LiveKit abuse it (inject participants, swap keys, read metadata)? What's visible as metadata? |
+| **Untrusted server** | Can a malicious api/SFU abuse it (inject participants, swap keys, read metadata)? What's visible as metadata? |
 | **Browser support** | Needs encoded transforms, WebCrypto Ed25519/X25519, etc.? Which browsers break? Mobile Safari? |
-| **Two signaling channels** | App logic → SignalR; media → LiveKit. Which one does this belong on? |
+| **Signaling** | Everything goes over SignalR (media negotiation is relayed to the SFU). Does it need new hub methods/events (→ `signaling-protocol`)? |
 
 ## 4. Propose 2–3 approaches
 For each: one-paragraph summary, what changes (backend / frontend / deploy / protocol), trade-offs,

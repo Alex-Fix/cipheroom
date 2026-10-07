@@ -8,7 +8,6 @@
   </Folder>
   <Folder Name="/deploy/">
     <File Path="deploy/docker-compose.yml" />
-    <File Path="deploy/docker-compose.dev.yml" />
   </Folder>
   <Folder Name="/docs/">
     <File Path="docs/architecture.md" />

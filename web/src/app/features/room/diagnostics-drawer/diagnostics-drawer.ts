@@ -1,7 +1,7 @@
 import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
 import { NzDrawerModule } from 'ng-zorro-antd/drawer';
-import { Diagnostics } from '../../../core/livekit/livekit.service';
-import { IcePath } from '../../../core/livekit/ice-path';
+import { Diagnostics } from '../../../core/media/media.types';
+import { IcePath } from '../../../core/media/ice-path';
 
 /** Connection path details (which ICE candidates / TURN transport are in use). Presentational. */
 @Component({

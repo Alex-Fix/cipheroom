@@ -13,11 +13,3 @@ public interface IIceServerProvider
     Task<IceConfig> GetAsync(ParticipantId participantId, CancellationToken cancellationToken);
 }
 
-/// <summary>Where and how a participant connects to the media server.</summary>
-public sealed record LiveKitAccess(string Url, string Token);
-
-/// <summary>Issues LiveKit access for a participant in their room.</summary>
-public interface ILiveKitTokenIssuer
-{
-    LiveKitAccess Issue(Participant participant);
-}

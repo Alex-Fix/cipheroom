@@ -13,7 +13,7 @@ namespace Cipheroom.Infrastructure.IntegrationTests.Rtc;
 public sealed class CloudflareIceServerProviderTests
 {
     [Fact]
-    public async Task Typed_client_sends_bearer_token_and_ttl_and_provider_forces_relay()
+    public async Task Typed_client_sends_bearer_token_and_ttl_and_relay_is_not_forced_by_default()
     {
         var handler = new StubHandler(HttpStatusCode.Created,
             """{"iceServers":[{"urls":["turn:turn.cloudflare.com:3478?transport=udp"],"username":"u","credential":"c"}]}""");
@@ -23,7 +23,7 @@ public sealed class CloudflareIceServerProviderTests
         var config = await provider.GetAsync(ParticipantId.New(), TestContext.Current.CancellationToken);
 
         Assert.IsType<CloudflareIceServerProvider>(provider);
-        Assert.True(config.ForceRelay);
+        Assert.False(config.ForceRelay);
         var server = Assert.Single(config.IceServers);
         Assert.Equal(["turn:turn.cloudflare.com:3478?transport=udp"], server.Urls);
         Assert.Equal(("u", "c"), (server.Username, server.Credential));
@@ -32,6 +32,17 @@ public sealed class CloudflareIceServerProviderTests
         Assert.Equal("https://rtc.test/v1/turn/keys/key%2Fid/credentials/generate-ice-servers", handler.Request.RequestUri!.AbsoluteUri);
         Assert.Equal("Bearer secret-token", handler.Request.Headers.Authorization!.ToString());
         Assert.Equal("""{"ttl":3600}""", handler.Body);
+    }
+
+    [Fact]
+    public async Task Relay_can_be_forced_for_testing()
+    {
+        var handler = new StubHandler(HttpStatusCode.Created, """{"iceServers":[{"urls":["turn:x"]}]}""");
+        using var services = BuildServices(handler, forceRelay: true);
+
+        var config = await services.GetRequiredService<IIceServerProvider>().GetAsync(ParticipantId.New(), TestContext.Current.CancellationToken);
+
+        Assert.True(config.ForceRelay);
     }
 
     [Fact]
@@ -51,17 +62,15 @@ public sealed class CloudflareIceServerProviderTests
         Assert.IsType<DirectIceServerProvider>(services.GetRequiredService<IIceServerProvider>());
     }
 
-    private static ServiceProvider BuildServices(StubHandler handler, string keyId = "key/id", string token = "secret-token")
+    private static ServiceProvider BuildServices(StubHandler handler, string keyId = "key/id", string token = "secret-token", bool forceRelay = false)
     {
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {
-            ["LiveKit:Url"] = "ws://livekit.test",
-            ["LiveKit:ApiKey"] = "testkey",
-            ["LiveKit:ApiSecret"] = "test-secret-that-is-at-least-32-bytes-long",
             ["Turn:Cloudflare:ApiBaseUrl"] = "https://rtc.test/v1/turn/keys/",
             ["Turn:Cloudflare:KeyId"] = keyId,
             ["Turn:Cloudflare:ApiToken"] = token,
             ["Turn:CredentialTtlSeconds"] = "3600",
+            ["Turn:ForceRelay"] = forceRelay ? "true" : "false",
         }).Build();
 
         var services = new ServiceCollection()

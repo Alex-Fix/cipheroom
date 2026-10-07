@@ -1,5 +1,5 @@
 import { TestBed } from '@angular/core/testing';
-import { Diagnostics } from '../../../core/livekit/livekit.service';
+import { Diagnostics } from '../../../core/media/media.types';
 import { DiagnosticsDrawer } from './diagnostics-drawer';
 
 function render(diagnostics: Diagnostics) {

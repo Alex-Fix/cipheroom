@@ -88,8 +88,25 @@
       </li>
       <li nz-menu-divider></li>
     }
-    <li nz-menu-item class="diagnostics-item" (click)="openDiagnostics.emit()">
-      <nz-icon nzType="info-circle" /> Connection diagnostics
+    <li nz-menu-group nzTitle="Video quality">
+      <ul>
+        @for (q of qualities(); track q) {
+          <li
+            nz-menu-item
+            class="quality-item"
+            [attr.aria-checked]="q === quality()"
+            role="menuitemradio"
+            (click)="selectQuality.emit(q)"
+          >
+            <span class="check" aria-hidden="true">
+              @if (q === quality()) {
+                <nz-icon nzType="check" />
+              }
+            </span>
+            {{ qualityLabels[q] }}
+          </li>
+        }
+      </ul>
     </li>
   </ul>
 </nz-dropdown-menu>

@@ -35,8 +35,14 @@ public sealed record GenerateIceServersResponse(CloudflareIceServer[] IceServers
 
 public sealed record CloudflareIceServer(string[] Urls, string? Username, string? Credential);
 
-/// <summary>Source-generated JSON (no reflection; trim/AOT friendly).</summary>
-[JsonSourceGenerationOptions(JsonSerializerDefaults.Web)]
+/// <summary>Source-generated JSON for the Cloudflare Realtime APIs (no reflection; trim/AOT friendly).</summary>
+[JsonSourceGenerationOptions(JsonSerializerDefaults.Web, DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
 [JsonSerializable(typeof(GenerateIceServersRequest))]
 [JsonSerializable(typeof(GenerateIceServersResponse))]
+[JsonSerializable(typeof(NewSessionResponse))]
+[JsonSerializable(typeof(TracksRequest))]
+[JsonSerializable(typeof(TracksResponse))]
+[JsonSerializable(typeof(CloseTracksRequest))]
+[JsonSerializable(typeof(RenegotiateRequest))]
+[JsonSerializable(typeof(RenegotiateResponse))]
 internal sealed partial class CloudflareJsonContext : JsonSerializerContext;

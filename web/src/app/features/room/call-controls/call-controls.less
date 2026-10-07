@@ -86,8 +86,9 @@
   }
 }
 
-// ⋯ menu camera picker (rendered in an overlay, so styles must reach outside the host).
-::ng-deep .camera-item .check {
+// ⋯ menu camera and quality pickers (rendered in an overlay, so styles must reach outside the host).
+::ng-deep .camera-item .check,
+::ng-deep .quality-item .check {
   display: inline-block;
   width: 18px;
   color: var(--accent);

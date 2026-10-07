@@ -8,12 +8,15 @@ import {
   inject,
   input,
   signal,
+  untracked,
 } from '@angular/core';
 import { Router } from '@angular/router';
 import { NzButtonModule } from 'ng-zorro-antd/button';
 import { NzIconModule } from 'ng-zorro-antd/icon';
 import { NzMessageService } from 'ng-zorro-antd/message';
-import { CallParticipant, LiveKitService } from '../../core/livekit/livekit.service';
+import { MediaService } from '../../core/media/media.service';
+import { CallParticipant } from '../../core/media/media.types';
+import { VideoQuality } from '../../core/media/quality';
 import { SignalingService } from '../../core/signaling/signaling.service';
 import { ThemeService } from '../../core/ui/theme.service';
 import { loadDisplayName } from '../../core/settings/display-name';
@@ -22,23 +25,23 @@ import { CallHeader } from './call-header/call-header';
 import { callStatus } from './call-status';
 import { CallTile } from './call-tile/call-tile';
 import { Device, deviceErrorMessage } from './device-error';
-import { DiagnosticsDrawer } from './diagnostics-drawer/diagnostics-drawer';
+import { ElementSizeDirective } from '../../shared/element-size.directive';
 import { participantChanges } from './participant-changes';
 import { ParticipantsPanel } from './participants-panel/participants-panel';
 
-/** Call screen container: owns the join/leave lifecycle and is the only place that talks to LiveKitService. */
+/** Call screen container: owns the join/leave lifecycle and is the only place that talks to MediaService. */
 @Component({
   selector: 'app-room',
   imports: [
     CallControls,
     CallHeader,
     CallTile,
-    DiagnosticsDrawer,
+    ElementSizeDirective,
     NzButtonModule,
     NzIconModule,
     ParticipantsPanel,
   ],
-  providers: [LiveKitService],
+  providers: [MediaService],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './room.html',
   styleUrl: './room.less',
@@ -51,22 +54,26 @@ export class Room implements OnInit, OnDestroy {
   private readonly signaling = inject(SignalingService);
   private readonly message = inject(NzMessageService);
   private readonly theme = inject(ThemeService);
-  protected readonly livekit = inject(LiveKitService);
+  protected readonly media = inject(MediaService);
 
   protected readonly error = signal<string | undefined>(undefined);
-  protected readonly showDiagnostics = signal(false);
   protected readonly showParticipants = signal(false);
   /** "Bob joined" / "Bob left". Rendered by interpolation only — names never go through nz-message (HTML). */
   protected readonly notices = signal<{ id: number; text: string }[]>([]);
   protected readonly manualCopy = signal(false);
   private readonly joined = signal(false);
+  /** Automatic rejoin after the connection was lost (shown as "Reconnecting…"). */
+  private readonly rejoining = signal(false);
+  private rejoinAttempts = 0;
 
   protected readonly link = location.href;
   protected readonly canShareScreen = typeof navigator.mediaDevices?.getDisplayMedia === 'function';
   protected readonly status = computed(() =>
-    callStatus(this.livekit.state(), this.joined(), !!this.error()),
+    this.rejoining()
+      ? 'reconnecting'
+      : callStatus(this.media.state(), this.joined(), !!this.error()),
   );
-  protected readonly participantCount = computed(() => this.livekit.participants().length);
+  protected readonly participantCount = computed(() => this.media.participants().length);
 
   private baseline?: readonly CallParticipant[];
   private noticeId = 0;
@@ -75,7 +82,7 @@ export class Room implements OnInit, OnDestroy {
     // Every join and leave is announced (ghost-participant defence, docs/architecture.md). The first snapshot after
     // joining is the baseline — people already in the room aren't "joining".
     effect(() => {
-      const participants = this.livekit.participants();
+      const participants = this.media.participants();
       if (!this.joined()) {
         this.baseline = undefined;
         return;
@@ -86,6 +93,14 @@ export class Room implements OnInit, OnDestroy {
         left.forEach((p) => this.notify(`${p.name} left`));
       }
       this.baseline = participants;
+    });
+
+    // Lost the media connection (ICE restarts gave up) or the signaling connection: rejoin from scratch.
+    effect(() => {
+      if (!this.joined()) return;
+      if (this.media.state() === 'connected') this.rejoinAttempts = 0;
+      const lost = this.media.state() === 'disconnected' || !this.signaling.connected();
+      if (lost) untracked(() => void this.rejoin());
     });
   }
 
@@ -105,6 +120,7 @@ export class Room implements OnInit, OnDestroy {
 
   /** Tears down whatever is left of the previous attempt and joins again. */
   protected async retry(): Promise<void> {
+    this.rejoinAttempts = 0;
     await this.teardown();
     await this.join();
   }
@@ -112,21 +128,29 @@ export class Room implements OnInit, OnDestroy {
   /** Toggles a device; failures (permission denied, no device) become a toast instead of vanishing. */
   protected async setDevice(device: Device, enabled: boolean): Promise<void> {
     try {
-      if (device === 'microphone') await this.livekit.setMicrophone(enabled);
-      else if (device === 'camera') await this.livekit.setCamera(enabled);
-      else await this.livekit.setScreenShare(enabled);
+      if (device === 'microphone') await this.media.setMicrophone(enabled);
+      else if (device === 'camera') await this.media.setCamera(enabled);
+      else await this.media.setScreenShare(enabled);
     } catch (e) {
-      this.message.error(deviceErrorMessage(device, e));
+      this.deviceFailed(device, e);
     }
   }
 
   /** Flip front ⇄ rear, or pick a specific camera. Failures (camera busy, gone) become a toast. */
   protected async switchCamera(deviceId?: string): Promise<void> {
     try {
-      if (deviceId) await this.livekit.selectCamera(deviceId);
-      else await this.livekit.flipCamera();
+      if (deviceId) await this.media.selectCamera(deviceId);
+      else await this.media.flipCamera();
     } catch (e) {
-      this.message.error(deviceErrorMessage('camera', e));
+      this.deviceFailed('camera', e);
+    }
+  }
+
+  protected async setQuality(quality: VideoQuality): Promise<void> {
+    try {
+      await this.media.setVideoQuality(quality);
+    } catch (e) {
+      this.deviceFailed('camera', e);
     }
   }
 
@@ -144,28 +168,79 @@ export class Room implements OnInit, OnDestroy {
     void this.router.navigate(['/']);
   }
 
+  /**
+   * Constant toast for the user; the browser's actual error goes to this device's console only (Safari Web
+   * Inspector / devtools) — it can contain SDP and never leaves the browser.
+   */
+  private deviceFailed(device: Device, error: unknown): void {
+    console.warn(`[cipheroom] ${device} failed`, error);
+    this.message.error(deviceErrorMessage(device, error));
+  }
+
   private notify(text: string): void {
     const id = ++this.noticeId;
     this.notices.update((list) => [...list, { id, text }].slice(-3));
     setTimeout(() => this.notices.update((list) => list.filter((n) => n.id !== id)), 4000);
   }
 
-  private async join(): Promise<void> {
+  private async join(devices = { microphone: true, camera: true }): Promise<void> {
     this.error.set(undefined);
     try {
-      await this.signaling.joinRoom(this.roomId(), loadDisplayName());
-      await this.livekit.connect(await this.signaling.getRtcConfig());
+      const displayName = loadDisplayName();
+      const { selfId } = await this.signaling.joinRoom(this.roomId(), displayName);
+      this.media.connect(await this.signaling.getRtcConfig(), { id: selfId, displayName });
       this.joined.set(true);
-      await Promise.all([this.setDevice('microphone', true), this.setDevice('camera', true)]);
+      await this.publishOwnTracks(devices);
+      this.media.startReceiving();
     } catch (e) {
       // Shown via interpolation only — never through nz-message (renders HTML).
       this.error.set(e instanceof Error ? e.message : String(e));
     }
   }
 
+  /**
+   * Publishes our microphone and camera before we receive anyone else's tracks: iOS Safari can't add them once the
+   * connection began by answering the SFU. Devices that should be off are still published — the microphone muted,
+   * the camera as muted placeholder frames — so turning them on later never needs a new negotiation.
+   */
+  private async publishOwnTracks(devices: { microphone: boolean; camera: boolean }): Promise<void> {
+    await Promise.all([
+      this.setDevice('microphone', true).then(() =>
+        devices.microphone || !this.media.micEnabled()
+          ? undefined
+          : this.setDevice('microphone', false),
+      ),
+      devices.camera ? this.setDevice('camera', true) : undefined,
+    ]);
+    // Camera off, denied or missing: reserve its slot anyway.
+    if (!this.media.cameraEnabled()) await this.media.reserveCamera().catch(() => undefined);
+  }
+
+  /** Same devices as before; gives up (Try Again screen) after a few attempts in a row. */
+  private async rejoin(): Promise<void> {
+    if (this.rejoining()) return;
+    if (++this.rejoinAttempts > MAX_REJOINS) {
+      await this.teardown();
+      this.error.set('Connection lost.');
+      return;
+    }
+    this.rejoining.set(true);
+    const devices = { microphone: this.media.micEnabled(), camera: this.media.cameraEnabled() };
+    try {
+      await this.teardown();
+      await new Promise((resolve) => setTimeout(resolve, REJOIN_DELAY_MS));
+      await this.join(devices);
+    } finally {
+      this.rejoining.set(false);
+    }
+  }
+
   private async teardown(): Promise<void> {
     this.joined.set(false);
-    await this.livekit.disconnect();
+    await this.media.disconnect();
     await this.signaling.leave();
   }
 }
+
+const MAX_REJOINS = 3;
+const REJOIN_DELAY_MS = 1000;

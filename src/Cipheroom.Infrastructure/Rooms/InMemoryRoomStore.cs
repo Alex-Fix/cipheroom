@@ -8,6 +8,7 @@ namespace Cipheroom.Infrastructure.Rooms;
 public sealed class InMemoryRoomStore : IRoomStore
 {
     private readonly Lock _gate = new();
+    // Join-time snapshot per connection: only Id and RoomId are used; current state lives in the Room.
     private readonly Dictionary<string, Participant> _byConnection = [];
     private readonly Dictionary<RoomId, Room> _rooms = [];
 
@@ -37,11 +38,7 @@ public sealed class InMemoryRoomStore : IRoomStore
         }
     }
 
-    public Participant? FindByConnection(string connectionId)
-    {
-        lock (_gate)
-            return _byConnection.GetValueOrDefault(connectionId);
-    }
+    public Participant? FindByConnection(string connectionId) => InRoom(connectionId, (_, self) => self);
 
     public Participant? Leave(string connectionId)
     {
@@ -51,11 +48,26 @@ public sealed class InMemoryRoomStore : IRoomStore
                 return null;
 
             var room = _rooms[participant.RoomId];
-            room.Leave(connectionId);
+            var left = room.Leave(connectionId) ?? participant;
             if (room.IsEmpty)
                 _rooms.Remove(room.Id);
 
-            return participant;
+            return left;
+        }
+    }
+
+    public T? InRoom<T>(string connectionId, Func<Room, Participant, T> action)
+        where T : class
+    {
+        lock (_gate)
+        {
+            if (!_byConnection.TryGetValue(connectionId, out var known))
+                return null;
+
+            var room = _rooms[known.RoomId];
+            // The room holds the current state (participants are immutable records replaced on change).
+            var self = room.Participants.First(p => p.Id == known.Id);
+            return action(room, self);
         }
     }
 }

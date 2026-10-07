@@ -1,7 +1,6 @@
 import { TestBed } from '@angular/core/testing';
-import { Track } from 'livekit-client';
 import { provideNzIcons } from 'ng-zorro-antd/icon';
-import { Tile } from '../../../core/livekit/livekit.service';
+import { Tile } from '../../../core/media/media.types';
 import { APP_ICONS } from '../../../core/ui/icons';
 import { CallTile } from './call-tile';
 
@@ -27,7 +26,14 @@ function render(t: Tile): HTMLElement {
   return fixture.nativeElement;
 }
 
-const fakeTrack = () => ({ attach: vi.fn(), detach: vi.fn() }) as unknown as Track;
+const fakeTrack = () => ({ kind: 'video' }) as MediaStreamTrack;
+
+beforeEach(() => {
+  // jsdom has no MediaStream / media playback.
+  vi.stubGlobal('MediaStream', class {});
+  vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+});
+afterEach(() => vi.unstubAllGlobals());
 
 describe('CallTile', () => {
   it('shows an initials monogram when there is no video', () => {

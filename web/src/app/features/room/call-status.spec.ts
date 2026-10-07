@@ -1,19 +1,18 @@
-import { ConnectionState } from 'livekit-client';
 import { callStatus } from './call-status';
 
 describe('callStatus', () => {
-  it('treats the initial disconnected state as connecting', () => {
-    expect(callStatus(ConnectionState.Disconnected, false)).toBe('connecting');
-    expect(callStatus(ConnectionState.Disconnected, true)).toBe('disconnected');
+  it('is connecting until joined', () => {
+    expect(callStatus('disconnected', false)).toBe('connecting');
+    expect(callStatus('connected', false)).toBe('connecting');
   });
 
-  it('maps both reconnect states to reconnecting', () => {
-    expect(callStatus(ConnectionState.Reconnecting, true)).toBe('reconnecting');
-    expect(callStatus(ConnectionState.SignalReconnecting, true)).toBe('reconnecting');
-    expect(callStatus(ConnectionState.Connected, true)).toBe('connected');
+  it('follows the media connection once joined', () => {
+    expect(callStatus('connected', true)).toBe('connected');
+    expect(callStatus('reconnecting', true)).toBe('reconnecting');
+    expect(callStatus('disconnected', true)).toBe('disconnected');
   });
 
-  it('reports a failed join regardless of LiveKit state', () => {
-    expect(callStatus(ConnectionState.Disconnected, false, true)).toBe('failed');
+  it('reports a failed join regardless of the connection', () => {
+    expect(callStatus('connected', true, true)).toBe('failed');
   });
 });

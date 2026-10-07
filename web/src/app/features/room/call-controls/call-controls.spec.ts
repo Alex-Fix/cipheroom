@@ -11,6 +11,8 @@ interface State {
   canFlip?: boolean;
   cameras?: { id: string; label: string }[];
   activeCameraId?: string;
+  qualities?: string[];
+  quality?: string;
 }
 
 function render(state: State) {
@@ -133,5 +135,28 @@ describe('CallControls', () => {
     await openMore(fixture, button('more')!);
     expect(document.body.querySelector('.ant-dropdown-menu')).not.toBeNull(); // menu did open
     expect(document.body.querySelector('.camera-item')).toBeNull();
+  });
+
+  it('offers the camera qualities, checks the chosen one and emits a new choice', async () => {
+    const { fixture, button } = render({
+      ...allOn,
+      qualities: ['auto', '2160p', '1080p', '720p'],
+      quality: 'auto',
+    });
+    const select = vi.fn();
+    fixture.componentInstance.selectQuality.subscribe(select);
+
+    await openMore(fixture, button('more')!);
+    const items = [...document.body.querySelectorAll<HTMLElement>('.quality-item')];
+
+    expect(items.map((i) => i.textContent!.trim())).toEqual(['Auto', '4K', '1080p', '720p']);
+    expect(items.map((i) => i.getAttribute('aria-checked'))).toEqual([
+      'true',
+      'false',
+      'false',
+      'false',
+    ]);
+    items[2].click();
+    expect(select).toHaveBeenCalledWith('1080p');
   });
 });

@@ -2,25 +2,6 @@ using System.ComponentModel.DataAnnotations;
 
 namespace Cipheroom.Infrastructure.Rtc;
 
-public sealed class LiveKitOptions
-{
-    public const string Section = "LiveKit";
-
-    /// <summary>Browser-facing LiveKit signaling URL, e.g. wss://cipheroom.alexfix.dev/livekit.</summary>
-    [Required]
-    public string Url { get; set; } = "";
-
-    [Required]
-    public string ApiKey { get; set; } = "";
-
-    /// <summary>HS256 signing secret; must be at least 32 bytes.</summary>
-    [Required, MinLength(32)]
-    public string ApiSecret { get; set; } = "";
-
-    [Range(1, 60)]
-    public int TokenTtlMinutes { get; set; } = 10;
-}
-
 public sealed class TurnOptions
 {
     public const string Section = "Turn";
@@ -29,6 +10,10 @@ public sealed class TurnOptions
 
     [Range(300, 86400)]
     public int CredentialTtlSeconds { get; set; } = 14400;
+
+    /// <summary>Clients use TURN only (iceTransportPolicy "relay"). Off by default: media goes straight to the SFU's
+    /// edge; TURN is the fallback for networks that block it. Turn on to test the relay path.</summary>
+    public bool ForceRelay { get; set; }
 }
 
 public sealed class CloudflareTurnOptions
@@ -42,4 +27,25 @@ public sealed class CloudflareTurnOptions
     public string ApiToken { get; set; } = "";
 
     public bool IsConfigured => KeyId.Length > 0 && ApiToken.Length > 0;
+}
+
+public sealed class SfuOptions
+{
+    public const string Section = "Sfu";
+
+    public CloudflareSfuOptions Cloudflare { get; set; } = new();
+}
+
+public sealed class CloudflareSfuOptions
+{
+    /// <summary>Cloudflare Realtime SFU API, ending in a slash (app id is appended).</summary>
+    [Url]
+    public string ApiBaseUrl { get; set; } = "https://rtc.live.cloudflare.com/v1/apps/";
+
+    public string AppId { get; set; } = "";
+
+    /// <summary>App secret (Bearer token). Server-side only: never sent to clients or logged.</summary>
+    public string AppSecret { get; set; } = "";
+
+    public bool IsConfigured => AppId.Length > 0 && AppSecret.Length > 0;
 }

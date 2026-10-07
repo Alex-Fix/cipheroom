@@ -39,7 +39,7 @@
       </div>
     </section>
   } @else {
-    @if (!livekit.canPlaybackAudio()) {
+    @if (!media.canPlaybackAudio()) {
       <div class="audio-blocked glass" role="status">
         <nz-icon nzType="sound" />
         <span>Your browser paused call audio.</span>
@@ -48,47 +48,43 @@
           nzType="primary"
           nzShape="round"
           nzSize="small"
-          (click)="livekit.startAudio()"
+          (click)="media.startAudio()"
         >
           Enable Audio
         </button>
       </div>
     }
 
-    <section class="grid" [attr.data-count]="livekit.tiles().length">
-      @for (tile of livekit.tiles(); track tile.key) {
-        <app-call-tile [tile]="tile" />
+    <section class="grid" [attr.data-count]="media.tiles().length">
+      @for (tile of media.tiles(); track tile.key) {
+        <app-call-tile [tile]="tile" (appElementSize)="media.setTileSize(tile.key, $event)" />
       }
     </section>
 
     <app-call-controls
       class="controls"
-      [micEnabled]="livekit.micEnabled()"
-      [cameraEnabled]="livekit.cameraEnabled()"
-      [screenShareEnabled]="livekit.screenShareEnabled()"
+      [micEnabled]="media.micEnabled()"
+      [cameraEnabled]="media.cameraEnabled()"
+      [screenShareEnabled]="media.screenShareEnabled()"
       [canShareScreen]="canShareScreen"
-      [cameras]="livekit.cameras()"
-      [activeCameraId]="livekit.activeCameraId()"
-      [canFlip]="livekit.canFlip()"
-      (toggleMic)="setDevice('microphone', !livekit.micEnabled())"
-      (toggleCamera)="setDevice('camera', !livekit.cameraEnabled())"
-      (toggleScreenShare)="setDevice('screen', !livekit.screenShareEnabled())"
+      [cameras]="media.cameras()"
+      [activeCameraId]="media.activeCameraId()"
+      [canFlip]="media.canFlip()"
+      [qualities]="media.availableQualities()"
+      [quality]="media.videoQuality()"
+      (toggleMic)="setDevice('microphone', !media.micEnabled())"
+      (toggleCamera)="setDevice('camera', !media.cameraEnabled())"
+      (toggleScreenShare)="setDevice('screen', !media.screenShareEnabled())"
       (flipCamera)="switchCamera()"
       (selectCamera)="switchCamera($event)"
-      (openDiagnostics)="showDiagnostics.set(true)"
+      (selectQuality)="setQuality($event)"
       (leave)="leave()"
     />
   }
 
   <app-participants-panel
     [open]="showParticipants()"
-    [participants]="livekit.participants()"
+    [participants]="media.participants()"
     (closed)="showParticipants.set(false)"
-  />
-
-  <app-diagnostics-drawer
-    [open]="showDiagnostics()"
-    [diagnostics]="livekit.diagnostics()"
-    (closed)="showDiagnostics.set(false)"
   />
 </div>

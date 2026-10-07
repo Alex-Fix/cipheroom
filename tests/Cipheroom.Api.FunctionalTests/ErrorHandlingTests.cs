@@ -18,9 +18,6 @@ public sealed class ErrorHandlingTests(WebApplicationFactory<Program> factory) :
     private const string SecretDetail = "Cloudflare said: token cf-secret-123 is invalid";
 
     private readonly WebApplicationFactory<Program> _factory = factory.WithWebHostBuilder(b => b
-        .UseSetting("LiveKit:Url", "ws://livekit.test")
-        .UseSetting("LiveKit:ApiKey", "testkey")
-        .UseSetting("LiveKit:ApiSecret", "test-secret-that-is-at-least-32-bytes-long")
         .ConfigureTestServices(s => s
             .AddLogging(l => l.AddFakeLogging())
             .AddTransient<IIceServerProvider, FailingIceServerProvider>()));
