@@ -36,16 +36,19 @@ public sealed class CloudflareSfu(CloudflareSfuClient cloudflare) : ISfu
                 sessionId,
                 new TracksRequest([.. tracks.Select(t => Remote(t, t.Simulcast ? FirstLayer : null))]),
                 cancellationToken);
-            EnsureNoTrackErrors(response.Tracks);
 
-            // Track names are unique (they embed the publisher's participant id), so they identify each result.
+            // Per-track errors (e.g. empty_track_error: the publisher's media hasn't arrived yet, or they just left)
+            // must not fail the batch: Cloudflare has already added the other tracks and expects an answer to its
+            // offer — an unanswered offer breaks the session's next negotiation. Failed tracks are simply left out;
+            // the client retries them. Track names are unique (they embed the participant id), so they identify each
+            // result.
             SfuPulledTrack[] pulled =
             [
-                .. (response.Tracks ?? []).Join(
+                .. (response.Tracks ?? []).Where(r => r.ErrorCode is null && r.Mid is not null).Join(
                     tracks,
                     r => r.TrackName,
                     t => t.TrackName,
-                    (r, t) => new SfuPulledTrack(t.PublisherSessionId, t.TrackName, r.Mid ?? throw new MediaServerException())),
+                    (r, t) => new SfuPulledTrack(t.PublisherSessionId, t.TrackName, r.Mid!)),
             ];
             return new SfuSubscribeResult(response.RequiresImmediateRenegotiation ? Sdp(response.SessionDescription) : null, pulled);
         }, cancellationToken);

@@ -64,6 +64,22 @@ public sealed class CloudflareSfuTests
     }
 
     [Fact]
+    public async Task Subscribe_leaves_out_tracks_the_sfu_could_not_add_but_keeps_its_offer()
+    {
+        var handler = new StubHandler(HttpStatusCode.OK,
+            """
+            {"requiresImmediateRenegotiation":true,"sessionDescription":{"type":"offer","sdp":"v=0 sfu offer"},
+             "tracks":[{"mid":"5","trackName":"p-camera"},{"trackName":"gone-camera","errorCode":"empty_track_error"}]}
+            """);
+
+        var result = await Sfu(handler).SubscribeAsync("s1",
+            [new SfuRemoteTrack("pub", "p-camera", true), new SfuRemoteTrack("old", "gone-camera", true)], _ct);
+
+        Assert.Equal("v=0 sfu offer", result.OfferSdp);
+        Assert.Equal([new SfuPulledTrack("pub", "p-camera", "5")], result.Tracks);
+    }
+
+    [Fact]
     public async Task Ice_restart_renegotiates_with_an_offer_and_returns_the_answer()
     {
         var handler = new StubHandler(HttpStatusCode.OK, """{"sessionDescription":{"type":"answer","sdp":"v=0 a"}}""");

@@ -476,4 +476,64 @@ describe('MediaService', () => {
       });
     });
   });
+
+  describe('pull retries', () => {
+    afterEach(() => vi.useRealTimers());
+
+    const bob: ParticipantDto = {
+      id: 'bob',
+      displayName: 'Bob',
+      tracks: [
+        { source: 'microphone', kind: 'audio', muted: false },
+        { source: 'camera', kind: 'video', muted: false },
+      ],
+    };
+
+    it('answers the SFU offer for the tracks it got and retries the ones it left out', async () => {
+      const { signaling, participants, pc } = setup();
+      vi.useFakeTimers();
+      signaling.subscribeTracks
+        .mockResolvedValueOnce({
+          offerSdp: 'v=0 sfu offer',
+          tracks: [{ participantId: 'bob', source: 'microphone', mid: '5' }],
+        })
+        .mockResolvedValueOnce({
+          offerSdp: 'v=0 sfu offer 2',
+          tracks: [{ participantId: 'bob', source: 'camera', mid: '6' }],
+        });
+
+      participants.set([bob]);
+      await settle();
+
+      expect(pc.remoteDescriptions).toEqual([{ type: 'offer', sdp: 'v=0 sfu offer' }]);
+      expect(signaling.renegotiate).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(signaling.subscribeTracks).toHaveBeenLastCalledWith([
+        { participantId: 'bob', source: 'camera' },
+      ]);
+      expect(signaling.renegotiate).toHaveBeenCalledTimes(2);
+    });
+
+    it('retries a failed request with growing delays and stops once the publisher is gone', async () => {
+      const { signaling, participants } = setup();
+      vi.useFakeTimers();
+      signaling.subscribeTracks.mockRejectedValue(new Error('Media server unavailable.'));
+
+      participants.set([bob]);
+      await settle();
+      expect(signaling.subscribeTracks).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(signaling.subscribeTracks).toHaveBeenCalledTimes(2);
+      await vi.advanceTimersByTimeAsync(1999);
+      expect(signaling.subscribeTracks).toHaveBeenCalledTimes(2);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(signaling.subscribeTracks).toHaveBeenCalledTimes(3);
+
+      participants.set([]);
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(signaling.subscribeTracks).toHaveBeenCalledTimes(3);
+    });
+  });
 });

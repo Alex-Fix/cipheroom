@@ -50,6 +50,8 @@ export class MediaService implements OnDestroy {
   private statsTicks = 0;
   private recoveryTimer?: ReturnType<typeof setTimeout>;
   private restartAttempts = 0;
+  private resyncTimer?: ReturnType<typeof setTimeout>;
+  private pullFailures = 0;
   /** Rendered width of remote camera tiles (0 = off screen), and the layer last requested for each. */
   private readonly tileWidths = new Map<TrackKey, number>();
   private readonly layers = new Map<TrackKey, VideoLayer>();
@@ -240,6 +242,9 @@ export class MediaService implements OnDestroy {
   async disconnect(): Promise<void> {
     clearInterval(this.statsTimer);
     clearTimeout(this.recoveryTimer);
+    clearTimeout(this.resyncTimer);
+    this.resyncTimer = undefined;
+    this.pullFailures = 0;
     this.layerTimers.forEach((t) => clearTimeout(t));
     this.layerTimers.clear();
     this.tileWidths.clear();
@@ -358,12 +363,7 @@ export class MediaService implements OnDestroy {
       subscribe.forEach((t) =>
         this.subscriptions.set(trackKey(t.participantId, t.source), undefined),
       );
-      void this.queue
-        .run(() => this.pull(subscribe))
-        .catch(() => {
-          // Forget the request so the next room change retries it.
-          subscribe.forEach((t) => this.subscriptions.delete(trackKey(t.participantId, t.source)));
-        });
+      void this.queue.run(() => this.pull(subscribe)).catch(() => this.retryLater(subscribe));
     }
   }
 
@@ -373,6 +373,7 @@ export class MediaService implements OnDestroy {
 
     // Map mids before applying the offer: ontrack fires during setRemoteDescription.
     const stale: string[] = [];
+    const received = new Set(result.tracks.map((t) => trackKey(t.participantId, t.source)));
     for (const t of result.tracks) {
       const key = trackKey(t.participantId, t.source);
       if (this.subscriptions.has(key)) {
@@ -390,11 +391,31 @@ export class MediaService implements OnDestroy {
       await this.signaling.renegotiate(answer.sdp!);
     }
     if (stale.length) await this.signaling.unsubscribeTracks(stale);
+
+    // The SFU leaves out tracks it couldn't add yet (no media flowing yet, publisher just left): try again later.
+    const missing = tracks.filter((t) => !received.has(trackKey(t.participantId, t.source)));
+    if (missing.length) this.retryLater(missing);
+    else this.pullFailures = 0;
+
     // Tiles may have reported their size before the track arrived.
     for (const t of result.tracks) {
       const key = trackKey(t.participantId, t.source);
       if (this.tileWidths.has(key)) this.scheduleLayer(key);
     }
+  }
+
+  /**
+   * Forgets tracks we couldn't receive and re-syncs with the room after a growing delay (1 s, 2 s, 4 s … 15 s).
+   * Tracks whose publisher is gone by then simply aren't requested again.
+   */
+  private retryLater(tracks: TrackRefDto[]): void {
+    tracks.forEach((t) => this.subscriptions.delete(trackKey(t.participantId, t.source)));
+    if (this.resyncTimer) return;
+    const delay = Math.min(PULL_RETRY_BASE_MS * 2 ** this.pullFailures++, PULL_RETRY_MAX_MS);
+    this.resyncTimer = setTimeout(() => {
+      this.resyncTimer = undefined;
+      this.syncSubscriptions(this.signaling.participants());
+    }, delay);
   }
 
   private scheduleLayer(key: TrackKey): void {
@@ -567,6 +588,8 @@ const LAYER_DEBOUNCE_MS = 500;
 const ICE_GRACE_MS = 2000;
 const ICE_RESTART_TIMEOUT_MS = 10_000;
 const MAX_ICE_RESTARTS = 2;
+const PULL_RETRY_BASE_MS = 1000;
+const PULL_RETRY_MAX_MS = 15_000;
 
 function mediaState(state: RTCPeerConnectionState): MediaState {
   switch (state) {

@@ -13,7 +13,8 @@ public interface ISfu
     Task<string> PublishAsync(string sessionId, string offerSdp, IReadOnlyList<SfuLocalTrack> tracks, CancellationToken cancellationToken);
 
     /// <summary>Starts forwarding other sessions' tracks to this one. The SFU answers with an offer when the client
-    /// must renegotiate (<see cref="RenegotiateAsync"/>).</summary>
+    /// must renegotiate (<see cref="RenegotiateAsync"/>). Tracks the SFU couldn't add (not flowing yet, already gone)
+    /// are left out of the result rather than failing the call; the caller may retry them.</summary>
     Task<SfuSubscribeResult> SubscribeAsync(string sessionId, IReadOnlyList<SfuRemoteTrack> tracks, CancellationToken cancellationToken);
 
     /// <summary>Completes an SFU-initiated negotiation with the client's answer.</summary>
