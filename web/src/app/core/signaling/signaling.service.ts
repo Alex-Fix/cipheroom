@@ -8,6 +8,7 @@ import {
 import { withTrackMuted, withTracksPublished, withTracksUnpublished } from './participants';
 import {
   AnswerDto,
+  CallStatsDto,
   ClientEvents,
   HubMethods,
   IdentityDto,
@@ -96,6 +97,11 @@ export class SignalingService {
   /** Sends sender-key envelopes, each relayed to its recipient only. One rotation = one call. */
   async sendKeyEnvelopes(envelopes: KeyEnvelopeDto[]): Promise<void> {
     await this.invoke(HubMethods.SendKeyEnvelopes, envelopes);
+  }
+
+  /** Call-quality summary for telemetry (numbers only); recorded server-side as metrics. */
+  async reportCallStats(stats: CallStatsDto): Promise<void> {
+    await this.invoke(HubMethods.ReportCallStats, stats);
   }
 
   /** Envelopes addressed to us. Returns a function that removes the listener. */

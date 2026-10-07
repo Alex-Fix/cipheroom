@@ -25,6 +25,7 @@ Payloads never contain plaintext keys: only public keys and opaque signed envelo
 | C→S | `SetTrackMuted` | `source`, `muted` | — |
 | C→S | `SelectVideoLayer` | `mid` (received camera track), `rid` (`f` / `h` / `q`) | — |
 | C→S | `SendKeyEnvelopes` | `envelopes[{ toId, blob }]` (1–64, distinct `toId`s, each another participant of the caller's room; `blob` base64url, 1–1024 chars) | — (each relayed to its `toId` only) |
+| C→S | `ReportCallStats` | `CallStatsDto` (numbers only — see "Call-quality reports") | — |
 | S→C | `ParticipantJoined` | `ParticipantDto { id, displayName, tracks[], identity }` | |
 | S→C | `ParticipantLeft` | `id` | |
 | S→C | `TracksPublished` | `participantId`, `TrackDto[] { source, kind, muted }` | |
@@ -52,6 +53,26 @@ verifies, stores or logs them (clients verify everything — the server is untru
 - Clients that call `JoinRoom` without the `identity` argument (pre-E2EE) fail SignalR's argument binding and never
   join; `null` or a malformed identity gets `Invalid identity.`
 
+### Call-quality reports
+
+Design: `docs/plans/2026-10-07-observability-design.md`. Every 15 s each browser in a call sends what changed since
+its last report, computed from `getStats()` per stream and from `CryptoService`'s counters:
+
+```
+CallStatsDto { platform, path, intervalSeconds, rttMs?,
+               audioSent?, audioReceived?, videoSent?, videoReceived?,   // StreamStatsDto
+               e2ee? }                                                    // E2eeStatsDto
+StreamStatsDto { bytes, packets, packetsLost, jitterMs?, freezeSeconds?, height?, fps? }
+E2eeStatsDto   { framesEncrypted, framesDecrypted, framesFailed, framesMissingKey, envelopesDropped, securingSeconds }
+```
+
+- `platform`: `ios-safari` / `android-chrome` / `desktop-chrome` / `desktop-safari` / `desktop-firefox` / `other`
+  (never the user agent); unknown values are recorded as `other`. `path`: `direct` / `relay` / `unknown`.
+- Numbers only: no ids, names, addresses, codecs or track details. Every number must be finite, non-negative and under
+  a cap (`CallStatsRules`); `intervalSeconds` is 0–120.
+- Members only, no reply, nothing is broadcast or stored: the api records it as `cipheroom_call_*` /
+  `cipheroom_e2ee_*` metrics (labels: platform, path, kind, direction). Accepted even when telemetry export is off.
+
 ### Errors
 
 Failures arrive as a `HubException`; the client sees `…HubException: <message>`. Messages are constant text and never
@@ -64,7 +85,8 @@ echo input. Mapped centrally by `HubExceptionFilter`; pinned by `Cipheroom.Api.F
 | `Invalid identity.` | `JoinRoom` with a missing or malformed identity (checked after the name) |
 | `Invalid key envelope.` | `SendKeyEnvelopes` with no / over 64 envelopes, a malformed or over-long blob, a duplicate `toId`, or a `toId` that isn't another participant of the caller's room |
 | `Already in a room.` | `JoinRoom` on a connection that has already joined |
-| `Join a room first.` | `GetRtcConfig`, any media method or `SendKeyEnvelopes` before joining |
+| `Join a room first.` | `GetRtcConfig`, any media method, `SendKeyEnvelopes` or `ReportCallStats` before joining |
+| `Invalid stats.` | `ReportCallStats` with a missing report, a bad platform/path string, an interval outside 0–120 s, or a number that's negative, not finite or over its cap |
 | `Invalid session description.` | SDP missing, over 32 KB or not starting with `v=0` |
 | `Invalid track.` | Bad track list, mid, source or participant id |
 | `Invalid layer.` | `SelectVideoLayer` with a layer other than `f` / `h` / `q` |

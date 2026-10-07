@@ -121,7 +121,17 @@ function fakeFrames() {
 
 /** Everyone counts as secured unless a test says otherwise. */
 function fakeCrypto() {
-  return { secured: signal<ReadonlySet<string>>(new Set(['bob'])) };
+  return {
+    secured: signal<ReadonlySet<string>>(new Set(['bob'])),
+    telemetry: vi.fn(() => ({
+      framesEncrypted: 0,
+      framesDecrypted: 0,
+      framesFailed: 0,
+      framesMissingKey: 0,
+      envelopesDropped: 0,
+      securingSeconds: 0,
+    })),
+  };
 }
 
 function bobWithCamera(): ParticipantDto {
@@ -144,6 +154,7 @@ function setup() {
     setTrackMuted: vi.fn().mockResolvedValue(undefined),
     selectVideoLayer: vi.fn().mockResolvedValue(undefined),
     restartIce: vi.fn().mockResolvedValue('v=0 restart answer'),
+    reportCallStats: vi.fn().mockResolvedValue(undefined),
   };
   const mic = fakeTrack('audio');
   const camera = fakeTrack('video', 'FaceTime HD Camera');
@@ -661,6 +672,70 @@ describe('MediaService', () => {
       // Already reserved / published: nothing to do.
       await media.reserveCamera();
       expect(signaling.publishTracks).toHaveBeenCalledOnce();
+    });
+  });
+
+  describe('call-quality reports', () => {
+    beforeEach(() => vi.useFakeTimers());
+    afterEach(() => vi.useRealTimers());
+
+    it('sends what changed every 15 s — numbers only', async () => {
+      const { signaling, pc, crypto } = setup();
+      let received = 0;
+      vi.spyOn(pc, 'getStats').mockImplementation(async () => {
+        received += 100_000;
+        return new Map([
+          [
+            'in-v',
+            {
+              id: 'in-v',
+              type: 'inbound-rtp',
+              kind: 'video',
+              bytesReceived: received,
+              packetsReceived: received / 1000,
+              packetsLost: 0,
+            },
+          ],
+        ]);
+      });
+      crypto.telemetry
+        .mockReturnValueOnce({
+          framesEncrypted: 0,
+          framesDecrypted: 0,
+          framesFailed: 0,
+          framesMissingKey: 0,
+          envelopesDropped: 0,
+          securingSeconds: 0,
+        })
+        .mockReturnValueOnce({
+          framesEncrypted: 500,
+          framesDecrypted: 900,
+          framesFailed: 0,
+          framesMissingKey: 3,
+          envelopesDropped: 0,
+          securingSeconds: 0.5,
+        });
+
+      await vi.advanceTimersByTimeAsync(250 * 2); // baseline
+      expect(signaling.reportCallStats).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(250 * 60); // one interval later
+
+      expect(signaling.reportCallStats).toHaveBeenCalledOnce();
+      const [stats] = signaling.reportCallStats.mock.calls[0];
+      expect(stats.intervalSeconds).toBeCloseTo(15, 0);
+      expect(stats.videoReceived.bytes).toBe(6_000_000);
+      expect(stats.e2ee).toMatchObject({
+        framesEncrypted: 500,
+        framesMissingKey: 3,
+        securingSeconds: 0.5,
+      });
+    });
+
+    it('stops reporting when the call ends', async () => {
+      const { media, signaling } = setup();
+      await media.disconnect();
+      await vi.advanceTimersByTimeAsync(250 * 200);
+      expect(signaling.reportCallStats).not.toHaveBeenCalled();
     });
   });
 

@@ -59,3 +59,37 @@ public sealed record SubscribeResult(string? OfferSdp, IReadOnlyList<SubscribedT
     public static SubscribeResult From(SubscribeTracksResult r) =>
         new(r.OfferSdp, [.. r.Tracks.Select(t => new SubscribedTrackDto(t.PublisherId.Value, t.Source.ToWire(), t.Mid))]);
 }
+
+/// <summary>
+/// A browser's call-quality summary for the last ~15 s: numbers only (no ids, names, addresses or media). Recorded as
+/// metrics, never stored or shown to others.
+/// </summary>
+/// <param name="Platform">ios-safari / android-chrome / desktop-chrome / desktop-safari / desktop-firefox / other.</param>
+/// <param name="Path">direct / relay / unknown.</param>
+public sealed record CallStatsDto(
+    string? Platform,
+    string? Path,
+    double IntervalSeconds,
+    double? RttMs,
+    StreamStatsDto? AudioSent,
+    StreamStatsDto? AudioReceived,
+    StreamStatsDto? VideoSent,
+    StreamStatsDto? VideoReceived,
+    E2eeStatsDto? E2ee);
+
+public sealed record StreamStatsDto(
+    double Bytes,
+    double Packets,
+    double PacketsLost,
+    double? JitterMs,
+    double? FreezeSeconds,
+    double? Height,
+    double? Fps);
+
+public sealed record E2eeStatsDto(
+    double FramesEncrypted,
+    double FramesDecrypted,
+    double FramesFailed,
+    double FramesMissingKey,
+    double EnvelopesDropped,
+    double SecuringSeconds);

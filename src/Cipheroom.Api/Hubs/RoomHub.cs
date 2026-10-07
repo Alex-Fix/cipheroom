@@ -1,5 +1,6 @@
 using Cipheroom.Api.Hubs.Contracts;
 using Cipheroom.Api.Telemetry;
+using Cipheroom.Application.CallStats.Commands.ReportCallStats;
 using Cipheroom.Application.Keys.Commands.SendKeyEnvelopes;
 using Cipheroom.Application.Media.Commands.PublishTracks;
 using Cipheroom.Application.Media.Commands.Renegotiate;
@@ -104,6 +105,11 @@ public sealed partial class RoomHub(IMediator mediator, TelemetryIds ids, ILogge
         await Task.WhenAll(result.Deliveries.Select(d => Clients.Client(d.ConnectionId).KeyEnvelopeReceived(result.FromId.Value, d.Blob)));
     }
 
+    // Telemetry: a browser's call-quality summary (numbers only), recorded as metrics.
+
+    public async Task ReportCallStats(CallStatsDto? stats) =>
+        await mediator.Send(new ReportCallStatsCommand(Context.ConnectionId, ToInput(stats)), Context.ConnectionAborted);
+
     public override async Task OnDisconnectedAsync(Exception? exception)
     {
         await LeaveAsync();
@@ -124,6 +130,24 @@ public sealed partial class RoomHub(IMediator mediator, TelemetryIds ids, ILogge
             LogLeft(logger, left.Id.Value, room);
         }
     }
+
+    private static CallStatsInput? ToInput(CallStatsDto? s) => s is null
+        ? null
+        : new CallStatsInput(
+            s.Platform,
+            s.Path,
+            s.IntervalSeconds,
+            s.RttMs,
+            ToInput(s.AudioSent),
+            ToInput(s.AudioReceived),
+            ToInput(s.VideoSent),
+            ToInput(s.VideoReceived),
+            s.E2ee is { } e
+                ? new E2eeStatsInput(e.FramesEncrypted, e.FramesDecrypted, e.FramesFailed, e.FramesMissingKey, e.EnvelopesDropped, e.SecuringSeconds)
+                : null);
+
+    private static StreamStatsInput? ToInput(StreamStatsDto? s) =>
+        s is null ? null : new StreamStatsInput(s.Bytes, s.Packets, s.PacketsLost, s.JitterMs, s.FreezeSeconds, s.Height, s.Fps);
 
     private static string GroupName(string roomId) => $"room:{roomId}";
 
