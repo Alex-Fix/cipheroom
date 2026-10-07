@@ -84,8 +84,13 @@ All crypto in `web/src/app/core/crypto/`:
 
 ```
 IdentityDto { ed25519Pub (32 B), x25519Pub (32 B), sig (64 B) }      // base64url
-sig = Ed25519 over "cipheroom/id/v1" ‖ roomId ‖ ed25519Pub ‖ x25519Pub
+sig = Ed25519 over fields("cipheroom/id/v1", roomId, ed25519Pub, x25519Pub)
 ```
+
+`fields(…)` (`encoding.ts`) is the encoding of everything signed, used as AAD or hashed: each field as a 4-byte
+big-endian length + bytes (strings UTF-8, numbers uint32 big-endian). Every use has a fixed field order and starts
+with its own label (domain separation — the identity key signs both bundles and envelopes). It replaces "canonical
+JSON", which has no single agreed canonical form.
 
 Binds the X25519 key to the Ed25519 key (which the safety code covers); including `roomId` stops replay into another
 room. Created at Join, kept in memory for the page's call; reused on a full rejoin so the safety code stays stable.
@@ -98,16 +103,24 @@ room. Created at Join, kept in memory for the page's call; reused on a full rejo
 - Envelope v1 (the opaque `blob`):
 
 ```
-header = { v: 1, roomId, epoch, keyIndex, fromId, toId }
-k   = HKDF-SHA-256(ECDH(ephX25519, recipientX25519), salt = roomId, info = "cipheroom/env/v1")
-ct  = AES-GCM(k, iv = random 12 B, aad = canonical(header), senderKey)
-sig = Ed25519(senderIdentity, canonical(header) ‖ ephPub ‖ iv ‖ ct)
-blob = base64url(canonical { header, ephPub, iv, ct, sig })
+header = { v: 1, roomId, epoch, keyIndex, fromId, toId }        keyIndex = epoch mod 16, epoch uint32
+k    = HKDF-SHA-256(X25519(ephemeral, recipientX25519), salt = roomId, info = "cipheroom/env/v1")
+aad  = fields("cipheroom/env-header/v1", roomId, epoch, keyIndex, fromId, toId)
+ct   = AES-GCM(k, iv = random 12 B, aad, senderKey)
+sig  = Ed25519(senderIdentity, fields("cipheroom/env-sig/v1", aad, ephPub, iv, ct))
+blob = base64url(JSON { v, roomId, epoch, keyIndex, fromId, toId, eph, iv, ct, sig })   ≈ 550 chars, ≤ 1 KB
 ```
 
-- Receiver rejects (reason counted locally only, never sent anywhere): bad signature; sender identity ≠ the one in
-  the participant list; `toId` ≠ self; inner `fromId` ≠ outer `fromId`; wrong `roomId`; `epoch` ≤ last accepted
-  epoch from that sender.
+- Receiver rejects (reason counted locally only, never sent anywhere), checking the signature first against the
+  sender's identity as shown in the participant list: `malformed`, `bad-signature`, `wrong-room`, `wrong-sender`
+  (inner ≠ outer `fromId`), `wrong-recipient` (`toId` ≠ self), `stale-epoch` (≤ last accepted from that sender),
+  `undecryptable`.
+
+### 4b. Safety code
+
+`SHA-256(fields("cipheroom/safety/v1", roomId, count, ...sorted Ed25519 public keys))` → 4 emoji (6 bits each, from a
+fixed list of 64 nameable emoji — order is part of the format) and 8 digits shown as `1234 5678`; ~50 bits.
+Includes our own key; duplicates count.
 
 ### 5. Rotation
 
