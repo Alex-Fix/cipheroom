@@ -1,111 +1,115 @@
 /// <reference lib="webworker" />
 /**
- * Frame encryption for every sender and receiver of the call: one worker, shared by all transforms, so the IV
- * counter is per key and never restarts while the key exists.
- *
- * SPIKE (step 1 of docs/plans/2026-10-07-e2ee-media-design.md): a fixed, public test key — this proves only that
- * Cloudflare's SFU forwards encrypted frames; it protects nothing. Real sender keys arrive in step 2–5.
+ * Frame encryption for every sender and receiver of the call: one worker, shared by all transforms, so each send
+ * key's IV counter is shared by all our tracks and never restarts while the key exists. Thin wiring only — the
+ * logic is in FrameCryptor and Keyring.
  */
-import { decryptFrame, encryptFrame, isSupportedCodec } from './frame-codec';
-import { EncodedFrame, FrameStats, StreamsMessage, TransformOptions } from './frame-crypto.types';
+import { FrameCryptor, ReceiverState } from './frame-cryptor';
+import { EncodedFrame, FrameStats, TransformOptions, WorkerRequest } from './frame-crypto.types';
+import { Keyring } from './keyring';
 
 declare const self: DedicatedWorkerGlobalScope;
 
-const KEY_INDEX = 0;
 const STATS_INTERVAL_MS = 5000;
 
-const testKey = deriveTestKey();
-let counter = 0n;
-const stats = { encrypted: 0, decrypted: 0, failed: 0, dropped: 0, codecs: new Set<string>() };
+const keyring = new Keyring();
+const cryptor = new FrameCryptor(keyring);
+const receivers = new Map<number, ReceiverState>();
+let keyErrors = 0;
+/** Key messages are applied in order: key imports are async, and a later key must never be overtaken. */
+let keyUpdates = Promise.resolve();
 
 self.addEventListener('rtctransform', (event: RTCTransformEvent) => {
-  const { readable, writable, options } = event.transformer;
+  const { transformer } = event;
   pipe(
-    readable as ReadableStream<EncodedFrame>,
-    writable as WritableStream<EncodedFrame>,
-    options as TransformOptions,
+    transformer.readable as ReadableStream<EncodedFrame>,
+    transformer.writable as WritableStream<EncodedFrame>,
+    transformer.options as TransformOptions,
+    () => void transformer.sendKeyFrameRequest().catch(() => undefined),
   );
 });
 
-self.addEventListener('message', ({ data }: MessageEvent<StreamsMessage>) => {
-  if (data.type === 'streams') pipe(data.readable, data.writable, data);
+self.addEventListener('message', ({ data }: MessageEvent<WorkerRequest>) => {
+  switch (data.type) {
+    case 'streams':
+      pipe(data.readable, data.writable, data);
+      break;
+    case 'retag': {
+      const receiver = receivers.get(data.id);
+      if (receiver && receiver.participantId !== data.participantId) {
+        receiver.participantId = data.participantId;
+        receiver.failures = 0;
+        // Whatever it decoded before belonged to someone else: start from a keyframe.
+        receiver.waitingForKey = true;
+        cryptor.keyArrived(data.participantId, [receiver]);
+      }
+      break;
+    }
+    case 'setSendKey':
+      updateKeys(() => keyring.setSendKey(data.keyIndex, data.senderKey));
+      break;
+    case 'setReceiveKey':
+      updateKeys(async () => {
+        await keyring.setReceiveKey(data.participantId, data.keyIndex, data.senderKey);
+        cryptor.keyArrived(data.participantId, receivers.values());
+      });
+      break;
+    case 'removeParticipant':
+      updateKeys(async () => keyring.removeParticipant(data.participantId));
+      break;
+  }
 });
 
 setInterval(() => {
-  self.postMessage({ type: 'stats', ...stats, codecs: [...stats.codecs] } satisfies FrameStats);
+  const { codecs, ...counts } = cryptor.stats;
+  self.postMessage({
+    type: 'stats',
+    ...counts,
+    keyErrors,
+    codecs: [...codecs],
+  } satisfies FrameStats);
 }, STATS_INTERVAL_MS);
+
+function updateKeys(update: () => Promise<void>): void {
+  keyUpdates = keyUpdates.then(update).catch(() => void keyErrors++);
+}
 
 function pipe(
   readable: ReadableStream<EncodedFrame>,
   writable: WritableStream<EncodedFrame>,
   options: TransformOptions,
+  requestKeyFrame?: () => void,
 ): void {
-  const transform = options.side === 'send' ? encrypt : decrypt;
+  let transform: (frame: EncodedFrame) => Promise<EncodedFrame | undefined>;
+  let receiver: ReceiverState | undefined;
+  if (options.side === 'send') {
+    transform = (frame) => cryptor.encrypt(options.kind, frame);
+  } else {
+    const state: ReceiverState = {
+      kind: options.kind,
+      participantId: options.participantId,
+      passThrough: options.passThrough,
+      waitingForKey: false,
+      failures: 0,
+      lastKeyFrameRequest: 0,
+      requestKeyFrame,
+    };
+    receiver = state;
+    receivers.set(options.id, state);
+    transform = (frame) => cryptor.decrypt(state, frame);
+  }
   void readable
     .pipeThrough(
       new TransformStream<EncodedFrame, EncodedFrame>({
-        transform: (frame, out) => transform(frame, out, options),
+        async transform(frame, out) {
+          const result = await transform(frame);
+          if (result) out.enqueue(result);
+        },
       }),
     )
     .pipeTo(writable)
-    .catch(() => undefined); // the transceiver stopped
-}
-
-async function encrypt(
-  frame: EncodedFrame,
-  out: TransformStreamDefaultController<EncodedFrame>,
-  { kind }: TransformOptions,
-): Promise<void> {
-  if (frame.data.byteLength === 0) return out.enqueue(frame);
-  const codec = frame.getMetadata().mimeType;
-  if (codec) stats.codecs.add(`send ${codec}`);
-  // Never send what we can't encrypt.
-  if (!isSupportedCodec(kind, codec)) {
-    stats.dropped++;
-    return;
-  }
-  frame.data = (
-    await encryptFrame(kind, new Uint8Array(frame.data), await testKey, KEY_INDEX, counter++)
-  ).buffer;
-  stats.encrypted++;
-  out.enqueue(frame);
-}
-
-async function decrypt(
-  frame: EncodedFrame,
-  out: TransformStreamDefaultController<EncodedFrame>,
-  { kind, passThrough }: TransformOptions,
-): Promise<void> {
-  if (frame.data.byteLength === 0 || passThrough) return out.enqueue(frame);
-  const codec = frame.getMetadata().mimeType;
-  if (codec) stats.codecs.add(`receive ${codec}`);
-  try {
-    frame.data = (await decryptFrame(kind, new Uint8Array(frame.data), await testKey)).buffer;
-    stats.decrypted++;
-    out.enqueue(frame);
-  } catch {
-    stats.failed++; // tampered, wrong key, or not encrypted: drop
-  }
-}
-
-async function deriveTestKey(): Promise<CryptoKey> {
-  const material = await crypto.subtle.importKey(
-    'raw',
-    new TextEncoder().encode('cipheroom spike test key — not secret'),
-    'HKDF',
-    false,
-    ['deriveKey'],
-  );
-  return crypto.subtle.deriveKey(
-    {
-      name: 'HKDF',
-      hash: 'SHA-256',
-      salt: new Uint8Array(0),
-      info: new TextEncoder().encode('cipheroom/media/v1'),
-    },
-    material,
-    { name: 'AES-GCM', length: 256 },
-    false,
-    ['encrypt', 'decrypt'],
-  );
+    .catch(() => undefined) // the transceiver stopped
+    .finally(() => {
+      if (receiver && receivers.get(options.id) === receiver) receivers.delete(options.id);
+    });
 }

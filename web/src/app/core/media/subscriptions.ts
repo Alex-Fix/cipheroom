@@ -6,6 +6,8 @@ export type TrackKey = `${string}:${TrackSource}`;
 export const trackKey = (participantId: string, source: TrackSource): TrackKey =>
   `${participantId}:${source}`;
 
+export const participantOf = (key: TrackKey): string => key.slice(0, key.lastIndexOf(':'));
+
 export interface SubscriptionDiff {
   /** Published in the room, not yet received or requested. */
   subscribe: TrackRefDto[];

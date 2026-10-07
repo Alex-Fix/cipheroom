@@ -1,5 +1,5 @@
 import { Injectable, OnDestroy, computed, effect, inject, signal, untracked } from '@angular/core';
-import { e2eeSpikeMode } from '../crypto/e2ee-spike';
+import { e2eeSpikeMode, spikeSenderKey } from '../crypto/e2ee-spike';
 import { MediaKind } from '../crypto/frame-codec';
 import { FrameCrypto, frameTransformApi } from '../crypto/frame-transforms';
 import { Camera, CameraFacing, cameraFacing, hasRearCamera } from './cameras';
@@ -19,7 +19,7 @@ import { CallParticipant, Diagnostics, MediaState, Tile } from './media.types';
 import { VideoQuality, cameraEncodings, captureConstraints, supportedQualities } from './quality';
 import { SerialQueue } from './serial-queue';
 import { SpeakingDetector, sameMembers } from './speaking';
-import { TrackKey, subscriptionDiff, trackKey } from './subscriptions';
+import { TrackKey, participantOf, subscriptionDiff, trackKey } from './subscriptions';
 
 /** Who we are in the room (from JoinRoom). */
 export interface Self {
@@ -54,6 +54,8 @@ export class MediaService implements OnDestroy {
 
   private pc?: RTCPeerConnection;
   private frameCrypto?: FrameCrypto;
+  /** SPIKE: participants we've installed the test key for (step 5: CryptoService delivers real keys). */
+  private readonly spikeKeyed = new Set<string>();
   private statsTimer?: ReturnType<typeof setInterval>;
   private statsTicks = 0;
   private recoveryTimer?: ReturnType<typeof setTimeout>;
@@ -150,6 +152,11 @@ export class MediaService implements OnDestroy {
     effect(() => {
       const participants = this.signaling.participants();
       if (this.self() && this.receiving()) untracked(() => this.syncSubscriptions(participants));
+    });
+    // SPIKE: everyone's frames are under the fixed test key.
+    effect(() => {
+      const ids = this.signaling.participants().map((p) => p.id);
+      if (this.self()) untracked(() => this.syncSpikeKeys(ids));
     });
   }
 
@@ -284,6 +291,7 @@ export class MediaService implements OnDestroy {
     this.pc = undefined;
     this.frameCrypto?.terminate();
     this.frameCrypto = undefined;
+    this.spikeKeyed.clear();
     Object.values(this.localTracks()).forEach((t) => t?.stop());
     this.placeholders.forEach((t) => t.stop());
     this.placeholders.clear();
@@ -429,6 +437,7 @@ export class MediaService implements OnDestroy {
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
       await this.signaling.renegotiate(answer.sdp!);
+      this.tagReceivers(pc);
     }
     if (stale.length) await this.signaling.unsubscribeTracks(stale);
 
@@ -551,10 +560,46 @@ export class MediaService implements OnDestroy {
   }
 
   private onRemoteTrack(event: RTCTrackEvent): void {
-    this.frameCrypto?.attachReceiver(event.receiver, event.track.kind as MediaKind);
     const key = event.transceiver.mid ? this.midToKey.get(event.transceiver.mid) : undefined;
+    // Before the first frame is decoded; untagged receivers drop frames until they're assigned.
+    this.frameCrypto?.attachReceiver(
+      event.receiver,
+      event.track.kind as MediaKind,
+      key && participantOf(key),
+    );
     if (!key) return;
     this.remoteTracks.update((tracks) => new Map(tracks).set(key, event.track));
+  }
+
+  /**
+   * Tags every receiving transceiver with the participant whose track it now carries: the SFU may reuse a receiver
+   * for another participant's track without a new `ontrack`.
+   */
+  private tagReceivers(pc: RTCPeerConnection): void {
+    if (!this.frameCrypto) return;
+    for (const t of pc.getTransceivers()) {
+      const key = t.mid ? this.midToKey.get(t.mid) : undefined;
+      if (key)
+        this.frameCrypto.attachReceiver(
+          t.receiver,
+          t.receiver.track.kind as MediaKind,
+          participantOf(key),
+        );
+    }
+  }
+
+  private syncSpikeKeys(ids: string[]): void {
+    const frameCrypto = this.frameCrypto;
+    if (!frameCrypto) return;
+    for (const id of ids) {
+      if (!this.spikeKeyed.has(id)) frameCrypto.setReceiveKey(id, 0, spikeSenderKey());
+      this.spikeKeyed.add(id);
+    }
+    for (const id of [...this.spikeKeyed]) {
+      if (ids.includes(id)) continue;
+      frameCrypto.removeParticipant(id);
+      this.spikeKeyed.delete(id);
+    }
   }
 
   private setLocalTrack(source: TrackSource, track: MediaStreamTrack | undefined): void {
@@ -734,9 +779,11 @@ function createFrameCrypto(): FrameCrypto | undefined {
   const api = frameTransformApi();
   if (!api) throw new Error("This browser can't encrypt calls.");
   // Counts and codec names only — never frame contents or keys.
-  return new FrameCrypto(api, mode === 'passthrough', (stats) =>
+  const frameCrypto = new FrameCrypto(api, mode === 'passthrough', (stats) =>
     console.info(`[cipheroom] e2ee ${mode} (${api})`, stats),
   );
+  frameCrypto.setSendKey(0, spikeSenderKey());
+  return frameCrypto;
 }
 
 /** VP8 first for every video (camera and screen): simulcast support everywhere, and frame encryption keeps its

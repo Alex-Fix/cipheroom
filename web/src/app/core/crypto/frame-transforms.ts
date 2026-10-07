@@ -1,5 +1,5 @@
 import { MediaKind } from './frame-codec';
-import { FrameStats, StreamsMessage, TransformOptions } from './frame-crypto.types';
+import { FrameStats, TransformOptions, WorkerRequest } from './frame-crypto.types';
 
 /** Chrome before RTCRtpScriptTransform: encoded streams, enabled per peer connection. */
 interface LegacyEncodedStreams {
@@ -18,15 +18,20 @@ export function frameTransformApi(): FrameTransformApi | undefined {
 }
 
 /**
- * Puts the frame-crypto worker on every sender and receiver of one peer connection. Owned by MediaService for the
- * call; components never use it.
+ * Puts the frame-crypto worker on every sender and receiver of one peer connection, and hands it the call's keys.
+ * Owned by MediaService for the call; components never use it.
  */
 export class FrameCrypto {
   private readonly worker = new Worker(new URL('./frame-crypto.worker', import.meta.url), {
     type: 'module',
     name: 'frame-crypto',
   });
-  private readonly attached = new WeakSet<RTCRtpSender | RTCRtpReceiver>();
+  private nextId = 0;
+  /** Each sender/receiver's transform id and, for receivers, the participant it's tagged with. */
+  private readonly attached = new WeakMap<
+    RTCRtpSender | RTCRtpReceiver,
+    { id: number; participantId?: string }
+  >();
 
   constructor(
     private readonly api: FrameTransformApi,
@@ -44,14 +49,50 @@ export class FrameCrypto {
     return this.api === 'encoded-streams' ? { encodedInsertableStreams: true } : {};
   }
 
-  /** Call right after addTransceiver, before the first frame is sent. */
+  /** Call right after addTransceiver, before the first frame is sent. Frames are dropped until a send key is set. */
   attachSender(sender: RTCRtpSender, kind: MediaKind): void {
-    this.attach(sender, { side: 'send', kind });
+    if (this.attached.has(sender)) return;
+    this.attach(sender, { id: this.nextId++, side: 'send', kind });
   }
 
-  /** Call from ontrack, before the first frame is decoded. */
-  attachReceiver(receiver: RTCRtpReceiver, kind: MediaKind): void {
-    this.attach(receiver, { side: 'receive', kind, passThrough: this.passThrough });
+  /**
+   * Call from ontrack (before the first frame is decoded) and whenever the SFU (re)assigns the receiver to a
+   * participant's track. Frames are dropped until that participant's key arrives.
+   */
+  attachReceiver(receiver: RTCRtpReceiver, kind: MediaKind, participantId?: string): void {
+    const existing = this.attached.get(receiver);
+    if (!existing) {
+      const options: TransformOptions = {
+        id: this.nextId++,
+        side: 'receive',
+        kind,
+        participantId,
+        passThrough: this.passThrough,
+      };
+      this.attach(receiver, options);
+      return;
+    }
+    if (participantId === undefined || existing.participantId === participantId) return;
+    existing.participantId = participantId;
+    this.post({ type: 'retag', id: existing.id, participantId });
+  }
+
+  /**
+   * Switches our own encryption to this sender key (32 bytes). The buffer is transferred to the worker: it is
+   * detached here afterwards, so no copy of the key stays on the page.
+   */
+  setSendKey(keyIndex: number, senderKey: ArrayBuffer): void {
+    this.post({ type: 'setSendKey', keyIndex, senderKey }, [senderKey]);
+  }
+
+  /** Installs a participant's sender key (transferred, like `setSendKey`). Older keys stay usable briefly. */
+  setReceiveKey(participantId: string, keyIndex: number, senderKey: ArrayBuffer): void {
+    this.post({ type: 'setReceiveKey', participantId, keyIndex, senderKey }, [senderKey]);
+  }
+
+  /** Forgets a participant's keys (they left). */
+  removeParticipant(participantId: string): void {
+    this.post({ type: 'removeParticipant', participantId });
   }
 
   terminate(): void {
@@ -59,8 +100,7 @@ export class FrameCrypto {
   }
 
   private attach(target: RTCRtpSender | RTCRtpReceiver, options: TransformOptions): void {
-    if (this.attached.has(target)) return;
-    this.attached.add(target);
+    this.attached.set(target, { id: options.id, participantId: options.participantId });
     if (this.api === 'script-transform') {
       target.transform = new RTCRtpScriptTransform(this.worker, options);
       return;
@@ -68,7 +108,10 @@ export class FrameCrypto {
     const { readable, writable } = (
       target as unknown as LegacyEncodedStreams
     ).createEncodedStreams();
-    const message: StreamsMessage = { type: 'streams', readable, writable, ...options };
-    this.worker.postMessage(message, [readable, writable]);
+    this.post({ type: 'streams', readable, writable, ...options }, [readable, writable]);
+  }
+
+  private post(message: WorkerRequest, transfer: Transferable[] = []): void {
+    this.worker.postMessage(message, transfer);
   }
 }

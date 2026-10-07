@@ -21,6 +21,10 @@ class FakePeerConnection {
     FakePeerConnection.last = this;
   }
 
+  getTransceivers() {
+    return this.transceivers;
+  }
+
   addTransceiver(track: MediaStreamTrack, init: RTCRtpTransceiverInit) {
     const t = new FakeTransceiver(track, init);
     this.transceivers.push(t);
@@ -599,6 +603,98 @@ describe('MediaService', () => {
       // Already reserved / published: nothing to do.
       await media.reserveCamera();
       expect(signaling.publishTracks).toHaveBeenCalledOnce();
+    });
+  });
+
+  describe('with frame encryption (spike flag)', () => {
+    class FakeWorker {
+      static last: FakeWorker;
+      readonly posted: unknown[] = [];
+      terminated = false;
+      constructor() {
+        FakeWorker.last = this;
+      }
+      postMessage(message: unknown) {
+        this.posted.push(message);
+      }
+      addEventListener() {}
+      terminate() {
+        this.terminated = true;
+      }
+    }
+    class FakeScriptTransform {
+      constructor(
+        readonly worker: unknown,
+        readonly options: { side: string; kind: string; participantId?: string },
+      ) {}
+    }
+    const options = (target: object) =>
+      (target as { transform?: FakeScriptTransform }).transform?.options;
+
+    beforeEach(() => {
+      sessionStorage.setItem('cipheroom.e2eeSpike', 'spike');
+      vi.stubGlobal('Worker', FakeWorker);
+      vi.stubGlobal('RTCRtpScriptTransform', FakeScriptTransform);
+    });
+    afterEach(() => sessionStorage.clear());
+
+    it('encrypts every sender from its first frame', async () => {
+      const { media, pc } = setup();
+      await media.setMicrophone(true);
+      await media.reserveCamera().catch(() => undefined);
+
+      expect(options(pc.transceivers[0].sender)).toMatchObject({ side: 'send', kind: 'audio' });
+      expect(FakeWorker.last.posted[0]).toMatchObject({ type: 'setSendKey', keyIndex: 0 });
+    });
+
+    it('decrypts every receiver with its participant’s keys, installed as they join and dropped as they leave', async () => {
+      const { signaling, participants, pc } = setup();
+      signaling.subscribeTracks.mockResolvedValue({
+        offerSdp: 'v=0 sfu offer',
+        tracks: [{ participantId: 'bob', source: 'camera', mid: '6' }],
+      });
+      participants.set([
+        {
+          id: 'bob',
+          displayName: 'Bob',
+          tracks: [{ source: 'camera', kind: 'video', muted: false }],
+        },
+      ]);
+      await settle();
+      expect(FakeWorker.last.posted).toContainEqual(
+        expect.objectContaining({ type: 'setReceiveKey', participantId: 'bob', keyIndex: 0 }),
+      );
+
+      const receiver = {} as RTCRtpReceiver;
+      pc.ontrack!({
+        transceiver: { mid: '6' } as RTCRtpTransceiver,
+        receiver,
+        track: fakeTrack('video'),
+      });
+      expect(options(receiver)).toMatchObject({
+        side: 'receive',
+        kind: 'video',
+        participantId: 'bob',
+      });
+
+      participants.set([]);
+      await settle();
+      expect(FakeWorker.last.posted).toContainEqual({
+        type: 'removeParticipant',
+        participantId: 'bob',
+      });
+    });
+
+    it('refuses to connect without encoded transforms — never falls back to plaintext', () => {
+      vi.stubGlobal('RTCRtpScriptTransform', undefined);
+      vi.stubGlobal('RTCRtpSender', class {});
+      expect(() => setup()).toThrow("This browser can't encrypt calls.");
+    });
+
+    it('stops the worker when the call ends', async () => {
+      const { media } = setup();
+      await media.disconnect();
+      expect(FakeWorker.last.terminated).toBe(true);
     });
   });
 });

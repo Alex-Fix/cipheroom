@@ -19,3 +19,11 @@ export function e2eeSpikeMode(search = location.search): E2eeSpikeMode | undefin
     return requested === 'spike' || requested === 'passthrough' ? requested : undefined;
   }
 }
+
+/**
+ * The spike's fixed, public sender key (32 bytes) — for everyone, so it protects nothing. A fresh buffer each call:
+ * FrameCrypto transfers (detaches) what it's given.
+ */
+export function spikeSenderKey(): ArrayBuffer {
+  return new TextEncoder().encode('cipheroom spike key: not secret!').buffer;
+}
