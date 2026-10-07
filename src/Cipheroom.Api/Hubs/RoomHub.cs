@@ -1,7 +1,16 @@
 using Cipheroom.Api.Hubs.Contracts;
+using Cipheroom.Application.Media.Commands.PublishTracks;
+using Cipheroom.Application.Media.Commands.Renegotiate;
+using Cipheroom.Application.Media.Commands.RestartIce;
+using Cipheroom.Application.Media.Commands.SelectVideoLayer;
+using Cipheroom.Application.Media.Commands.SetTrackMuted;
+using Cipheroom.Application.Media.Commands.SubscribeTracks;
+using Cipheroom.Application.Media.Commands.UnpublishTracks;
+using Cipheroom.Application.Media.Commands.UnsubscribeTracks;
 using Cipheroom.Application.Rooms.Commands.JoinRoom;
 using Cipheroom.Application.Rooms.Commands.LeaveRoom;
 using Cipheroom.Application.Rtc.Queries.GetRtcConfig;
+using Cipheroom.Domain.Rooms;
 using Mediator;
 using Microsoft.AspNetCore.SignalR;
 
@@ -30,6 +39,48 @@ public sealed partial class RoomHub(IMediator mediator, ILogger<RoomHub> logger)
 
     public Task LeaveRoom() => LeaveAsync();
 
+    // Media (Cloudflare Realtime SFU). SDP passes through to the media server; it is never logged.
+
+    public async Task<AnswerDto> PublishTracks(string? offerSdp, IReadOnlyList<PublishTrackDto?>? tracks)
+    {
+        var result = await mediator.Send(
+            new PublishTracksCommand(Context.ConnectionId, offerSdp, tracks?.Select(t => new PublishTrackInput(t?.Mid, t?.Source)).ToArray()),
+            Context.ConnectionAborted);
+
+        await Clients.OthersInGroup(GroupName(result.Self)).TracksPublished(result.Self.Id.Value, [.. result.Tracks.Select(TrackDto.From)]);
+        return new AnswerDto(result.AnswerSdp);
+    }
+
+    public async Task<SubscribeResult> SubscribeTracks(IReadOnlyList<TrackRefDto?>? tracks) =>
+        SubscribeResult.From(await mediator.Send(
+            new SubscribeTracksCommand(Context.ConnectionId, tracks?.Select(t => new SubscribeTrackInput(t?.ParticipantId, t?.Source)).ToArray()),
+            Context.ConnectionAborted));
+
+    public async Task Renegotiate(string? answerSdp) =>
+        await mediator.Send(new RenegotiateCommand(Context.ConnectionId, answerSdp), Context.ConnectionAborted);
+
+    public async Task<AnswerDto> RestartIce(string? offerSdp) =>
+        new((await mediator.Send(new RestartIceCommand(Context.ConnectionId, offerSdp), Context.ConnectionAborted)).AnswerSdp);
+
+    public async Task UnpublishTracks(IReadOnlyList<string?>? sources)
+    {
+        var result = await mediator.Send(new UnpublishTracksCommand(Context.ConnectionId, sources), Context.ConnectionAborted);
+        if (result.Removed.Count > 0)
+            await Clients.OthersInGroup(GroupName(result.Self)).TracksUnpublished(result.Self.Id.Value, [.. result.Removed.Select(t => t.Source.ToWire())]);
+    }
+
+    public async Task UnsubscribeTracks(IReadOnlyList<string?>? mids) =>
+        await mediator.Send(new UnsubscribeTracksCommand(Context.ConnectionId, mids), Context.ConnectionAborted);
+
+    public async Task SetTrackMuted(string? source, bool muted)
+    {
+        var result = await mediator.Send(new SetTrackMutedCommand(Context.ConnectionId, source, muted), Context.ConnectionAborted);
+        await Clients.OthersInGroup(GroupName(result.Self)).TrackMuted(result.Self.Id.Value, result.Track.Source.ToWire(), result.Track.Muted);
+    }
+
+    public async Task SelectVideoLayer(string? mid, string? rid) =>
+        await mediator.Send(new SelectVideoLayerCommand(Context.ConnectionId, mid, rid), Context.ConnectionAborted);
+
     public override async Task OnDisconnectedAsync(Exception? exception)
     {
         await LeaveAsync();
@@ -48,6 +99,8 @@ public sealed partial class RoomHub(IMediator mediator, ILogger<RoomHub> logger)
     }
 
     private static string GroupName(string roomId) => $"room:{roomId}";
+
+    private static string GroupName(Participant participant) => GroupName(participant.RoomId.Value);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Participant {ParticipantId} joined room {RoomId}")]
     private static partial void LogJoined(ILogger logger, string participantId, string roomId);

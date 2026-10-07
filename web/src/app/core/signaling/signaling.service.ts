@@ -5,9 +5,26 @@ import {
   HubConnectionState,
   LogLevel,
 } from '@microsoft/signalr';
-import { ClientEvents, HubMethods, JoinResult, ParticipantDto, RtcConfig } from './signaling.types';
+import { withTrackMuted, withTracksPublished, withTracksUnpublished } from './participants';
+import {
+  AnswerDto,
+  ClientEvents,
+  HubMethods,
+  JoinResult,
+  ParticipantDto,
+  PublishTrackDto,
+  RtcConfig,
+  SubscribeResult,
+  TrackDto,
+  TrackRefDto,
+  TrackSource,
+  VideoLayer,
+} from './signaling.types';
 
-/** App signaling over SignalR. Media signaling is LiveKit's job — never add SDP/ICE here. */
+/**
+ * All signaling over SignalR: rooms, and media negotiation with the SFU (the api relays SDP to Cloudflare; it never
+ * sees media or keys). `participants` mirrors the room, including who publishes which tracks.
+ */
 @Injectable({ providedIn: 'root' })
 export class SignalingService {
   private connection?: HubConnection;
@@ -26,12 +43,53 @@ export class SignalingService {
     return (await this.ensureConnected()).invoke<RtcConfig>(HubMethods.GetRtcConfig);
   }
 
+  /** Publishes local tracks from our SDP offer; returns the SFU's answer. */
+  async publishTracks(offerSdp: string, tracks: PublishTrackDto[]): Promise<string> {
+    const result = await this.invoke<AnswerDto>(HubMethods.PublishTracks, offerSdp, tracks);
+    return result.answerSdp;
+  }
+
+  async subscribeTracks(tracks: TrackRefDto[]): Promise<SubscribeResult> {
+    return this.invoke<SubscribeResult>(HubMethods.SubscribeTracks, tracks);
+  }
+
+  /** Our answer to an SFU offer from subscribeTracks. */
+  async renegotiate(answerSdp: string): Promise<void> {
+    await this.invoke(HubMethods.Renegotiate, answerSdp);
+  }
+
+  /** ICE restart: our offer in, the SFU's answer out. */
+  async restartIce(offerSdp: string): Promise<string> {
+    const result = await this.invoke<AnswerDto>(HubMethods.RestartIce, offerSdp);
+    return result.answerSdp;
+  }
+
+  async unpublishTracks(sources: TrackSource[]): Promise<void> {
+    await this.invoke(HubMethods.UnpublishTracks, sources);
+  }
+
+  async unsubscribeTracks(mids: string[]): Promise<void> {
+    await this.invoke(HubMethods.UnsubscribeTracks, mids);
+  }
+
+  async setTrackMuted(source: TrackSource, muted: boolean): Promise<void> {
+    await this.invoke(HubMethods.SetTrackMuted, source, muted);
+  }
+
+  async selectVideoLayer(mid: string, layer: VideoLayer): Promise<void> {
+    await this.invoke(HubMethods.SelectVideoLayer, mid, layer);
+  }
+
   async leave(): Promise<void> {
     const connection = this.connection;
     this.connection = undefined;
     this.participants.set([]);
     // Stopping the connection also leaves the room server-side (OnDisconnectedAsync).
     await connection?.stop();
+  }
+
+  private async invoke<T = void>(method: string, ...args: unknown[]): Promise<T> {
+    return (await this.ensureConnected()).invoke<T>(method, ...args);
   }
 
   private async ensureConnected(): Promise<HubConnection> {
@@ -47,6 +105,15 @@ export class SignalingService {
     );
     connection.on(ClientEvents.ParticipantLeft, (id: string) =>
       this.participants.update((list) => list.filter((p) => p.id !== id)),
+    );
+    connection.on(ClientEvents.TracksPublished, (id: string, tracks: TrackDto[]) =>
+      this.participants.update((list) => withTracksPublished(list, id, tracks)),
+    );
+    connection.on(ClientEvents.TracksUnpublished, (id: string, sources: TrackSource[]) =>
+      this.participants.update((list) => withTracksUnpublished(list, id, sources)),
+    );
+    connection.on(ClientEvents.TrackMuted, (id: string, source: TrackSource, muted: boolean) =>
+      this.participants.update((list) => withTrackMuted(list, id, source, muted)),
     );
     connection.onclose(() => this.connected.set(false));
 

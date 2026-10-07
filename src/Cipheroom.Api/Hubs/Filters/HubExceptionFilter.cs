@@ -30,6 +30,12 @@ public sealed partial class HubExceptionFilter(ILogger<HubExceptionFilter> logge
             LogRejected(logger, invocationContext.HubMethodName, ex.Message);
             throw new HubException(ex.Message);
         }
+        catch (MediaServerException ex)
+        {
+            // The cause carries only status / error codes (never SDP or secrets).
+            LogMediaServerFailed(logger, ex.InnerException ?? ex, invocationContext.HubMethodName);
+            throw new HubException(ex.Message);
+        }
         catch (HubException)
         {
             throw;
@@ -47,6 +53,9 @@ public sealed partial class HubExceptionFilter(ILogger<HubExceptionFilter> logge
 
     [LoggerMessage(Level = LogLevel.Information, Message = "{HubMethod} rejected: {Reason}")]
     private static partial void LogRejected(ILogger logger, string hubMethod, string reason);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "{HubMethod}: media server request failed")]
+    private static partial void LogMediaServerFailed(ILogger logger, Exception exception, string hubMethod);
 
     [LoggerMessage(Level = LogLevel.Error, Message = "{HubMethod} failed")]
     private static partial void LogFailed(ILogger logger, Exception exception, string hubMethod);

@@ -39,8 +39,10 @@ public sealed class RoomHubTests(WebApplicationFactory<Program> factory) : IClas
         var bobJoin = await bob.InvokeAsync<JoinResult>("JoinRoom", "room-1", "  Bob ", Ct);
 
         var bobAsSeenByAlice = await joined.Reader.ReadAsync(Timeout());
-        Assert.Equal(new ParticipantDto(bobJoin.SelfId, "Bob"), bobAsSeenByAlice);
-        Assert.Equal([new ParticipantDto(aliceJoin.SelfId, "Alice")], bobJoin.Participants);
+        Assert.Equal((bobJoin.SelfId, "Bob"), (bobAsSeenByAlice.Id, bobAsSeenByAlice.DisplayName));
+        Assert.Empty(bobAsSeenByAlice.Tracks);
+        var aliceAsSeenByBob = Assert.Single(bobJoin.Participants);
+        Assert.Equal((aliceJoin.SelfId, "Alice"), (aliceAsSeenByBob.Id, aliceAsSeenByBob.DisplayName));
 
         await bob.DisposeAsync();
         Assert.Equal(bobJoin.SelfId, await left.Reader.ReadAsync(Timeout()));
