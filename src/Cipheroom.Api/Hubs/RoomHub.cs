@@ -1,4 +1,5 @@
 using Cipheroom.Api.Hubs.Contracts;
+using Cipheroom.Api.Telemetry;
 using Cipheroom.Application.Keys.Commands.SendKeyEnvelopes;
 using Cipheroom.Application.Media.Commands.PublishTracks;
 using Cipheroom.Application.Media.Commands.Renegotiate;
@@ -21,7 +22,7 @@ namespace Cipheroom.Api.Hubs;
 /// Thin SignalR adapter: each method sends one Mediator request, then does the SignalR-only work (groups, events).
 /// Validation and errors are handled by the pipeline and <see cref="Filters.HubExceptionFilter"/>.
 /// </summary>
-public sealed partial class RoomHub(IMediator mediator, ILogger<RoomHub> logger) : Hub<IRoomClient>
+public sealed partial class RoomHub(IMediator mediator, TelemetryIds ids, ILogger<RoomHub> logger) : Hub<IRoomClient>
 {
     public async Task<JoinResult> JoinRoom(string? roomId, string? displayName, IdentityDto? identity)
     {
@@ -37,7 +38,11 @@ public sealed partial class RoomHub(IMediator mediator, ILogger<RoomHub> logger)
         await Groups.AddToGroupAsync(Context.ConnectionId, GroupName(self.RoomId.Value));
         await Clients.OthersInGroup(GroupName(self.RoomId.Value)).ParticipantJoined(ParticipantDto.From(self));
 
-        LogJoined(logger, self.Id.Value, self.RoomId.Value);
+        if (logger.IsEnabled(LogLevel.Information))
+        {
+            var room = ids.Room(self.RoomId.Value);
+            LogJoined(logger, self.Id.Value, room);
+        }
         return new JoinResult(self.Id.Value, [.. result.Others.Select(ParticipantDto.From)]);
     }
 
@@ -113,16 +118,21 @@ public sealed partial class RoomHub(IMediator mediator, ILogger<RoomHub> logger)
 
         await Groups.RemoveFromGroupAsync(Context.ConnectionId, GroupName(left.RoomId.Value));
         await Clients.Group(GroupName(left.RoomId.Value)).ParticipantLeft(left.Id.Value);
-        LogLeft(logger, left.Id.Value, left.RoomId.Value);
+        if (logger.IsEnabled(LogLevel.Information))
+        {
+            var room = ids.Room(left.RoomId.Value);
+            LogLeft(logger, left.Id.Value, room);
+        }
     }
 
     private static string GroupName(string roomId) => $"room:{roomId}";
 
     private static string GroupName(Participant participant) => GroupName(participant.RoomId.Value);
 
-    [LoggerMessage(Level = LogLevel.Information, Message = "Participant {ParticipantId} joined room {RoomId}")]
-    private static partial void LogJoined(ILogger logger, string participantId, string roomId);
+    // Room ids are logged pseudonymously (TelemetryIds): logs end up in Loki.
+    [LoggerMessage(Level = LogLevel.Information, Message = "Participant {ParticipantId} joined room {Room}")]
+    private static partial void LogJoined(ILogger logger, string participantId, string room);
 
-    [LoggerMessage(Level = LogLevel.Information, Message = "Participant {ParticipantId} left room {RoomId}")]
-    private static partial void LogLeft(ILogger logger, string participantId, string roomId);
+    [LoggerMessage(Level = LogLevel.Information, Message = "Participant {ParticipantId} left room {Room}")]
+    private static partial void LogLeft(ILogger logger, string participantId, string room);
 }

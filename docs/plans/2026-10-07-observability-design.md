@@ -99,10 +99,15 @@ random, in `deploy/.env`, created by `scripts/secrets.sh`. `participant` = the e
 in logs and traces — never as metric labels (bounded Prometheus cardinality).
 
 **Traces** — one span per hub call (`RoomHub/<Method>`) with `room`, `participant`, `outcome` (ok / rejected:
-constant message / failed); child spans for the Mediator command and each Cloudflare request (method, path
-template without ids, status / error code). Sampling: 100 % of errors, 25 % of successful calls (configurable).
+constant message / failed); child spans for the Mediator command and each Cloudflare request (method, status; no
+URL). The hub spans come from our own `HubTelemetryFilter` (a new root per invocation); SignalR's built-in spans are
+off (`EnableAspNetCoreSignalRSupport = false`) — they'd duplicate ours and parent to the long-lived connection.
+Sampling happens in the collector (tail sampling: 100 % of errors, 25 % of the rest, configurable); the api records
+every trace.
 
 **Logs** — existing `[LoggerMessage]` logs to Loki with trace and span ids, Information and above (configurable).
+Room ids in logs are hashed too (`TelemetryIds`). `System.Net.Http.HttpClient` logging is at Warning: its
+Information logs carry full Cloudflare URLs (TURN key id, SFU app and session ids) — found by the step 2 tests.
 
 **Metrics** (low-cardinality labels only)
 
