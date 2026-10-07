@@ -2,7 +2,12 @@ import { EnvironmentInjector, createEnvironmentInjector, signal } from '@angular
 import { TestBed } from '@angular/core/testing';
 import { SignalingService } from '../signaling/signaling.service';
 import { KeyEnvelopeDto, ParticipantDto } from '../signaling/signaling.types';
-import { CryptoService, ROTATION_DEBOUNCE_MS, SWITCH_DELAY_MS } from './crypto.service';
+import {
+  CryptoService,
+  MAX_ENVELOPES_PER_CALL,
+  ROTATION_DEBOUNCE_MS,
+  SWITCH_DELAY_MS,
+} from './crypto.service';
 import { fromBase64Url, toBase64Url, utf8 } from './encoding';
 import { FRAME_CRYPTO_FACTORY } from './frame-transforms';
 import { verifyIdentity } from './identity';
@@ -250,6 +255,26 @@ describe('CryptoService', () => {
 
       expect(alice.sent).toHaveLength(1);
       expect(alice.sent[0].map((e) => e.toId).sort()).toEqual(['bob', 'carol']);
+    });
+
+    it('splits a rotation for a big room into calls the server accepts', async () => {
+      const alice = server.client('alice');
+      await server.join(alice);
+      const crowd = await Promise.all(
+        Array.from({ length: MAX_ENVELOPES_PER_CALL + 6 }, async (_, i) => ({
+          id: `p${i}`,
+          displayName: `P${i}`,
+          tracks: [],
+          identity: await server.client(`p${i}`).crypto.identityBundle(ROOM),
+        })),
+      );
+      alice.participants.set(crowd);
+      await afterRotation();
+
+      expect(alice.sent.map((call) => call.length).sort((a, b) => b - a)).toEqual([
+        MAX_ENVELOPES_PER_CALL,
+        6,
+      ]);
     });
 
     it('switches at once when the envelopes couldn’t be sent (never keeps a key a leaver may hold)', async () => {

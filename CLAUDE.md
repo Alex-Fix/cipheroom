@@ -10,7 +10,7 @@ The server must never be able to see or hear call content. Treat that as the pro
 | Backend | .NET 10, ASP.NET Core, SignalR (signaling, presence, room state) |
 | Frontend | Angular (standalone components, signals), plain WebRTC browser APIs |
 | Media | Cloudflare Realtime SFU (free tier, shared with TURN); plain WebRTC in the browser (`MediaService`), SFU calls proxied by the api |
-| E2EE (planned) | **Our** frame encryption (one worker, AES-GCM via WebCrypto, encoded transforms) + **our** key management: device identities (Ed25519/X25519), sender keys in signed envelopes over SignalR, rotation on join/leave, safety codes |
+| E2EE | **Our** frame encryption (one worker, AES-GCM via WebCrypto, encoded transforms) + **our** key management (`CryptoService`): per-call identities (Ed25519/X25519), sender keys in signed envelopes over SignalR, rotation on join/leave, safety codes |
 | NAT traversal | No public IP needed: media goes browser ⇄ Cloudflare edge; Cloudflare TURN as fallback for restrictive networks |
 | Runtime | Docker Compose; Cloudflare Tunnel (`cloudflared`) for HTTPS/WSS ingress |
 
@@ -66,7 +66,7 @@ All scripts run from the repo root.
 - Angular: standalone components, signals for state, `inject()` over constructor DI. Every component is a folder
   with `.ts` + `.html` + `.less` + `.spec.ts` (no inline templates/styles); styles are Less only; features never
   import each other (shared code goes to `core/` or `shared/`). Services `SignalingService` / `MediaService` /
-  `CryptoService` (planned) are the boundaries — components never touch the peer connection or keys directly.
+  `CryptoService` are the boundaries — components never touch the peer connection or keys directly.
 - Tests: xUnit v3 (Microsoft Testing Platform) + NSubstitute for backend, one test project per layer; hub behaviour
   and client-visible messages get functional tests. Angular default test runner for frontend.
 - Keep crypto in one place (`web/src/app/core/crypto/`). WebCrypto only, no custom ciphers; frame encryption is ours

@@ -24,6 +24,8 @@ import { E2EE_UNSUPPORTED } from './support';
 export const ROTATION_DEBOUNCE_MS = 300;
 /** Receivers get this long to install a new key before we encrypt with it. */
 export const SWITCH_DELAY_MS = 500;
+/** The server accepts this many envelopes per SendKeyEnvelopes call (KeyRules.MaxEnvelopesPerRequest). */
+export const MAX_ENVELOPES_PER_CALL = 64;
 
 /** Why an incoming envelope was dropped: counted locally, never sent anywhere. */
 export type EnvelopeDrop = EnvelopeRejection | 'unknown-sender';
@@ -247,12 +249,7 @@ export class CryptoService implements OnDestroy {
     };
     if (first) useKey();
 
-    const sent =
-      envelopes.length === 0 ||
-      (await this.signaling.sendKeyEnvelopes(envelopes).then(
-        () => true,
-        () => false,
-      ));
+    const sent = await this.send(envelopes);
     if (first) return;
     if (!sent) return useKey();
     const timer = setTimeout(() => {
@@ -260,6 +257,23 @@ export class CryptoService implements OnDestroy {
       useKey();
     }, SWITCH_DELAY_MS);
     session.switchTimers.add(timer);
+  }
+
+  /** One call per MAX_ENVELOPES_PER_CALL recipients (the server's limit). False if any batch failed. */
+  private async send(envelopes: KeyEnvelopeDto[]): Promise<boolean> {
+    const batches: KeyEnvelopeDto[][] = [];
+    for (let i = 0; i < envelopes.length; i += MAX_ENVELOPES_PER_CALL) {
+      batches.push(envelopes.slice(i, i + MAX_ENVELOPES_PER_CALL));
+    }
+    const results = await Promise.all(
+      batches.map((batch) =>
+        this.signaling.sendKeyEnvelopes(batch).then(
+          () => true,
+          () => false,
+        ),
+      ),
+    );
+    return results.every(Boolean);
   }
 
   private async verifiedPeers(session: Session): Promise<[string, VerifiedIdentity][]> {

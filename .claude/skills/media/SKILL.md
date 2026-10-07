@@ -19,9 +19,13 @@ Design: `docs/plans/2026-10-07-cloudflare-sfu-design.md`. Protocol: `docs/signal
   rules (one track per source, server-generated names, pulls only within the room) live in the `Room` aggregate.
 - **Signaling**: everything goes over SignalR (`/hubs/room`) — there is no second signaling channel. Media itself
   flows browser ⇄ Cloudflare edge; the api never sees it.
+- **E2EE**: `connect(config, self, frames)` takes `CryptoService`'s frame transforms; every sender gets them right
+  after `addTransceiver`, every receiver in `ontrack` (and is retagged after each subscribe). Publishing without
+  them throws. Remote tiles are `securing` until that participant's key arrived. See the `e2ee-media` skill.
 
 ## Flow
-1. `JoinRoom` → `GetRtcConfig` (ICE servers) → `MediaService.connect(config, self)`.
+1. `CryptoService.identityBundle` → `JoinRoom` → `CryptoService.start` → `GetRtcConfig` (ICE servers) →
+   `MediaService.connect(config, self, frames)`.
 2. **Publish own tracks first** (room `publishOwnTracks`): microphone and camera via `PublishTracks(offer, [{mid,
    source}])`; devices that are off are still published (mic muted, camera as placeholder frames via
    `reserveCamera()`).
@@ -41,7 +45,8 @@ Design: `docs/plans/2026-10-07-cloudflare-sfu-design.md`. Protocol: `docs/signal
 - **Keep published tracks alive:** Cloudflare garbage-collects tracks after 30 s without packets. Muted mic =
   `track.enabled = false` (silence keeps flowing); camera/screen off = 1 fps black canvas placeholder.
 - **SFU mutations aren't idempotent:** the SFU HTTP client never retries POST/PUT.
-- **Codec:** camera in VP8 (frame-encryptable later, simulcast everywhere). H.264 was tried and reverted — it wasn't
+- **Codec:** all video (camera and screen) in VP8 — frame encryption keeps its fixed-size header clear, and
+  simulcast works everywhere. H.264 was tried and reverted — it wasn't
   the cause of the iOS issue.
 
 ## Quality
