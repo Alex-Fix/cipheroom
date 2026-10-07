@@ -98,7 +98,7 @@ function fakeTrack(kind: 'audio' | 'video', label = '', height = 720, maxHeight 
   } as unknown as MediaStreamTrack & { stop: ReturnType<typeof vi.fn> };
 }
 
-const config: RtcConfig = { livekitUrl: '', token: '', iceServers: [], forceRelay: false };
+const config: RtcConfig = { iceServers: [], forceRelay: false };
 
 function setup() {
   const participants = signal<ParticipantDto[]>([]);

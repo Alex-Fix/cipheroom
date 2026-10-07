@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { provideNzIcons } from 'ng-zorro-antd/icon';
-import { CallParticipant } from '../../../core/livekit/livekit.service';
+import { CallParticipant } from '../../../core/media/media.types';
 import { APP_ICONS } from '../../../core/ui/icons';
 import { ParticipantsPanel } from './participants-panel';
 

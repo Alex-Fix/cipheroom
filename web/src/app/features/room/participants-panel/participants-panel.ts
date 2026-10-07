@@ -1,7 +1,7 @@
 import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
 import { NzDrawerModule } from 'ng-zorro-antd/drawer';
 import { NzIconModule } from 'ng-zorro-antd/icon';
-import { CallParticipant } from '../../../core/livekit/livekit.service';
+import { CallParticipant } from '../../../core/media/media.types';
 import { initials } from '../../../shared/initials';
 
 /**

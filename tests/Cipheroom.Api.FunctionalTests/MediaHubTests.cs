@@ -143,9 +143,6 @@ public sealed class MediaHubTests(WebApplicationFactory<Program> factory) : ICla
 
     private static WebApplicationFactory<Program> Configure(WebApplicationFactory<Program> factory, FakeSfu sfu) =>
         factory.WithWebHostBuilder(b => b
-            .UseSetting("LiveKit:Url", "ws://livekit.test")
-            .UseSetting("LiveKit:ApiKey", "testkey")
-            .UseSetting("LiveKit:ApiSecret", "test-secret-that-is-at-least-32-bytes-long")
             .UseSetting("Turn:Cloudflare:KeyId", "")
             .UseSetting("Turn:Cloudflare:ApiToken", "")
             // Generous limits: these tests make many calls on one connection.

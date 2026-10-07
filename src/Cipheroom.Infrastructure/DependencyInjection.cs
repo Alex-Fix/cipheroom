@@ -15,10 +15,8 @@ public static class DependencyInjection
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<IRoomStore, InMemoryRoomStore>();
 
-        services.AddOptions<LiveKitOptions>().BindConfiguration(LiveKitOptions.Section).ValidateDataAnnotations().ValidateOnStart();
         services.AddOptions<TurnOptions>().BindConfiguration(TurnOptions.Section).ValidateDataAnnotations().ValidateOnStart();
 
-        services.AddSingleton<ILiveKitTokenIssuer, LiveKitTokenIssuer>();
         // Typed client: configured once from options; pooled handlers, DNS refresh and resilience from the factory.
         services.AddHttpClient<CloudflareTurnClient>((sp, http) =>
             {

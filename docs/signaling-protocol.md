@@ -9,15 +9,12 @@ logged (it contains client IP addresses). Clients refer to remote tracks by **pa
 names and session ids stay server-side. Design: `docs/plans/2026-10-07-cloudflare-sfu-design.md`.
 Payloads never contain plaintext keys: only public keys and opaque signed envelopes.
 
-> LiveKit is still used for media until the frontend switches to the SFU (`GetRtcConfig` keeps its LiveKit fields
-> until then).
-
 ## Implemented
 
 | Direction | Method | Args | Returns |
 |---|---|---|---|
 | C→S | `JoinRoom` | `roomId` (`^[a-z0-9-]{3,64}$`), `displayName` (1–64 chars) | `JoinResult { selfId, participants[] }` |
-| C→S | `GetRtcConfig` | — | `RtcConfig { livekitUrl, token, iceServers[], forceRelay }` |
+| C→S | `GetRtcConfig` | — | `RtcConfig { iceServers[], forceRelay }` (Cloudflare STUN/TURN; `forceRelay` only when `Turn:ForceRelay` is set) |
 | C→S | `LeaveRoom` | — | — (also on disconnect) |
 | C→S | `PublishTracks` | `offerSdp`, `tracks[{ mid, source }]` (1–3, distinct mids and sources) | `AnswerDto { answerSdp }` |
 | C→S | `SubscribeTracks` | `tracks[{ participantId, source }]` (1–64, same room only) | `SubscribeResult { offerSdp \| null, tracks[{ participantId, source, mid }] }` |
@@ -67,7 +64,6 @@ echo input. Mapped centrally by `HubExceptionFilter`; pinned by `Cipheroom.Api.F
 | `JoinLobby` | `roomId, displayName, identity: SignedIdentityBundle` | `LobbyStatus` | waits for admission unless room is open |
 | `Admit` / `Deny` | `participantId` | — | host only |
 | `LeaveRoom` | — | — | also on disconnect; triggers key rotation |
-| `GetRtcConfig` | — | `RtcConfig { iceServers[], forceRelay }` | LiveKit fields removed at the SFU cutover |
 | `SendKeyEnvelopes` | `envelopes: KeyEnvelope[]` (`{ toId, keyIndex, epoch, blob }`) | — | each relayed to `toId` only |
 | `SendChat` | `ciphertext, keyIndex` | — | broadcast to room |
 

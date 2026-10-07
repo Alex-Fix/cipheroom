@@ -126,9 +126,6 @@ public sealed class CloudflareSfuTests
     {
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {
-            ["LiveKit:Url"] = "ws://livekit.test",
-            ["LiveKit:ApiKey"] = "testkey",
-            ["LiveKit:ApiSecret"] = "test-secret-that-is-at-least-32-bytes-long",
             ["Sfu:Cloudflare:ApiBaseUrl"] = "https://rtc.test/v1/apps/",
             ["Sfu:Cloudflare:AppId"] = "app/id",
             ["Sfu:Cloudflare:AppSecret"] = "app-secret",

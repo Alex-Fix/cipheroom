@@ -1,6 +1,6 @@
 import { Injectable, OnDestroy, computed, effect, inject, signal, untracked } from '@angular/core';
-import { Camera, CameraFacing, cameraFacing, hasRearCamera } from '../livekit/cameras';
-import { selectedIcePath } from '../livekit/ice-path';
+import { Camera, CameraFacing, cameraFacing, hasRearCamera } from './cameras';
+import { selectedIcePath } from './ice-path';
 import { loadVideoQuality, saveVideoQuality } from '../settings/video-quality';
 import { SignalingService } from '../signaling/signaling.service';
 import {

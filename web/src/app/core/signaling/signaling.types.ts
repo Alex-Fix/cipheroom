@@ -23,9 +23,8 @@ export interface JoinResult {
   participants: ParticipantDto[];
 }
 
+/** ICE servers for the peer connection to the SFU (Cloudflare STUN/TURN); `forceRelay` = TURN only (testing). */
 export interface RtcConfig {
-  livekitUrl: string;
-  token: string;
   iceServers: RTCIceServer[];
   forceRelay: boolean;
 }

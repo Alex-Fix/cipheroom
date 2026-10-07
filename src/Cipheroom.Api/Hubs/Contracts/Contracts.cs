@@ -24,11 +24,10 @@ public sealed record JoinResult(string SelfId, IReadOnlyList<ParticipantDto> Par
 /// <summary>Mirrors the browser's RTCIceServer shape.</summary>
 public sealed record IceServer(string[] Urls, string? Username = null, string? Credential = null);
 
-public sealed record RtcConfig(string LivekitUrl, string Token, IReadOnlyList<IceServer> IceServers, bool ForceRelay)
+/// <summary>ICE servers for the peer connection to the SFU; <c>ForceRelay</c> = TURN only (testing).</summary>
+public sealed record RtcConfig(IReadOnlyList<IceServer> IceServers, bool ForceRelay)
 {
     public static RtcConfig From(RtcConfigResult r) => new(
-        r.LivekitUrl,
-        r.Token,
         [.. r.IceServers.Select(s => new IceServer(s.Urls, s.Username, s.Credential))],
         r.ForceRelay);
 }

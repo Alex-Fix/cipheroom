@@ -1,4 +1,4 @@
-import { IcePath } from '../livekit/ice-path';
+import { IcePath } from './ice-path';
 
 /** Call connection state as the UI shows it. */
 export type MediaState = 'disconnected' | 'connecting' | 'connected' | 'reconnecting';

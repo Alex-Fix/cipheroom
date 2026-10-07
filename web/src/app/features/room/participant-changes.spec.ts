@@ -1,4 +1,4 @@
-import { CallParticipant } from '../../core/livekit/livekit.service';
+import { CallParticipant } from '../../core/media/media.types';
 import { participantChanges } from './participant-changes';
 
 const p = (identity: string, isLocal = false): CallParticipant => ({
