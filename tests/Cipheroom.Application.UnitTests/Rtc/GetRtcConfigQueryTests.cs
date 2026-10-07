@@ -26,7 +26,7 @@ public sealed class GetRtcConfigQueryTests
     [Fact]
     public async Task Returns_the_ice_servers_for_the_participant()
     {
-        var self = new Participant(ParticipantId.New(), new RoomId("room-1"), "conn", new DisplayName("Alice"));
+        var self = new Participant(ParticipantId.New(), new RoomId("room-1"), "conn", new DisplayName("Alice"), TestIdentity.Keys);
         _rooms.FindByConnection("conn").Returns(self);
         IceServer[] servers = [new(["turn:x"], "u", "p")];
         _ice.GetAsync(self.Id, Arg.Any<CancellationToken>()).Returns(new IceConfig(servers, ForceRelay: true));

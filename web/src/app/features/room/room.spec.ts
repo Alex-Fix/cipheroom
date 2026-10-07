@@ -3,6 +3,7 @@ import { TestBed } from '@angular/core/testing';
 import { provideRouter, Router } from '@angular/router';
 import { provideNzIcons } from 'ng-zorro-antd/icon';
 import { NzMessageService } from 'ng-zorro-antd/message';
+import { CryptoService } from '../../core/crypto/crypto.service';
 import { MediaService } from '../../core/media/media.service';
 import { CallParticipant, MediaState } from '../../core/media/media.types';
 import { SignalingService } from '../../core/signaling/signaling.service';
@@ -47,6 +48,9 @@ function fakeMedia() {
   return media;
 }
 
+/** Our public keys for the call (CryptoService); the room only passes them on. */
+const identity = { ed25519Pub: 'ed', x25519Pub: 'x', sig: 'sig' };
+
 function fakeSignaling() {
   return {
     connected: signal(true),
@@ -69,6 +73,7 @@ async function setup(
   const signaling = fakeSignaling();
   opts.tweak?.(media, signaling);
   const message = { error: vi.fn(), success: vi.fn() };
+  const crypto = { identityBundle: vi.fn().mockResolvedValue(identity) };
 
   TestBed.configureTestingModule({
     imports: [Room],
@@ -80,7 +85,12 @@ async function setup(
     ],
   });
   TestBed.overrideComponent(Room, {
-    set: { providers: [{ provide: MediaService, useValue: media }] },
+    set: {
+      providers: [
+        { provide: MediaService, useValue: media },
+        { provide: CryptoService, useValue: crypto },
+      ],
+    },
   });
 
   const router = TestBed.inject(Router);
@@ -96,13 +106,15 @@ async function setup(
     signaling,
     message,
     navigate,
+    crypto,
   };
 }
 
 describe('Room', () => {
   it('joins, connects and turns on mic and camera', async () => {
-    const { signaling, media, el } = await setup();
-    expect(signaling.joinRoom).toHaveBeenCalledWith('abc-123', 'Alex');
+    const { signaling, media, el, crypto } = await setup();
+    expect(crypto.identityBundle).toHaveBeenCalledWith('abc-123');
+    expect(signaling.joinRoom).toHaveBeenCalledWith('abc-123', 'Alex', identity);
     expect(media.connect).toHaveBeenCalledWith(
       { iceServers: [], forceRelay: false },
       { id: 'me', displayName: 'Alex' },

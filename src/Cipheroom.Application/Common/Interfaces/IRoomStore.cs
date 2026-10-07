@@ -14,6 +14,7 @@ public interface IRoomStore
         RoomId roomId,
         string connectionId,
         DisplayName displayName,
+        IdentityKeys identity,
         [NotNullWhen(true)] out Participant? self,
         [NotNullWhen(true)] out IReadOnlyList<Participant>? others);
 

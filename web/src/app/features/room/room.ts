@@ -14,6 +14,7 @@ import { Router } from '@angular/router';
 import { NzButtonModule } from 'ng-zorro-antd/button';
 import { NzIconModule } from 'ng-zorro-antd/icon';
 import { NzMessageService } from 'ng-zorro-antd/message';
+import { CryptoService } from '../../core/crypto/crypto.service';
 import { MediaService } from '../../core/media/media.service';
 import { CallParticipant } from '../../core/media/media.types';
 import { VideoQuality } from '../../core/media/quality';
@@ -41,7 +42,7 @@ import { ParticipantsPanel } from './participants-panel/participants-panel';
     NzIconModule,
     ParticipantsPanel,
   ],
-  providers: [MediaService],
+  providers: [MediaService, CryptoService],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './room.html',
   styleUrl: './room.less',
@@ -55,6 +56,7 @@ export class Room implements OnInit, OnDestroy {
   private readonly message = inject(NzMessageService);
   private readonly theme = inject(ThemeService);
   protected readonly media = inject(MediaService);
+  private readonly crypto = inject(CryptoService);
 
   protected readonly error = signal<string | undefined>(undefined);
   protected readonly showParticipants = signal(false);
@@ -187,7 +189,8 @@ export class Room implements OnInit, OnDestroy {
     this.error.set(undefined);
     try {
       const displayName = loadDisplayName();
-      const { selfId } = await this.signaling.joinRoom(this.roomId(), displayName);
+      const identity = await this.crypto.identityBundle(this.roomId());
+      const { selfId } = await this.signaling.joinRoom(this.roomId(), displayName, identity);
       this.media.connect(await this.signaling.getRtcConfig(), { id: selfId, displayName });
       this.joined.set(true);
       await this.publishOwnTracks(devices);

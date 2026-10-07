@@ -9,7 +9,7 @@ public sealed class RoomTests
     [Fact]
     public void Join_adds_a_participant_with_a_fresh_id()
     {
-        var alice = _room.Join("conn-a", new DisplayName("Alice"));
+        var alice = _room.Join("conn-a", new DisplayName("Alice"), TestIdentity.Keys);
 
         Assert.Equal(new RoomId("room-1"), alice.RoomId);
         Assert.Equal("conn-a", alice.ConnectionId);
@@ -20,15 +20,15 @@ public sealed class RoomTests
     [Fact]
     public void The_same_connection_cannot_join_twice()
     {
-        _room.Join("conn-a", new DisplayName("Alice"));
-        Assert.Throws<InvalidOperationException>(() => _room.Join("conn-a", new DisplayName("Alice")));
+        _room.Join("conn-a", new DisplayName("Alice"), TestIdentity.Keys);
+        Assert.Throws<InvalidOperationException>(() => _room.Join("conn-a", new DisplayName("Alice"), TestIdentity.Keys));
     }
 
     [Fact]
     public void Leave_removes_only_that_participant()
     {
-        var alice = _room.Join("conn-a", new DisplayName("Alice"));
-        var bob = _room.Join("conn-b", new DisplayName("Bob"));
+        var alice = _room.Join("conn-a", new DisplayName("Alice"), TestIdentity.Keys);
+        var bob = _room.Join("conn-b", new DisplayName("Bob"), TestIdentity.Keys);
 
         Assert.Equal(alice, _room.Leave("conn-a"));
         Assert.Equal([bob], _room.Participants);

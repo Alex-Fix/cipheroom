@@ -28,7 +28,7 @@ public sealed class ErrorHandlingTests(WebApplicationFactory<Program> factory) :
     public async Task Unexpected_server_errors_reach_clients_only_as_a_generic_message()
     {
         await using var connection = await ConnectAsync();
-        await connection.InvokeAsync<JoinResult>("JoinRoom", "room-err", "Alice", Ct);
+        await connection.InvokeAsync<JoinResult>("JoinRoom", "room-err", "Alice", TestIdentity.Dto, Ct);
 
         var error = await Assert.ThrowsAsync<HubException>(() => connection.InvokeAsync<RtcConfig>("GetRtcConfig", Ct));
 
@@ -43,7 +43,7 @@ public sealed class ErrorHandlingTests(WebApplicationFactory<Program> factory) :
         var collector = _factory.Services.GetFakeLogCollector();
         collector.Clear();
 
-        await Assert.ThrowsAsync<HubException>(() => connection.InvokeAsync<JoinResult>("JoinRoom", "BAD ID", "Alice", Ct));
+        await Assert.ThrowsAsync<HubException>(() => connection.InvokeAsync<JoinResult>("JoinRoom", "BAD ID", "Alice", TestIdentity.Dto, Ct));
 
         Assert.DoesNotContain(collector.GetSnapshot(), r => r.Level >= LogLevel.Error);
     }

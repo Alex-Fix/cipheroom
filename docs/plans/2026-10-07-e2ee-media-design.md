@@ -173,7 +173,7 @@ AAD = clear header ‖ counter ‖ keyIndex
 | ICE restart | Unaffected (same transceivers, keys and counters). |
 | Full rejoin fallback | Same identity, new participant id → normal join, everyone rotates. |
 | Tampered / replayed envelope | Rejected, counted locally. |
-| Old client without `identity` | `JoinRoom` fails with `Invalid identity.` — never joins unencrypted. |
+| Old client without `identity` | `JoinRoom` fails SignalR argument binding (`null` / malformed identity: `Invalid identity.`) — never joins unencrypted. |
 
 ## Protocol changes
 

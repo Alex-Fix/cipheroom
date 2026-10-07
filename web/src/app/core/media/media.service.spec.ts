@@ -1,8 +1,11 @@
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { SignalingService } from '../signaling/signaling.service';
-import { ParticipantDto, RtcConfig } from '../signaling/signaling.types';
+import { IdentityDto, ParticipantDto, RtcConfig } from '../signaling/signaling.types';
 import { MediaService } from './media.service';
+
+/** Public keys only; the shape is all these tests need. */
+const identity: IdentityDto = { ed25519Pub: 'ed', x25519Pub: 'x', sig: 'sig' };
 
 /** Just enough of RTCPeerConnection: transceivers get mids on setLocalDescription, like the real one. */
 class FakePeerConnection {
@@ -223,6 +226,7 @@ describe('MediaService', () => {
       {
         id: 'bob',
         displayName: 'Bob',
+        identity,
         tracks: [
           { source: 'microphone', kind: 'audio', muted: false },
           { source: 'camera', kind: 'video', muted: false },
@@ -256,6 +260,7 @@ describe('MediaService', () => {
       {
         id: 'bob',
         displayName: 'Bob',
+        identity,
         tracks: [{ source: 'camera', kind: 'video', muted: false }],
       },
     ]);
@@ -294,6 +299,7 @@ describe('MediaService', () => {
         {
           id: 'bob',
           displayName: 'Bob',
+          identity,
           tracks: [{ source: 'camera', kind: 'video', muted: false }],
         },
       ]);
@@ -340,6 +346,7 @@ describe('MediaService', () => {
         {
           id: 'bob',
           displayName: 'Bob',
+          identity,
           tracks: [{ source: 'microphone', kind: 'audio', muted: false }],
         },
       ]);
@@ -488,6 +495,7 @@ describe('MediaService', () => {
     const bob: ParticipantDto = {
       id: 'bob',
       displayName: 'Bob',
+      identity,
       tracks: [
         { source: 'microphone', kind: 'audio', muted: false },
         { source: 'camera', kind: 'video', muted: false },
@@ -548,6 +556,7 @@ describe('MediaService', () => {
         {
           id: 'bob',
           displayName: 'Bob',
+          identity,
           tracks: [{ source: 'camera', kind: 'video', muted: false }],
         },
       ]);
@@ -657,6 +666,7 @@ describe('MediaService', () => {
         {
           id: 'bob',
           displayName: 'Bob',
+          identity,
           tracks: [{ source: 'camera', kind: 'video', muted: false }],
         },
       ]);
