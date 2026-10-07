@@ -31,7 +31,7 @@ public interface ISfu
 
 public sealed record SfuLocalTrack(string Mid, string TrackName);
 
-/// <param name="Simulcast">Publisher sends f/h/q layers; the SFU starts with <c>h</c> and falls back on congestion.</param>
+/// <param name="Simulcast">Publisher sends f/h/q layers; the SFU starts with the full layer (<c>f</c>) and steps down on congestion.</param>
 public sealed record SfuRemoteTrack(string PublisherSessionId, string TrackName, bool Simulcast);
 
 public sealed record SfuPulledTrack(string PublisherSessionId, string TrackName, string Mid);

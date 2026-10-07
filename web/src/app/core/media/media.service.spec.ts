@@ -85,14 +85,15 @@ class FakeTransceiver {
   }
 }
 
-function fakeTrack(kind: 'audio' | 'video', label = '') {
+function fakeTrack(kind: 'audio' | 'video', label = '', height = 720, maxHeight = 1080) {
   return {
     kind,
     label,
     enabled: true,
     contentHint: '',
     stop: vi.fn(),
-    getSettings: () => ({ deviceId: `${kind}-1` }),
+    getSettings: () => ({ deviceId: `${kind}-1`, height }),
+    getCapabilities: () => ({ height: { max: maxHeight } }),
     addEventListener: vi.fn(),
   } as unknown as MediaStreamTrack & { stop: ReturnType<typeof vi.fn> };
 }
@@ -295,27 +296,27 @@ describe('MediaService', () => {
       return ctx;
     }
 
-    it('requests the layer a remote camera tile needs, debounced', async () => {
+    it('receives the highest layer by default and the smallest only off screen', async () => {
       const { media, signaling } = await withBobsCamera();
 
-      media.setTileSize('bob:camera', 200);
-      media.setTileSize('bob:camera', 1200);
+      // On screen, any size: the full layer we subscribed with — nothing to send.
+      media.setTileSize('bob:camera', 160);
       await vi.advanceTimersByTimeAsync(500);
+      expect(signaling.selectVideoLayer).not.toHaveBeenCalled();
 
-      expect(signaling.selectVideoLayer).toHaveBeenCalledTimes(1);
-      expect(signaling.selectVideoLayer).toHaveBeenCalledWith('6', 'f');
-
-      // Same layer again: nothing to send. Local tiles never request layers.
-      media.setTileSize('bob:camera', 1100);
-      media.setTileSize('me:camera', 50);
+      media.setTileSize('bob:camera', 0);
+      media.setTileSize('me:camera', 0);
       await vi.advanceTimersByTimeAsync(500);
       expect(signaling.selectVideoLayer).toHaveBeenCalledTimes(1);
+      expect(signaling.selectVideoLayer).toHaveBeenCalledWith('6', 'q');
+
+      media.setTileSize('bob:camera', 640);
+      await vi.advanceTimersByTimeAsync(500);
+      expect(signaling.selectVideoLayer).toHaveBeenLastCalledWith('6', 'f');
     });
 
     it('drops to the smallest layer while the tab is hidden', async () => {
-      const { media, signaling } = await withBobsCamera();
-      media.setTileSize('bob:camera', 1200);
-      await vi.advanceTimersByTimeAsync(500);
+      const { signaling } = await withBobsCamera();
 
       vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
       document.dispatchEvent(new Event('visibilitychange'));
@@ -411,6 +412,68 @@ describe('MediaService', () => {
 
       expect(media.state()).toBe('disconnected');
       expect(pc.signalingState).toBe('stable');
+    });
+  });
+
+  describe('camera quality', () => {
+    beforeEach(() => localStorage.removeItem('cipheroom.videoQuality'));
+
+    it('captures the best the camera has (up to 4K) by default, with bitrates for that resolution', async () => {
+      const { media, pc } = setup();
+      const devices = navigator.mediaDevices as unknown as {
+        getUserMedia: ReturnType<typeof vi.fn>;
+      };
+
+      await media.setCamera(true);
+
+      expect(media.videoQuality()).toBe('auto');
+      expect(devices.getUserMedia).toHaveBeenCalledWith({
+        video: { width: { ideal: 3840 }, height: { ideal: 2160 }, frameRate: { ideal: 30 } },
+      });
+      // The fake camera delivered 720p.
+      expect(pc.transceivers[0].init.sendEncodings?.map((e) => e.maxBitrate)).toEqual([
+        1_500_000, 500_000, 200_000,
+      ]);
+      // It can do 1080p but not 4K.
+      expect(media.availableQualities()).toEqual(['auto', '1080p', '720p']);
+    });
+
+    it('changing quality re-captures the same camera in place and is remembered', async () => {
+      const { media, signaling, pc, camera } = setup();
+      const devices = navigator.mediaDevices as unknown as {
+        getUserMedia: ReturnType<typeof vi.fn>;
+      };
+      await media.setCamera(true);
+
+      await media.setVideoQuality('1080p');
+
+      expect(devices.getUserMedia).toHaveBeenLastCalledWith({
+        video: {
+          width: { ideal: 1920, max: 1920 },
+          height: { ideal: 1080, max: 1080 },
+          frameRate: { ideal: 30 },
+          deviceId: { exact: 'video-1' },
+        },
+      });
+      expect(camera.stop).toHaveBeenCalled();
+      expect(pc.transceivers[0].sender.replaceTrack).toHaveBeenCalled();
+      expect(signaling.publishTracks).toHaveBeenCalledTimes(1);
+      expect(localStorage.getItem('cipheroom.videoQuality')).toBe('1080p');
+    });
+
+    it('with the camera off, a new quality applies the next time it turns on', async () => {
+      const { media } = setup();
+      const devices = navigator.mediaDevices as unknown as {
+        getUserMedia: ReturnType<typeof vi.fn>;
+      };
+
+      await media.setVideoQuality('720p');
+      expect(devices.getUserMedia).not.toHaveBeenCalled();
+
+      await media.setCamera(true);
+      expect(devices.getUserMedia).toHaveBeenLastCalledWith({
+        video: expect.objectContaining({ height: { ideal: 720, max: 720 } }),
+      });
     });
   });
 });

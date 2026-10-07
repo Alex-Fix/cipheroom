@@ -1,6 +1,7 @@
 import { Injectable, OnDestroy, computed, effect, inject, signal, untracked } from '@angular/core';
 import { Camera, CameraFacing, cameraFacing, hasRearCamera } from '../livekit/cameras';
 import { selectedIcePath } from '../livekit/ice-path';
+import { loadVideoQuality, saveVideoQuality } from '../settings/video-quality';
 import { SignalingService } from '../signaling/signaling.service';
 import {
   ParticipantDto,
@@ -10,23 +11,12 @@ import {
   VideoLayer,
 } from '../signaling/signaling.types';
 import { AudioPlayback } from './audio-playback';
-import { layerFor } from './layers';
+import { receiveLayer } from './layers';
 import { CallParticipant, Diagnostics, MediaState, Tile } from './media.types';
+import { VideoQuality, cameraEncodings, captureConstraints, supportedQualities } from './quality';
 import { SerialQueue } from './serial-queue';
 import { SpeakingDetector, sameMembers } from './speaking';
 import { TrackKey, subscriptionDiff, trackKey } from './subscriptions';
-
-/** Camera simulcast layers (full, half, quarter); receivers pick one per tile. Screen share sends one layer. */
-const CAMERA_LAYERS: RTCRtpEncodingParameters[] = [
-  { rid: 'f', maxBitrate: 1_200_000 },
-  { rid: 'h', scaleResolutionDownBy: 2, maxBitrate: 400_000 },
-  { rid: 'q', scaleResolutionDownBy: 4, maxBitrate: 150_000 },
-];
-
-const CAMERA_CONSTRAINTS: MediaTrackConstraints = {
-  width: { ideal: 1280 },
-  height: { ideal: 720 },
-};
 
 /** Who we are in the room (from JoinRoom). */
 export interface Self {
@@ -42,7 +32,8 @@ export interface Self {
  *   track is disabled or swapped (placeholder frames keep the SFU track alive) and others learn it from TrackMuted.
  * - Subscriptions follow `SignalingService.participants`: newly published tracks are pulled, gone ones dropped.
  * - Every SFU/peer-connection mutation runs through one queue: negotiations must never overlap.
- * - Quality: each received camera gets the simulcast layer its tile needs (`setTileSize`), `q` while hidden.
+ * - Quality: we send the camera at the chosen quality (`videoQuality`, default auto = best the camera has, up to
+ *   4K) as f/h/q simulcast, and receive the highest layer of every camera on screen (`q` when hidden).
  * - Recovery: ICE restart on connection loss; after two failed attempts `state` becomes 'disconnected' and the
  *   room rejoins.
  * - E2EE (next milestone) hooks in where senders and receivers are created.
@@ -59,12 +50,12 @@ export class MediaService implements OnDestroy {
   private statsTicks = 0;
   private recoveryTimer?: ReturnType<typeof setTimeout>;
   private restartAttempts = 0;
-  /** Rendered width of remote camera tiles, and the layer last requested for each. */
+  /** Rendered width of remote camera tiles (0 = off screen), and the layer last requested for each. */
   private readonly tileWidths = new Map<TrackKey, number>();
   private readonly layers = new Map<TrackKey, VideoLayer>();
   private readonly layerTimers = new Map<TrackKey, ReturnType<typeof setTimeout>>();
   private readonly onVisibilityChange = () =>
-    this.tileWidths.forEach((_, key) => this.scheduleLayer(key));
+    this.subscriptions.forEach((_, key) => key.endsWith(':camera') && this.scheduleLayer(key));
   /** Our transceivers by source, kept for the whole call. */
   private readonly senders = new Map<TrackSource, RTCRtpTransceiver>();
   /** Remote tracks we receive or have requested → receiving mid (undefined while the request is in flight). */
@@ -93,6 +84,10 @@ export class MediaService implements OnDestroy {
   readonly cameraFacing = signal<CameraFacing | undefined>(undefined);
   /** Phones/tablets: offer front ⇄ rear flipping. */
   readonly canFlip = computed(() => hasRearCamera(this.cameras()));
+  /** Camera send quality; remembered in this browser. */
+  readonly videoQuality = signal<VideoQuality>(loadVideoQuality());
+  /** Qualities the current camera can actually capture (4K / 1080p only when supported). */
+  readonly availableQualities = signal<VideoQuality[]>(supportedQualities(undefined));
 
   readonly participants = computed<CallParticipant[]>(() => {
     const self = this.self();
@@ -170,6 +165,7 @@ export class MediaService implements OnDestroy {
    * simulcast layer (debounced, so resizing doesn't flood the SFU).
    */
   setTileSize(tileKey: string, width: number): void {
+    // Only on/off screen matters: on screen we always want the highest layer.
     const key = tileKey as TrackKey;
     if (!key.endsWith(':camera')) return;
     this.tileWidths.set(key, width);
@@ -196,7 +192,7 @@ export class MediaService implements OnDestroy {
       this.cameraEnabled.set(false);
       return;
     }
-    const stream = await navigator.mediaDevices.getUserMedia({ video: CAMERA_CONSTRAINTS });
+    const stream = await navigator.mediaDevices.getUserMedia({ video: this.cameraConstraints() });
     await this.useTrack('camera', stream.getVideoTracks()[0]);
     this.cameraEnabled.set(true);
     // First time on, permission was just granted: device labels are now readable.
@@ -206,11 +202,19 @@ export class MediaService implements OnDestroy {
   /** Front ⇄ rear. Others see a brief cut; the published track stays the same. */
   async flipCamera(): Promise<void> {
     const next: CameraFacing = this.cameraFacing() === 'environment' ? 'user' : 'environment';
-    await this.switchCamera({ ...CAMERA_CONSTRAINTS, facingMode: { exact: next } });
+    await this.switchCamera({ facingMode: { exact: next } });
   }
 
   async selectCamera(deviceId: string): Promise<void> {
-    await this.switchCamera({ ...CAMERA_CONSTRAINTS, deviceId: { exact: deviceId } });
+    await this.switchCamera({ deviceId: { exact: deviceId } });
+  }
+
+  /** Changes the camera send quality; a live camera is re-captured in place (others see a brief cut). */
+  async setVideoQuality(quality: VideoQuality): Promise<void> {
+    this.videoQuality.set(quality);
+    saveVideoQuality(quality);
+    const deviceId = this.activeCameraId();
+    await this.switchCamera(deviceId ? { deviceId: { exact: deviceId } } : {});
   }
 
   async setScreenShare(enabled: boolean): Promise<void> {
@@ -277,6 +281,7 @@ export class MediaService implements OnDestroy {
     }
     const previous = this.localTracks()[source];
     await transceiver.sender.replaceTrack(track);
+    if (source === 'camera') await updateBitrates(transceiver.sender, captureHeight(track));
     previous?.stop();
     this.placeholders.get(source)?.stop();
     this.placeholders.delete(source);
@@ -303,7 +308,9 @@ export class MediaService implements OnDestroy {
     // Phones can't open two cameras at once: release the current one first.
     this.localTracks().camera?.stop();
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: constraints });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: this.cameraConstraints(constraints),
+      });
       await this.useTrack('camera', stream.getVideoTracks()[0]);
     } catch (e) {
       await this.setCamera(false);
@@ -316,7 +323,7 @@ export class MediaService implements OnDestroy {
       const pc = this.requirePc();
       const transceiver = pc.addTransceiver(track, {
         direction: 'sendonly',
-        ...(source === 'camera' ? { sendEncodings: CAMERA_LAYERS } : {}),
+        ...(source === 'camera' ? { sendEncodings: cameraEncodings(captureHeight(track)) } : {}),
       });
       if (source === 'camera') preferVp8(transceiver);
       try {
@@ -404,15 +411,16 @@ export class MediaService implements OnDestroy {
   private async applyLayer(key: TrackKey): Promise<void> {
     const mid = this.subscriptions.get(key);
     if (!mid) return;
-    const visible = document.visibilityState !== 'hidden';
-    const layer = layerFor(this.tileWidths.get(key) ?? 0, window.devicePixelRatio || 1, visible);
-    // Subscriptions start at 'h' (see the SFU adapter).
-    if ((this.layers.get(key) ?? 'h') === layer) return;
+    // Tiles that never reported a size count as on screen.
+    const onScreen = document.visibilityState !== 'hidden' && (this.tileWidths.get(key) ?? 1) > 0;
+    const layer = receiveLayer(onScreen);
+    // Subscriptions start at the full layer (see the SFU adapter).
+    if ((this.layers.get(key) ?? 'f') === layer) return;
     this.layers.set(key, layer);
     try {
       await this.queue.run(() => this.signaling.selectVideoLayer(mid, layer));
     } catch {
-      this.layers.delete(key); // retried on the next size change
+      this.layers.delete(key); // retried on the next change
     }
   }
 
@@ -496,11 +504,17 @@ export class MediaService implements OnDestroy {
     return this.pc;
   }
 
+  private cameraConstraints(extra: MediaTrackConstraints = {}): MediaTrackConstraints {
+    return { ...captureConstraints(this.videoQuality()), ...extra };
+  }
+
   private updateCameraInfo(): void {
     const track = this.localTracks().camera;
     const settings = track?.getSettings();
     const label = this.cameras().find((c) => c.id === settings?.deviceId)?.label ?? track?.label;
     this.activeCameraId.set(settings?.deviceId);
+    if (track)
+      this.availableQualities.set(supportedQualities(track.getCapabilities?.().height?.max));
     this.cameraFacing.set(track ? cameraFacing(settings?.facingMode, label) : undefined);
   }
 
@@ -631,6 +645,19 @@ function screenTile(
     micMuted: true,
     mirror: false,
   };
+}
+
+function captureHeight(track: MediaStreamTrack): number {
+  return track.getSettings?.().height ?? 720;
+}
+
+/** Re-targets the camera's simulcast bitrates after a resolution change (no renegotiation needed). */
+async function updateBitrates(sender: RTCRtpSender, height: number): Promise<void> {
+  if (typeof sender.getParameters !== 'function') return;
+  const parameters = sender.getParameters();
+  const targets = new Map(cameraEncodings(height).map((e) => [e.rid, e.maxBitrate]));
+  parameters.encodings?.forEach((e) => (e.maxBitrate = targets.get(e.rid) ?? e.maxBitrate));
+  await sender.setParameters(parameters);
 }
 
 /** VP8 first: simulcast support everywhere, and simple to frame-encrypt later (E2EE). */

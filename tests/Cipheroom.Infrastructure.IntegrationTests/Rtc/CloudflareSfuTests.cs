@@ -59,7 +59,7 @@ public sealed class CloudflareSfuTests
         Assert.Equal([new SfuPulledTrack("pub", "p-camera", "5"), new SfuPulledTrack("pub", "p-microphone", "4")], result.Tracks);
         Assert.Equal(
             """{"tracks":[{"location":"remote","sessionId":"pub","trackName":"p-microphone"},""" +
-            """{"location":"remote","sessionId":"pub","trackName":"p-camera","simulcast":{"preferredRid":"h","priorityOrdering":"asciibetical","ridNotAvailable":"asciibetical"}}]}""",
+            """{"location":"remote","sessionId":"pub","trackName":"p-camera","simulcast":{"preferredRid":"f","priorityOrdering":"asciibetical","ridNotAvailable":"asciibetical"}}]}""",
             Assert.Single(handler.Requests).Body);
     }
 

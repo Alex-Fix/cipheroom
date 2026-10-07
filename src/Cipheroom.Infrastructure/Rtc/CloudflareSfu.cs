@@ -10,7 +10,8 @@ namespace Cipheroom.Infrastructure.Rtc;
 /// </summary>
 public sealed class CloudflareSfu(CloudflareSfuClient cloudflare) : ISfu
 {
-    private const string FirstLayer = "h";
+    // Highest quality first; Cloudflare steps down (asciibetical: f → h → q) when the receiver can't keep up.
+    private const string FirstLayer = "f";
 
     public Task<string> CreateSessionAsync(CancellationToken cancellationToken) =>
         Call(async () => (await cloudflare.NewSessionAsync(cancellationToken)).SessionId, cancellationToken);
