@@ -4,6 +4,8 @@
     [link]="link"
     [status]="status()"
     [participants]="participantCount()"
+    [safetyCode]="crypto.safetyCode()"
+    [unverified]="crypto.unverified().size"
     [manualCopy]="manualCopy()"
     (copyLink)="copyLink()"
     (manualCopyClosed)="manualCopy.set(false)"

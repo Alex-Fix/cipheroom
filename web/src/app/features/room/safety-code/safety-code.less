@@ -1,0 +1,47 @@
+:host {
+  display: block;
+  max-width: 300px;
+}
+
+.emoji {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+  text-align: center;
+}
+
+.symbol {
+  display: block;
+  font-size: 32px;
+  line-height: 1.2;
+}
+
+.name {
+  display: block;
+  font-size: 11px;
+  opacity: 0.75;
+}
+
+.digits {
+  margin: 0 0 8px;
+  font-size: 22px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.08em;
+  text-align: center;
+}
+
+.hint {
+  margin: 0;
+  font-size: 12px;
+  opacity: 0.75;
+}
+
+.warning {
+  margin: 8px 0 0;
+  color: var(--orange);
+  font-size: 12px;
+}

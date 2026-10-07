@@ -50,17 +50,28 @@
 
   <span class="divider" aria-hidden="true"></span>
 
-  @if (encrypted()) {
-    <span class="e2ee secure" nz-tooltip nzTooltipTitle="Media is end-to-end encrypted">
-      <nz-icon nzType="lock" /> <span class="label">Encrypted</span>
-    </span>
-  } @else {
-    <span
-      class="e2ee"
-      nz-tooltip
-      nzTooltipTitle="End-to-end encryption isn't enabled in this build yet. The server can see this call."
+  @if (safetyCode(); as code) {
+    <button
+      type="button"
+      class="e2ee secure"
+      [class.warn]="unverified() > 0"
+      aria-label="End-to-end encrypted: show safety code"
+      nz-popover
+      nzPopoverTitle="Safety code"
+      [nzPopoverContent]="safetyCodeTpl"
+      nzPopoverTrigger="click"
+      nzPopoverPlacement="bottom"
     >
-      <nz-icon nzType="unlock" /> <span class="label">Not encrypted yet</span>
+      <nz-icon [nzType]="unverified() > 0 ? 'exclamation-circle' : 'lock'" />
+      <span class="label">Encrypted</span>
+    </button>
+    <ng-template #safetyCodeTpl>
+      <app-safety-code [code]="code" [unverified]="unverified()" />
+    </ng-template>
+  } @else {
+    <!-- Never optimistic: no lock until our keys are in place. Media doesn't flow unencrypted meanwhile. -->
+    <span class="e2ee" nz-tooltip nzTooltipTitle="Setting up end-to-end encryption">
+      <nz-icon nzType="sync" /> <span class="label">Securing…</span>
     </span>
   }
 

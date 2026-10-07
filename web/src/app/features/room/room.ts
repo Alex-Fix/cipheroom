@@ -56,7 +56,7 @@ export class Room implements OnInit, OnDestroy {
   private readonly message = inject(NzMessageService);
   private readonly theme = inject(ThemeService);
   protected readonly media = inject(MediaService);
-  private readonly crypto = inject(CryptoService);
+  protected readonly crypto = inject(CryptoService);
 
   protected readonly error = signal<string | undefined>(undefined);
   protected readonly showParticipants = signal(false);
@@ -79,6 +79,8 @@ export class Room implements OnInit, OnDestroy {
 
   private baseline?: readonly CallParticipant[];
   private noticeId = 0;
+  /** Last safety code seen in this call (kept across rejoins: a code that differs afterwards did change). */
+  private lastSafetyCode?: string;
 
   constructor() {
     // Every join and leave is announced (ghost-participant defence, docs/architecture.md). The first snapshot after
@@ -95,6 +97,17 @@ export class Room implements OnInit, OnDestroy {
         left.forEach((p) => this.notify(`${p.name} left`));
       }
       this.baseline = participants;
+    });
+
+    // A new safety code means the set of keys in the call changed: invite everyone to compare again.
+    effect(() => {
+      const code = this.crypto.safetyCode();
+      if (!code) return;
+      const current = `${code.emoji.map((e) => e.symbol).join('')} ${code.digits}`;
+      if (this.lastSafetyCode && current !== this.lastSafetyCode) {
+        untracked(() => this.notify('Safety code changed — compare it again'));
+      }
+      this.lastSafetyCode = current;
     });
 
     // Lost the media connection (ICE restarts gave up) or the signaling connection: rejoin from scratch.

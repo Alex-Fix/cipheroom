@@ -54,9 +54,11 @@ a spike with a fixed test key; if it fails we stop and rethink before building k
 
 - Lobby: unchanged. If the browser lacks encoded transforms or Ed25519/X25519 → "This browser can't join encrypted
   calls", no Join button.
-- In call: a lock/shield button in the call bar opens the **safety code** (e.g. `🐙 🌵 🚲 🍋 · 4821 9037`) with
-  "Compare this with everyone in the call". Visible, non-blocking.
-- Someone joins/leaves → toast "Safety code changed".
+- In call: the header's **Encrypted** badge (lock) opens the **safety code** — 4 emoji with their names and 8 digits
+  (e.g. `🐙 🌵 🚲 🔑 · 4821 9037`) — with "compare it out loud". Visible, non-blocking. Until our keys are in place
+  the badge reads "Securing…" (no lock, never optimistic); it turns orange with a warning in the popover when a
+  participant's identity didn't verify.
+- Someone joins/leaves → toast "Safety code changed — compare it again" (next to the existing "X joined/left").
 - A remote tile whose keys haven't arrived shows "Securing…"; its frames are dropped (silent audio) until the key
   arrives.
 

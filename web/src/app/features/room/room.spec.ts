@@ -4,6 +4,7 @@ import { provideRouter, Router } from '@angular/router';
 import { provideNzIcons } from 'ng-zorro-antd/icon';
 import { NzMessageService } from 'ng-zorro-antd/message';
 import { CryptoService } from '../../core/crypto/crypto.service';
+import { SafetyCode } from '../../core/crypto/safety-code';
 import { MediaService } from '../../core/media/media.service';
 import { CallParticipant, MediaState } from '../../core/media/media.types';
 import { SignalingService } from '../../core/signaling/signaling.service';
@@ -58,8 +59,20 @@ function fakeCrypto() {
     identityBundle: vi.fn().mockResolvedValue(identity),
     start: vi.fn().mockResolvedValue(frames),
     stop: vi.fn(),
+    safetyCode: signal<SafetyCode | undefined>(undefined),
+    unverified: signal<ReadonlySet<string>>(new Set()),
   };
 }
+
+const safetyCode = (digits: string): SafetyCode => ({
+  emoji: [
+    { symbol: '🐙', name: 'octopus' },
+    { symbol: '🌵', name: 'cactus' },
+    { symbol: '🚲', name: 'bicycle' },
+    { symbol: '🔑', name: 'key' },
+  ],
+  digits,
+});
 
 function fakeSignaling() {
   return {
@@ -253,6 +266,21 @@ describe('Room', () => {
     media.participants.set([person('Alex', true), person('<b>Eve</b>')]);
     fixture.detectChanges();
     expect(notices()).toContain('Bob left');
+  });
+
+  it('shows the encryption state and announces a changed safety code', async () => {
+    const { el, fixture, crypto } = await setup();
+    const notices = () => [...el.querySelectorAll('.notice')].map((n) => n.textContent!.trim());
+    expect(el.querySelector('.e2ee')?.textContent).toContain('Securing…');
+
+    crypto.safetyCode.set(safetyCode('1111 2222'));
+    fixture.detectChanges();
+    expect(el.querySelector('.e2ee.secure')?.textContent).toContain('Encrypted');
+    expect(notices()).toEqual([]);
+
+    crypto.safetyCode.set(safetyCode('3333 4444'));
+    fixture.detectChanges();
+    expect(notices()).toEqual(['Safety code changed — compare it again']);
   });
 
   it('flips the camera and reports a busy camera as a toast', async () => {
