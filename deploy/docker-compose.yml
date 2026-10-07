@@ -6,14 +6,13 @@ services:
       context: ..
       dockerfile: src/Cipheroom.Api/Dockerfile
     environment:
-      LiveKit__Url: ${LIVEKIT_URL:?set LIVEKIT_URL in deploy/.env}
-      LiveKit__ApiKey: ${LIVEKIT_API_KEY:?run scripts/secrets.sh}
-      LiveKit__ApiSecret: ${LIVEKIT_API_SECRET:?run scripts/secrets.sh}
       Turn__Cloudflare__KeyId: ${CF_TURN_KEY_ID:-}
       Turn__Cloudflare__ApiToken: ${CF_TURN_API_TOKEN:-}
       Turn__CredentialTtlSeconds: ${TURN_CREDENTIAL_TTL_SECONDS:-14400}
-      Sfu__Cloudflare__AppId: ${CF_SFU_APP_ID:-}
-      Sfu__Cloudflare__AppSecret: ${CF_SFU_APP_SECRET:-}
+      Turn__ForceRelay: ${TURN_FORCE_RELAY:-false}
+      # Media goes through Cloudflare Realtime SFU: calls can't work without it.
+      Sfu__Cloudflare__AppId: ${CF_SFU_APP_ID:?set CF_SFU_APP_ID in deploy/.env (see scripts/secrets.sh)}
+      Sfu__Cloudflare__AppSecret: ${CF_SFU_APP_SECRET:?set CF_SFU_APP_SECRET in deploy/.env (see scripts/secrets.sh)}
       # Trust X-Forwarded-* from our proxies only (cloudflared → nginx → api). The api publishes no ports, so only
       # containers on the compose network (Docker's 172.16.0.0/12 range) can reach it.
       ForwardedHeaders__KnownNetworks__0: 172.16.0.0/12
@@ -28,20 +27,6 @@ services:
     depends_on:
       api:
         condition: service_healthy
-      livekit:
-        condition: service_started
-    restart: unless-stopped
-
-  livekit:
-    image: livekit/livekit-server:v1.13.8
-    command: --config /etc/livekit.yaml
-    environment:
-      LIVEKIT_KEYS: "${LIVEKIT_API_KEY}: ${LIVEKIT_API_SECRET}"
-    volumes:
-      - ./livekit/livekit.yaml:/etc/livekit.yaml:ro
-    ports:
-      - "7881:7881/tcp"
-      - "50000-50100:50000-50100/udp"
     restart: unless-stopped
 
   cloudflared:

@@ -5,5 +5,6 @@ require_env
 
 [[ "${1:-}" == "--tunnel" ]] && COMPOSE+=(--profile tunnel)
 
-"${COMPOSE[@]}" up -d --build
+# --remove-orphans: containers of services that were removed from the compose file (e.g. the old livekit) go too.
+"${COMPOSE[@]}" up -d --build --remove-orphans
 "${COMPOSE[@]}" ps

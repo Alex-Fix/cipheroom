@@ -10,7 +10,7 @@ good() { printf '  \033[32m✓\033[0m %s\n' "$*"; }
 
 info "Secrets in tracked files"
 # Cloudflare tunnel tokens (base64 JSON starting {"a":), private keys, filled-in secret assignments.
-patterns='eyJhIjoi[A-Za-z0-9+/=_-]{40,}|-----BEGIN [A-Z ]*PRIVATE KEY-----|(TUNNEL_TOKEN|CF_TURN_API_TOKEN|CF_TURN_KEY_ID|LIVEKIT_API_SECRET)=[^[:space:]$]+'
+patterns='eyJhIjoi[A-Za-z0-9+/=_-]{40,}|-----BEGIN [A-Z ]*PRIVATE KEY-----|(TUNNEL_TOKEN|CF_TURN_API_TOKEN|CF_TURN_KEY_ID|CF_SFU_APP_SECRET)=[^[:space:]$]+'
 if hits="$(git grep -nIE "$patterns" -- . ':!*.lock' ':!**/package-lock.json' 2>/dev/null)"; then
   bad "possible secrets committed:"; printf '%s\n' "$hits" | sed -E 's/(=|eyJhIjoi)[^[:space:]]{6}[^[:space:]]*/\1…<redacted>/' | sed 's/^/      /'
 else
