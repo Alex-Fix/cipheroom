@@ -52,4 +52,11 @@ export class CallHeader {
   readonly showParticipants = output();
 
   protected readonly statusText = computed(() => STATUS_TEXT[this.status()]);
+  /** What screen readers announce for the badge: the code in words. */
+  protected readonly safetyCodeLabel = computed(() => {
+    const code = this.safetyCode();
+    if (!code) return undefined;
+    const emoji = code.emoji.map((e) => e.name).join(', ');
+    return `End-to-end encrypted. Safety code: ${emoji}, ${code.digits}. Show details`;
+  });
 }

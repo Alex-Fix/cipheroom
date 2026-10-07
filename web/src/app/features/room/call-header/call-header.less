@@ -104,11 +104,33 @@
 }
 
 button.e2ee {
+  gap: 6px;
   padding: 0;
   border: 0;
   background: none;
   font: inherit;
   cursor: pointer;
+}
+
+// The safety code, readable at a glance (status colour stays on the lock and label).
+.code {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--label);
+  white-space: nowrap;
+}
+
+.code-emoji {
+  display: inline-flex;
+  gap: 2px;
+  font-size: 15px;
+  line-height: 1;
+}
+
+.code-digits {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
 }
 
 .count {

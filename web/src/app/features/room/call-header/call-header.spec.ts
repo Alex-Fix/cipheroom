@@ -44,10 +44,19 @@ describe('CallHeader', () => {
     expect(e2ee?.classList).not.toContain('secure');
   });
 
-  it('opens the safety code from the Encrypted badge', async () => {
+  it('shows the status and the safety code in the top bar', () => {
+    const badge = render('connected', { safetyCode: code }).el.querySelector('button.e2ee.secure')!;
+    expect(badge.textContent).toContain('Encrypted');
+    expect(badge.querySelector('.code-emoji')?.textContent?.replace(/\s/g, '')).toBe('🐙🌵🚲🔑');
+    expect(badge.querySelector('.code-digits')?.textContent).toBe('4821 9037');
+    expect(badge.getAttribute('aria-label')).toBe(
+      'End-to-end encrypted. Safety code: octopus, cactus, bicycle, key, 4821 9037. Show details',
+    );
+  });
+
+  it('opens the safety code details from the Encrypted badge', async () => {
     const { el, fixture } = render('connected', { safetyCode: code });
     const badge = el.querySelector<HTMLButtonElement>('button.e2ee.secure')!;
-    expect(badge.textContent).toContain('Encrypted');
 
     badge.click();
     fixture.detectChanges();

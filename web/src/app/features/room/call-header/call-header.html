@@ -55,7 +55,7 @@
       type="button"
       class="e2ee secure"
       [class.warn]="unverified() > 0"
-      aria-label="End-to-end encrypted: show safety code"
+      [attr.aria-label]="safetyCodeLabel()"
       nz-popover
       nzPopoverTitle="Safety code"
       [nzPopoverContent]="safetyCodeTpl"
@@ -64,6 +64,15 @@
     >
       <nz-icon [nzType]="unverified() > 0 ? 'exclamation-circle' : 'lock'" />
       <span class="label">Encrypted</span>
+      <!-- Always visible, so people can compare without opening anything. -->
+      <span class="code" aria-hidden="true">
+        <span class="code-emoji">
+          @for (e of code.emoji; track $index) {
+            <span>{{ e.symbol }}</span>
+          }
+        </span>
+        <span class="code-digits">{{ code.digits }}</span>
+      </span>
     </button>
     <ng-template #safetyCodeTpl>
       <app-safety-code [code]="code" [unverified]="unverified()" />

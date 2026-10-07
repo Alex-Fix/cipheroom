@@ -1,5 +1,5 @@
 # End-to-end encrypted media — design
-Status: approved · Date: 2026-10-07
+Status: approved, implemented on `feat/e2ee` · Date: 2026-10-07
 
 ## Problem
 
@@ -54,8 +54,9 @@ a spike with a fixed test key; if it fails we stop and rethink before building k
 
 - Lobby: unchanged. If the browser lacks encoded transforms or Ed25519/X25519 → "This browser can't join encrypted
   calls", no Join button.
-- In call: the header's **Encrypted** badge (lock) opens the **safety code** — 4 emoji with their names and 8 digits
-  (e.g. `🐙 🌵 🚲 🔑 · 4821 9037`) — with "compare it out loud". Visible, non-blocking. Until our keys are in place
+- In call: the header shows the status and the **safety code** side by side — lock, "Encrypted", 4 emoji and 8 digits
+  (e.g. `🔒 Encrypted 🐙🌵🚲🔑 4821 9037`), always visible; tapping it opens the emoji names and "compare it out
+  loud". Non-blocking. Until our keys are in place
   the badge reads "Securing…" (no lock, never optimistic); it turns orange with a warning in the popover when a
   participant's identity didn't verify.
 - Someone joins/leaves → toast "Safety code changed — compare it again" (next to the existing "X joined/left").
