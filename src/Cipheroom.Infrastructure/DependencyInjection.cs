@@ -38,6 +38,7 @@ public static class DependencyInjection
             })
             // Track and session mutations aren't idempotent: a retried POST/PUT could add tracks twice.
             .AddStandardResilienceHandler(o => o.Retry.DisableForUnsafeHttpMethods());
+        services.AddTransient<ISfu, CloudflareSfu>();
 
         // Resolved per use so configuration (and typed HttpClient lifetimes) are honoured.
         services.AddTransient<IIceServerProvider>(sp =>

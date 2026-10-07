@@ -50,4 +50,13 @@ public sealed class ValueObjectTests
         Assert.Matches("^[0-9a-f]{16}$", a.Value);
         Assert.NotEqual(a, ParticipantId.New());
     }
+
+    [Theory]
+    [InlineData("0123456789abcdef", true)]
+    [InlineData("0123456789ABCDEF", false)]
+    [InlineData("0123456789abcde", false)]
+    [InlineData("../../sessions/x", false)]
+    [InlineData(null, false)]
+    public void ParticipantId_validation_accepts_only_ids_we_issue(string? value, bool valid) =>
+        Assert.Equal(valid, ParticipantId.IsValid(value));
 }

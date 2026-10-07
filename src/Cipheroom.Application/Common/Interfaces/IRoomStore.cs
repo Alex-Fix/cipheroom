@@ -21,4 +21,13 @@ public interface IRoomStore
 
     /// <summary>Removes the connection from its room; empty rooms are dropped. Null if it wasn't in one.</summary>
     Participant? Leave(string connectionId);
+
+    /// <summary>
+    /// Runs <paramref name="action"/> atomically on the connection's room with its current participant state, and
+    /// returns its result; null if the connection isn't in a room. Use it for reads and <see cref="Room"/> changes.
+    /// <paramref name="action"/> must be quick and must not await or keep references to <see cref="Room"/>: return
+    /// immutable results (records) only.
+    /// </summary>
+    T? InRoom<T>(string connectionId, Func<Room, Participant, T> action)
+        where T : class;
 }
