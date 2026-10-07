@@ -28,7 +28,7 @@ export function supportedQualities(maxHeight: number | undefined): VideoQuality[
   );
 }
 
-/** VP8 bitrate ceiling for a video of this height (30 fps, camera content). */
+/** Bitrate ceiling for camera video of this height (30 fps; H.264 Constrained Baseline, VP8 similar). */
 export function bitrateFor(height: number): number {
   if (height >= 2160) return 8_000_000;
   if (height >= 1440) return 5_000_000;
