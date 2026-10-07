@@ -1,0 +1,37 @@
+<!doctype html>
+<!-- THROWAWAY: Cloudflare Realtime SFU connectivity spike (docs/plans/2026-10-07-cloudflare-sfu-design.md, step 1). -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <title>SFU spike</title>
+    <style>
+      :root { color-scheme: light dark; font: 14px/1.4 system-ui, sans-serif; }
+      body { margin: 16px; }
+      form, .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+      input[type='text'] { width: 9em; }
+      #tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 8px; }
+      .tile { border: 1px solid #8884; border-radius: 8px; padding: 6px; }
+      video { width: 100%; aspect-ratio: 16 / 9; background: #000; border-radius: 6px; }
+      .stats { font: 12px ui-monospace, Menlo, monospace; white-space: pre-wrap; }
+      #log { font: 12px ui-monospace, Menlo, monospace; white-space: pre-wrap; max-height: 30vh; overflow: auto; border-top: 1px solid #8884; margin-top: 12px; padding-top: 8px; }
+      .err { color: #e5484d; }
+    </style>
+  </head>
+  <body>
+    <form id="join">
+      <input id="room" type="text" value="spike" aria-label="Room" />
+      <input id="name" type="text" placeholder="name" aria-label="Name" />
+      <label><input id="relay" type="checkbox" /> force relay (TURN)</label>
+      <label><input id="simulcast" type="checkbox" checked /> simulcast</label>
+      <button type="submit">Join</button>
+      <button id="leave" type="button" disabled>Leave</button>
+    </form>
+    <div class="row stats" id="env"></div>
+    <div class="row stats" id="path"></div>
+    <div id="tiles"></div>
+    <div id="log"></div>
+    <script src="sfu-spike.js"></script>
+  </body>
+</html>
