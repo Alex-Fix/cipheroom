@@ -1,5 +1,6 @@
 using Cipheroom.Application.Common.Exceptions;
 using Cipheroom.Application.Common.Interfaces;
+using Cipheroom.Application.Common.Telemetry;
 using Cipheroom.Application.Media;
 using Cipheroom.Domain.Rooms;
 using FluentValidation;
@@ -37,7 +38,7 @@ public sealed class SendKeyEnvelopesCommandValidator : AbstractValidator<SendKey
     }
 }
 
-public sealed class SendKeyEnvelopesCommandHandler(IRoomStore rooms) : ICommandHandler<SendKeyEnvelopesCommand, SendKeyEnvelopesResult>
+public sealed class SendKeyEnvelopesCommandHandler(IRoomStore rooms, CipheroomMetrics metrics) : ICommandHandler<SendKeyEnvelopesCommand, SendKeyEnvelopesResult>
 {
     public ValueTask<SendKeyEnvelopesResult> Handle(SendKeyEnvelopesCommand command, CancellationToken cancellationToken)
     {
@@ -52,6 +53,7 @@ public sealed class SendKeyEnvelopesCommandHandler(IRoomStore rooms) : ICommandH
             })
             ?? throw new NotFoundException(MediaRules.NotInRoom);
 
+        metrics.EnvelopesRelayed(result.Deliveries.Count);
         return ValueTask.FromResult(result);
     }
 }

@@ -1,14 +1,17 @@
 using System.Diagnostics;
+using System.Diagnostics.Metrics;
 using System.Net;
 using System.Text;
 using Cipheroom.Api.Hubs.Contracts;
 using Cipheroom.Api.Telemetry;
+using Cipheroom.Application.Common.Telemetry;
 using Microsoft.AspNetCore.Http.Connections;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Diagnostics.Metrics.Testing;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Testing;
 using Microsoft.Extensions.Options;
@@ -113,6 +116,21 @@ public sealed class TelemetryTests(WebApplicationFactory<Program> factory) : ICl
         var logs = host.Services.GetRequiredService<FakeLogCollector>().GetSnapshot();
         Assert.Contains(logs, r => r.Message.Contains(ExpectedRoomHash(), StringComparison.Ordinal));
         Assert.DoesNotContain(logs, r => forbidden.Any(f => r.Message.Contains(f, StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public async Task Hub_calls_are_counted_by_method_and_outcome()
+    {
+        var host = Host();
+        await using var connection = await ConnectAsync(host);
+        using var calls = new MetricCollector<long>(
+            host.Services.GetRequiredService<IMeterFactory>(), CipheroomMetrics.MeterName, "cipheroom.hub.calls");
+
+        await connection.InvokeAsync<JoinResult>("JoinRoom", Room, "Alice", TestIdentity.Dto, Ct);
+        await Assert.ThrowsAsync<HubException>(() => connection.InvokeAsync<JoinResult>("JoinRoom", Room, "Alice", TestIdentity.Dto, Ct));
+
+        var counted = calls.GetMeasurementSnapshot().Select(m => ((string)m.Tags["method"]!, (string)m.Tags["outcome"]!));
+        Assert.Equal([("JoinRoom", "ok"), ("JoinRoom", "rejected")], counted);
     }
 
     [Fact]

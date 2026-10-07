@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using Cipheroom.Api.Hubs.Filters;
 using Cipheroom.Application.Common.Interfaces;
+using Cipheroom.Application.Common.Telemetry;
 using Microsoft.AspNetCore.SignalR;
 
 namespace Cipheroom.Api.Telemetry;
@@ -11,7 +12,7 @@ namespace Cipheroom.Api.Telemetry;
 /// pseudonymous room, the random participant id, and the outcome — ok, rejected with the constant client message,
 /// or failed. Outermost filter: it also sees rate-limited calls.
 /// </summary>
-public sealed class HubTelemetryFilter(IRoomStore rooms, TelemetryIds ids) : IHubFilter
+public sealed class HubTelemetryFilter(IRoomStore rooms, TelemetryIds ids, CipheroomMetrics metrics) : IHubFilter
 {
     public const string SourceName = "Cipheroom.Api";
 
@@ -22,25 +23,34 @@ public sealed class HubTelemetryFilter(IRoomStore rooms, TelemetryIds ids) : IHu
         Func<HubInvocationContext, ValueTask<object?>> next)
     {
         var connectionId = invocationContext.Context.ConnectionId;
-        using var activity = StartRoot($"RoomHub/{invocationContext.HubMethodName}");
+        var method = invocationContext.HubMethodName;
+        using var activity = StartRoot($"RoomHub/{method}");
         var before = activity is null ? null : rooms.FindByConnection(connectionId);
+        var outcome = CipheroomMetrics.Failed;
         try
         {
             var result = await next(invocationContext);
-            activity?.SetTag(Tags.Outcome, "ok");
+            outcome = CipheroomMetrics.Ok;
             return result;
         }
-        catch (HubException ex) when (activity is not null)
+        catch (HubException ex)
         {
             // Client-facing messages are constants (HubExceptionFilter); the generic one means an unexpected failure.
             var failed = ex.Message == HubExceptionFilter.GenericError;
-            activity.SetTag(Tags.Outcome, failed ? "failed" : "rejected");
-            activity.SetTag(Tags.Reason, ex.Message);
-            activity.SetStatus(failed ? ActivityStatusCode.Error : ActivityStatusCode.Unset);
+            outcome = failed ? CipheroomMetrics.Failed : CipheroomMetrics.Rejected;
+            activity?.SetTag(Tags.Reason, ex.Message);
+            if (failed) activity?.SetStatus(ActivityStatusCode.Error);
+            throw;
+        }
+        catch (OperationCanceledException)
+        {
+            outcome = CipheroomMetrics.Cancelled;
             throw;
         }
         finally
         {
+            metrics.HubCall(method, outcome);
+            activity?.SetTag(Tags.Outcome, outcome);
             // After JoinRoom the caller is in a room; after LeaveRoom it was.
             if (activity is not null && (rooms.FindByConnection(connectionId) ?? before) is { } participant)
             {

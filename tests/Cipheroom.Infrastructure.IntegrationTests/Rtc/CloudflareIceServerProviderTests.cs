@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text;
+using Cipheroom.Application;
 using Cipheroom.Application.Common.Interfaces;
 using Cipheroom.Domain.Rooms;
 using Cipheroom.Infrastructure.Rtc;
@@ -76,6 +77,8 @@ public sealed class CloudflareIceServerProviderTests
         var services = new ServiceCollection()
             .AddSingleton<IConfiguration>(configuration)
             .AddLogging()
+            .AddMetrics()
+            .AddApplication()
             .AddInfrastructure();
         services.AddHttpClient<CloudflareTurnClient>().ConfigurePrimaryHttpMessageHandler(() => handler);
         return services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });

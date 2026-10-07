@@ -76,5 +76,5 @@ public sealed class SendKeyEnvelopesCommandTests
         Assert.True(_validator.Validate(new SendKeyEnvelopesCommand("conn", [new("0123456789abcdef", new string('A', KeyRules.MaxBlobLength))])).IsValid);
 
     private ValueTask<SendKeyEnvelopesResult> Handle(SendKeyEnvelopesCommand command) =>
-        new SendKeyEnvelopesCommandHandler(_rooms).Handle(command, _ct);
+        new SendKeyEnvelopesCommandHandler(_rooms, TestMetrics.Create(_rooms).Metrics).Handle(command, _ct);
 }

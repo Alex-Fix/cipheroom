@@ -41,6 +41,12 @@ public sealed class InMemoryRoomStore : IRoomStore
 
     public Participant? FindByConnection(string connectionId) => InRoom(connectionId, (_, self) => self);
 
+    public RoomStoreStats Stats()
+    {
+        lock (_gate)
+            return new RoomStoreStats(_rooms.Count, _byConnection.Count);
+    }
+
     public Participant? Leave(string connectionId)
     {
         lock (_gate)

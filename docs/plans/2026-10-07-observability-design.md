@@ -121,6 +121,12 @@ Information logs carry full Cloudflare URLs (TURN key id, SFU app and session id
 | `cipheroom_realtime_egress_bytes` (month to date) | `service` (turn/sfu), `source` (cloudflare/estimate) |
 | `cipheroom_call_*` (browser reports) | `platform`, `path` (direct/relay), `kind` (audio/video) |
 
+Instruments are defined in `CipheroomMetrics` (Application, meter `Cipheroom`) with OpenTelemetry names
+(`cipheroom.hub.calls`, `cipheroom.sfu.request.duration` in seconds, …); the collector's Prometheus exporter turns
+them into the names above (`_total` for counters, unit suffix for histograms). Hub call outcomes:
+`ok` / `rejected` / `failed` / `cancelled`; SFU operations: `create_session`, `publish`, `subscribe`, `renegotiate`,
+`restart_ice`, `close_tracks`, `select_layer`.
+
 **Browser report** (`ReportCallStats`, every 15 s, ≤ 1 KB): per direction and kind — bytes, packets lost, jitter,
 RTT, frames decoded, frozen time, resolution, fps; ICE path (direct/relay); E2EE — frames encrypted / decrypted /
 failed, envelopes dropped by reason, time spent "Securing…". `platform` is computed in the browser into ~6 buckets

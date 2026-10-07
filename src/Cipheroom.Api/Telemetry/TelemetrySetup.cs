@@ -39,6 +39,7 @@ public static class TelemetrySetup
                 .AddHttpClientInstrumentation()
                 .AddProcessor<PrivacyProcessor>())
             .WithMetrics(m => m
+                .AddMeter(CipheroomMetrics.MeterName)
                 .AddAspNetCoreInstrumentation()
                 .AddHttpClientInstrumentation()
                 .AddRuntimeInstrumentation())
