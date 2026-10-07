@@ -1,7 +1,6 @@
 using Cipheroom.Api.Hosting;
 using Cipheroom.Api.Hubs;
 using Cipheroom.Api.Hubs.Filters;
-using Cipheroom.Api.Spike;
 using Cipheroom.Application;
 using Cipheroom.Application.Common.Behaviours;
 using Cipheroom.Infrastructure;
@@ -51,7 +50,6 @@ app.UseStatusCodePages();
 
 app.MapHealthChecks("/healthz");
 app.MapHub<RoomHub>("/hubs/room");
-app.MapSfuSpike();
 
 await app.RunAsync();
 return 0;

@@ -14,8 +14,6 @@ services:
       Turn__CredentialTtlSeconds: ${TURN_CREDENTIAL_TTL_SECONDS:-14400}
       Sfu__Cloudflare__AppId: ${CF_SFU_APP_ID:-}
       Sfu__Cloudflare__AppSecret: ${CF_SFU_APP_SECRET:-}
-      # Throwaway SFU connectivity spike (/sfu-spike.html); keep false except while testing it.
-      SfuSpike__Enabled: ${SFU_SPIKE_ENABLED:-false}
       # Trust X-Forwarded-* from our proxies only (cloudflared → nginx → api). The api publishes no ports, so only
       # containers on the compose network (Docker's 172.16.0.0/12 range) can reach it.
       ForwardedHeaders__KnownNetworks__0: 172.16.0.0/12
