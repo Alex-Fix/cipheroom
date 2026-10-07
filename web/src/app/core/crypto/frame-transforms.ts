@@ -1,3 +1,4 @@
+import { InjectionToken } from '@angular/core';
 import { MediaKind } from './frame-codec';
 import { FrameStats, TransformOptions, WorkerRequest } from './frame-crypto.types';
 
@@ -115,3 +116,9 @@ export class FrameCrypto {
     this.worker.postMessage(message, transfer);
   }
 }
+
+/** Creates the call's FrameCrypto (replaced in tests: the real one starts a worker). */
+export const FRAME_CRYPTO_FACTORY = new InjectionToken<(api: FrameTransformApi) => FrameCrypto>(
+  'FrameCryptoFactory',
+  { factory: () => (api) => new FrameCrypto(api) },
+);

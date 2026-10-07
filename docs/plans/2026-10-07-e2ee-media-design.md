@@ -130,7 +130,11 @@ Includes our own key; duplicates count.
    the newcomer; the newcomer sends its key to all. The newcomer never receives pre-join keys.
 3. `ParticipantLeft`: every remaining participant rotates and sends to the remaining ones only.
 4. Bursts debounced (~300 ms) into one rotation = one `SendKeyEnvelopes` call.
-5. Switch-over: the sender starts using the new key 500 ms after the server accepts the envelopes. Receivers keep a
+   Envelopes go only to participants whose identity bundle verifies for this room (others are listed as unverified
+   and get no keys). An envelope from someone the client hasn't processed `ParticipantJoined` for yet triggers an
+   immediate sync with the participant list (the event always arrives first; Angular's effect may lag).
+5. Switch-over: the sender starts using the new key 500 ms after the server accepts the envelopes — or at once if
+   sending failed (a leaver must never keep reading; receivers recover on the next rotation). Receivers keep a
    sender's previous key for 10 s for in-flight frames. Unknown `keyIndex` → drop frame, tile shows "Securing…".
 
 ### 6. Frame format
