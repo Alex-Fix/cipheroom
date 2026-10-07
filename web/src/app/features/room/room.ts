@@ -132,7 +132,7 @@ export class Room implements OnInit, OnDestroy {
       else if (device === 'camera') await this.media.setCamera(enabled);
       else await this.media.setScreenShare(enabled);
     } catch (e) {
-      this.message.error(deviceErrorMessage(device, e));
+      this.deviceFailed(device, e);
     }
   }
 
@@ -142,7 +142,7 @@ export class Room implements OnInit, OnDestroy {
       if (deviceId) await this.media.selectCamera(deviceId);
       else await this.media.flipCamera();
     } catch (e) {
-      this.message.error(deviceErrorMessage('camera', e));
+      this.deviceFailed('camera', e);
     }
   }
 
@@ -150,7 +150,7 @@ export class Room implements OnInit, OnDestroy {
     try {
       await this.media.setVideoQuality(quality);
     } catch (e) {
-      this.message.error(deviceErrorMessage('camera', e));
+      this.deviceFailed('camera', e);
     }
   }
 
@@ -166,6 +166,15 @@ export class Room implements OnInit, OnDestroy {
 
   protected leave(): void {
     void this.router.navigate(['/']);
+  }
+
+  /**
+   * Constant toast for the user; the browser's actual error goes to this device's console only (Safari Web
+   * Inspector / devtools) — it can contain SDP and never leaves the browser.
+   */
+  private deviceFailed(device: Device, error: unknown): void {
+    console.warn(`[cipheroom] ${device} failed`, error);
+    this.message.error(deviceErrorMessage(device, error));
   }
 
   private notify(text: string): void {
