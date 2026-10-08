@@ -20,6 +20,9 @@ services:
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
       OTEL_METRIC_EXPORT_INTERVAL: "30000"
       Telemetry__Secret: ${TELEMETRY_SECRET:-}
+      # Free-tier usage from Cloudflare's analytics (read-only token); without them dashboards estimate it.
+      RealtimeUsage__Cloudflare__AccountId: ${CF_ACCOUNT_ID:-}
+      RealtimeUsage__Cloudflare__ApiToken: ${CF_ANALYTICS_API_TOKEN:-}
     restart: unless-stopped
 
   web:

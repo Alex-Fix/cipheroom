@@ -141,7 +141,12 @@ from the 1st 00:00 UTC), account-wide (the free tier is per account):
 
 Both confirmed in step 1 (filter `date_geq` / `date_leq`, `viewer.accounts(filter: { accountTag })`). Token:
 separate, *Account Analytics: Read* only, `CF_ANALYTICS_API_TOKEN` (+ `CF_ACCOUNT_ID`), never logged. Without a
-token: `source=estimate` = sum of bytes browsers report receiving (≈ SFU egress). Failures → status code logged once, exponential backoff, gauge keeps its last value. Free-tier limit
+token the api publishes no usage gauge; the Free tier dashboard falls back to an estimate from browser reports
+(`cipheroom_call_bytes_total{direction="received"}` this month ≈ SFU egress) — a PromQL panel, not api code.
+Gauges: `cipheroom_realtime_egress_bytes{service}` (month to date), `cipheroom_realtime_free_tier_bytes`,
+`cipheroom_realtime_polled_seconds` (last good poll, Unix time), `cipheroom_realtime_polls_total{outcome}`. The
+poller (Infrastructure, `BackgroundService`) resolves the usage source in a fresh scope per poll, so its typed
+HttpClient's handler still rotates. Failures → status code logged once, exponential backoff, gauge keeps its last value. Free-tier limit
 (1,000 GB) is configuration. The future usage guard will read the same numbers.
 
 **Dashboards** (provisioned)

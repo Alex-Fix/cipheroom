@@ -40,6 +40,12 @@ public sealed class CipheroomMetrics
     private readonly Counter<double> _e2eeEnvelopesDropped;
     private readonly Counter<double> _e2eeSecuring;
 
+    // Cloudflare Realtime free tier (RealtimeUsagePoller).
+    private readonly Counter<long> _usagePolls;
+    private RealtimeUsage? _usage;
+    private long _usagePolledAt;
+    private long _freeTierBytes;
+
     public CipheroomMetrics(IMeterFactory meterFactory, IRoomStore rooms, TimeProvider time)
     {
         _time = time;
@@ -75,7 +81,38 @@ public sealed class CipheroomMetrics
         _e2eeFrames = meter.CreateCounter<double>("cipheroom.e2ee.frames", "{frame}", "Frames through the E2EE worker by result.");
         _e2eeEnvelopesDropped = meter.CreateCounter<double>("cipheroom.e2ee.envelopes_dropped", "{envelope}", "Key envelopes browsers rejected.");
         _e2eeSecuring = meter.CreateCounter<double>("cipheroom.e2ee.securing.duration", "s", "Time spent waiting for someone's key ('Securing…').");
+
+        meter.CreateObservableGauge(
+            "cipheroom.realtime.egress",
+            () => _usage is { } u
+                ? [new Measurement<long>(u.SfuEgressBytes, new KeyValuePair<string, object?>("service", "sfu")),
+                   new Measurement<long>(u.TurnEgressBytes, new KeyValuePair<string, object?>("service", "turn"))]
+                : Array.Empty<Measurement<long>>(),
+            "By",
+            "Cloudflare Realtime egress this calendar month (UTC), from Cloudflare's analytics.");
+        meter.CreateObservableGauge(
+            "cipheroom.realtime.free_tier",
+            () => _freeTierBytes > 0 ? [new Measurement<long>(_freeTierBytes)] : Array.Empty<Measurement<long>>(),
+            "By",
+            "Free Realtime egress per month (SFU and TURN combined).");
+        meter.CreateObservableGauge(
+            "cipheroom.realtime.polled",
+            () => _usagePolledAt > 0 ? [new Measurement<long>(_usagePolledAt)] : Array.Empty<Measurement<long>>(),
+            "s",
+            "When usage was last read from Cloudflare (Unix time).");
+        _usagePolls = meter.CreateCounter<long>("cipheroom.realtime.polls", "{poll}", "Usage polls by outcome.");
     }
+
+    public void SetRealtimeFreeTier(long bytes) => _freeTierBytes = bytes;
+
+    public void RealtimeUsagePolled(RealtimeUsage usage, DateTimeOffset at)
+    {
+        _usage = usage;
+        _usagePolledAt = at.ToUnixTimeSeconds();
+        _usagePolls.Add(1, new KeyValuePair<string, object?>("outcome", Ok));
+    }
+
+    public void RealtimeUsagePollFailed() => _usagePolls.Add(1, new KeyValuePair<string, object?>("outcome", Failed));
 
     public void HubCall(string method, string outcome) =>
         _hubCalls.Add(1, new("method", method), new("outcome", outcome));
