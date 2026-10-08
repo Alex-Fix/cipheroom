@@ -65,6 +65,18 @@ compromised client devices.
 - Containers run as non-root (`USER app`, nginx-unprivileged). Images are pinned to versions, never `latest`.
 - `deploy/.env` is gitignored and `chmod 600`. Claude Code is denied from reading it. Ask the user to edit it via `!` commands.
 
+### Telemetry and Grafana (`docs/observability.md`)
+- Telemetry is metadata about people: only pseudonymous ids (keyed room hash via `TelemetryIds`, random participant
+  ids), never names, IPs, user agents, SDP, keys, envelopes or Cloudflare URLs. `PrivacyProcessor` strips what
+  instrumentation adds; `TelemetryTests` pin it — extend them when adding spans, tags or logs.
+- Metric labels are low-cardinality only (method, outcome, platform, …) — never ids.
+- Browser reports (`ReportCallStats`) are untrusted input: validated, capped, members only, never logged raw.
+- Grafana is internet-facing behind its own login only (the owner decided against Cloudflare Access): anonymous off,
+  sign-up off, account lockout after 5 failures, password policy, sessions ≤ 30 days, `/metrics` off, health
+  endpoint blocked, nginx rate-limits `/grafana/login` per visitor (CF-Connecting-IP). A long admin password is the
+  main defence. No phoning home. `scripts/security-check.sh <url>` checks all of it. Retention 7 days.
+- Libraries that log URLs at Information (`System.Net.Http.HttpClient`, `Polly`) stay at Warning.
+
 ### Secrets
 - Never commit `.env`, tokens, certs or tunnel credentials. Run `scripts/security-check.sh` before committing deploy changes.
 - A secret pasted into chat, logs or an issue is burned. Recommend rotating it in the Cloudflare dashboard (SFU app secret, TURN token, tunnel token), then update `deploy/.env`.
@@ -73,6 +85,7 @@ compromised client devices.
 ## Review checklist
 - [ ] New hub method or endpoint: input validated, authorised (member/admitted/host), rate-limited, targeted relay only.
 - [ ] Nothing new is logged that could contain secrets, credentials or content.
+- [ ] New spans, tags, logs or metric labels carry no names, IPs, plain room ids or URLs (`TelemetryTests`).
 - [ ] No new plaintext path for media, chat or keys to any server (if crypto is touched, run the `e2ee-media` checklist).
 - [ ] Tokens and credentials: only to admitted participants, minimal grants, short TTL.
 - [ ] CSP and headers unchanged, or the loosening is justified.

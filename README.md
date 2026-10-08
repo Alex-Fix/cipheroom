@@ -21,7 +21,10 @@ want private calls without trusting a vendor, and it runs on a home computer wit
 - 🖥️ Screen sharing, camera switching (front/rear on phones), active-speaker highlight, automatic reconnect
 - 🏠 Runs at home behind NAT or CGNAT: nothing at home needs to be reachable — ingress via Cloudflare Tunnel, media
   straight between browsers and Cloudflare's edge
-- 💸 Free to run: uses only free tiers, with a usage guard planned to keep you inside them
+- 💸 Free to run: uses only free tiers; a Grafana dashboard shows this month's Cloudflare usage against the free
+  tier (a guard that enforces it is planned)
+- 📈 Optional self-hosted observability: traces, logs, metrics, call quality and Grafana dashboards — pseudonymous,
+  kept 7 days, behind Grafana's login ([`docs/observability.md`](docs/observability.md))
 - 🔐 End-to-end encrypted media: per-call keys, rotated whenever someone joins or leaves, and a safety code to
   compare out loud. Browsers that can't encrypt can't join — calls never fall back to unencrypted
 
@@ -47,7 +50,8 @@ and checks that people only receive tracks from their own room; the media itself
 
 **Privacy model:** the API, Cloudflare's SFU and the TURN relay are all treated as untrusted. Every participant
 encrypts media in the browser with keys exchanged as signed, encrypted envelopes. Servers only relay ciphertext.
-Metadata (who, when, IP addresses) remains visible to the servers and Cloudflare. Details:
+Metadata (who, when, IP addresses) remains visible to the servers and Cloudflare. With the optional observability stack, your own server also keeps pseudonymous call
+metadata and call-quality numbers for 7 days (no names, IPs or plain room ids). Details:
 [`docs/architecture.md`](docs/architecture.md).
 
 ## Quick start (local development)
@@ -94,9 +98,9 @@ is ~3.6 GB per viewer-hour against the 1 TB/month free tier — set up a Cloudfl
 
 | Command | What it does |
 |---|---|
-| `scripts/up.sh [--tunnel]` | Build and start the stack |
+| `scripts/up.sh [--tunnel] [--observability]` | Build and start the stack (`--observability`: Grafana at `/grafana/`, see [`docs/observability.md`](docs/observability.md)) |
 | `scripts/down.sh` | Stop everything |
-| `scripts/logs.sh [service]` | Follow logs (`api`, `web`, `cloudflared`) |
+| `scripts/logs.sh [service]` | Follow logs (`api`, `web`, `cloudflared`, `otel-collector`, `grafana`, …) |
 | `scripts/test.sh [--server\|--web]` | Run tests |
 | `scripts/lint.sh [--fix]` | Formatting and lint |
 | `scripts/security-check.sh [url]` | Secret scan, dependency audit, security headers |
@@ -111,7 +115,8 @@ is ~3.6 GB per viewer-hour against the 1 TB/month free tier — set up a Cloudfl
 - [ ] Remember contacts' keys across calls (TOFU) — today identities are fresh per call
 - [ ] Lobby and host admission
 - [ ] End-to-end encrypted chat
-- [ ] Usage guard for the Cloudflare Realtime free tier (SFU + TURN)
+- [x] Observability: traces, logs, metrics, call-quality reports, Grafana dashboards (self-hosted, optional)
+- [ ] Usage guard for the Cloudflare Realtime free tier (SFU + TURN) — usage is already measured and graphed
 - [ ] Connection diagnostics panel (hidden since the SFU switch)
 - [ ] "Source" link in the UI (AGPL §13)
 - [ ] MLS-based group keys for large rooms

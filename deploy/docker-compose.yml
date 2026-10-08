@@ -46,7 +46,8 @@ services:
     profiles: [tunnel]
 
   # ── Observability (profile `observability`, scripts/up.sh --observability) ─────────────────────────────────────────
-  # Self-hosted, nothing published: Grafana is reached through web (nginx) at /grafana/, behind Cloudflare Access.
+  # Self-hosted, nothing published: Grafana is reached through web (nginx) at /grafana/, protected by its own login
+  # (hardened below; nginx rate-limits the login page).
   # Design: docs/plans/2026-10-07-observability-design.md
 
   otel-collector:
@@ -111,6 +112,14 @@ services:
         connect-src 'self' wss://$$ROOT_PATH;manifest-src 'self';media-src 'none';form-action 'self';frame-ancestors 'none'
       GF_AUTH_ANONYMOUS_ENABLED: "false"
       GF_USERS_ALLOW_SIGN_UP: "false"
+      # Internet-facing behind its own login only: lock accounts after failed logins, strong passwords for any user
+      # added later, sessions that expire, and no unauthenticated /metrics.
+      GF_SECURITY_DISABLE_BRUTE_FORCE_LOGIN_PROTECTION: "false"
+      GF_SECURITY_BRUTE_FORCE_LOGIN_PROTECTION_MAX_ATTEMPTS: "5"
+      GF_AUTH_BASIC_PASSWORD_POLICY: "true"
+      GF_AUTH_LOGIN_MAXIMUM_INACTIVE_LIFETIME_DURATION: 7d
+      GF_AUTH_LOGIN_MAXIMUM_LIFETIME_DURATION: 30d
+      GF_METRICS_ENABLED: "false"
       # No phoning home: usage stats, update checks, news, external snapshots, plugin catalog.
       GF_ANALYTICS_REPORTING_ENABLED: "false"
       GF_ANALYTICS_CHECK_FOR_UPDATES: "false"

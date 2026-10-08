@@ -29,8 +29,9 @@ tests/                           xUnit v3, one project per layer (shared setting
   Cipheroom.Domain.UnitTests/ .Application.UnitTests/ .Infrastructure.IntegrationTests/ .Api.FunctionalTests/
 web/                             Angular app (npm, + Dockerfile); src/app/{core,shared,features}, design/ = logo masters
 deploy/
-  docker-compose.yml             api, web (nginx), cloudflared
+  docker-compose.yml             api, web (nginx), cloudflared; profile observability (collector, Prometheus, Loki, Tempo, Grafana, exporters)
   nginx/ cloudflared/            service config
+  observability/                 collector / Prometheus / Loki / Tempo config, Grafana provisioning + generated dashboards
 scripts/                         dev/ops scripts (bash, run from repo root)
 docs/                            architecture + protocol docs; plans/ holds approved feature designs
 ```
@@ -43,7 +44,8 @@ All scripts run from the repo root.
 - `scripts/dev.sh` — API :5080 (`dotnet watch`, SFU/TURN credentials from `deploy/.env`) + Angular :4200
 - `scripts/test.sh` — backend + frontend tests (`--server` / `--web` to run one side)
 - `scripts/lint.sh` — `dotnet format --verify-no-changes` + `ng lint` (if configured)
-- `scripts/up.sh` / `scripts/down.sh` — docker compose stack in `deploy/`
+- `scripts/up.sh [--tunnel] [--observability]` / `scripts/down.sh` — docker compose stack in `deploy/` (observability:
+  `docs/observability.md`)
 - `scripts/logs.sh [service]` — follow compose logs
 - `scripts/secrets.sh` — create `deploy/.env`, list required Cloudflare values that are still empty
 - `scripts/security-check.sh [url]` — secret scan, `.env` hygiene, NuGet/npm audit, live security headers

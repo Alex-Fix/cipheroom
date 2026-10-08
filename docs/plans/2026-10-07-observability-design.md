@@ -1,5 +1,5 @@
 # Observability: tracing, telemetry, logging, Grafana — design
-Status: approved · Date: 2026-10-07
+Status: approved, implemented on `feat/observability` · Date: 2026-10-07
 
 ## Problem
 
@@ -14,8 +14,8 @@ Goals
 - **Call quality:** browsers report aggregated WebRTC stats and E2EE health.
 - **Free-tier usage:** month-to-date Cloudflare Realtime egress against 1 TB.
 - **Host & containers:** CPU, memory, disk, network.
-- Self-hosted Grafana with provisioned dashboards, reachable at `https://cipheroom.alexfix.dev/grafana` behind
-  Cloudflare Access.
+- Self-hosted Grafana with provisioned dashboards, reachable at `https://cipheroom.alexfix.dev/grafana` behind its own
+  hardened login (originally Cloudflare Access — see "Grafana access" below).
 - Pseudonymous telemetry: hashed room ids, no IPs, no names; 7-day retention.
 
 Non-goals
@@ -29,9 +29,9 @@ Non-goals
 | Constraint | Answer |
 |---|---|
 | E2EE invariant | ✅ Telemetry never contains keys, envelopes, SDP, media or names. Browser reports are numbers only. |
-| $0 | ✅ All open source, at home. Cloudflare Access (≤ 50 users) and the Analytics API are free. Cost: ~1–1.5 GB RAM, capped disk. |
+| $0 | ✅ All open source, at home. The Analytics API is free. Cost: ~1–1.5 GB RAM, capped disk. |
 | No public IP | ✅ Grafana via the existing tunnel and nginx at `/grafana/`; no new ports, no new hostname. |
-| Open source | ✅ OpenTelemetry, Prometheus, Loki, Tempo, Grafana, node-exporter, cAdvisor. Cloudflare Access is SaaS, like the tunnel we already use. |
+| Open source | ✅ OpenTelemetry, Prometheus, Loki, Tempo, Grafana, node-exporter, cAdvisor — all at home; no SaaS added. |
 | Untrusted server / metadata | ⚠️ New metadata *at home*: call timing, coarse browser platform, quality numbers. Pseudonymous, 7 days, documented in the README privacy model. Grafana must never be reachable without Access. |
 | Browser support | ✅ Only `getStats()` (already used). |
 | Signaling | New hub method `ReportCallStats` (signaling-protocol skill), rate-limited, members only. |
@@ -58,7 +58,7 @@ api ──OTLP (logs, traces, metrics)──▶ otel-collector ──▶ Prometh
  │                                                  └──▶ Tempo     (traces, 7 d)
 browsers                     node-exporter, cAdvisor ──▶ Prometheus (scrape)
 api ──GraphQL poll (15 min)──▶ Cloudflare Analytics      Grafana ◀── reads all three
-cloudflared ─▶ web (nginx) ─/grafana/─▶ Grafana          (Cloudflare Access on /grafana*)
+cloudflared ─▶ web (nginx) ─/grafana/─▶ Grafana          (Grafana login; nginx rate-limits /grafana/login)
 ```
 
 **Backend (Clean Architecture)**
@@ -85,8 +85,13 @@ profile off `/grafana/` is a 502 and the call app is unaffected. This location s
 (Grafana-compatible CSP + `Referrer-Policy`, `X-Content-Type-Options`, `frame-ancestors 'none'`), because a
 location-level `add_header` drops the server-level ones.
 
-**Cloudflare Access** — one self-hosted application for `cipheroom.alexfix.dev/grafana` (path prefix, so everything
-below it), policy: email one-time code for the owner's address. Set up once in the dashboard; documented, no code.
+**Grafana access (changed during implementation, 2026-10-08)** — first built behind Cloudflare Access (path
+policy, email one-time code) plus Grafana's login. The owner decided against Cloudflare Access; offered alternatives
+were home-only Grafana or an extra nginx password, and the choice was **Grafana's own login only**, hardened:
+anonymous and sign-up off, lockout after 5 failed logins, password policy, sessions 7 days idle / 30 max, `/metrics`
+off, `/grafana/api/health` blocked at nginx, nginx `limit_req` 6/min per visitor (`CF-Connecting-IP`) on
+`/grafana/login`. Accepted risk: one internet-facing login (and Grafana's own vulnerabilities) in front of
+pseudonymous call metadata; mitigated by a long admin password and `security-check.sh` verifying the hardening.
 
 ### 2. What gets recorded
 
@@ -178,7 +183,7 @@ v0.55.1. On Docker Desktop, cAdvisor needs the Docker and containerd sockets mou
 | Analytics token missing/invalid | Logged once, backoff; `source=estimate`. |
 | Junk browser stats | Validator rejects (`Invalid stats.`), rate limits apply, values capped — at worst skews graphs. |
 | Observability stack RAM | `mem_limit` per container, ≈ 1.5 GB total. |
-| Access misconfigured | Grafana login still required; `security-check.sh <url>` flags `/grafana/` answering without Access. |
+| Grafana hardening regresses | `security-check.sh <url>` flags an API readable without login, public `/metrics` or health, or a login page without rate limit. |
 
 ## Protocol changes
 
@@ -192,7 +197,8 @@ when telemetry is off, so clients never need to know. C# (`RoomHub`, contracts),
 
 ## Security notes
 
-- Grafana holds call metadata: only behind Cloudflare Access (path policy) **and** Grafana login; anonymous off.
+- Grafana holds call metadata: internet-facing behind its own hardened login only (owner's decision, see "Grafana
+  access"); anonymous off.
 - `/grafana/` gets its own, complete security-header set (Grafana needs inline scripts); the rest of the app keeps
   the strict CSP. `security-check.sh` verifies both.
 - Pseudonymous by construction: keyed room-id hash, no IPs or user agents (stripped by a span processor — tested),
@@ -212,7 +218,7 @@ when telemetry is off, so clients never need to know. C# (`RoomHub`, contracts),
 - Frontend: 15 s aggregation from `getStats()` samples; platform bucketing; reports stop when the call ends.
 - Config: `docker compose --profile observability config` and `promtool check config` in `scripts/lint.sh`.
 - Manual (home stack): dashboards fill during a two-device call; a `PublishTracks` trace shows the Cloudflare child
-  span; `/grafana` from mobile data asks for the Access code; profile off → app unaffected.
+  span; `/grafana` from mobile data shows Grafana's login and rate-limits; profile off → app unaffected.
 
 ## Open questions
 
@@ -241,5 +247,5 @@ On `feat/observability`, one commit each:
 6. **`RealtimeUsagePoller` + `CloudflareAnalyticsClient`.**
 7. **Provisioned dashboards:** Overview, Call quality, Free tier, Host & containers.
 8. **Scripts and docs:** `up.sh --observability`, `secrets.sh`, `security-check.sh`, `lint.sh`;
-   `docs/observability.md` (access, Cloudflare Access setup, what's recorded), `architecture.md`, README privacy
+   `docs/observability.md` (access, hardening, what's recorded), `architecture.md`, README privacy
    model, `docker-deploy` / `security` skills, protocol doc.
