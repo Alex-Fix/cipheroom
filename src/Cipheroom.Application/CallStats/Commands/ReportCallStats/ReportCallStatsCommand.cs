@@ -92,7 +92,7 @@ public sealed class ReportCallStatsCommandHandler(IRoomStore rooms, CipheroomMet
     public ValueTask<Unit> Handle(ReportCallStatsCommand command, CancellationToken cancellationToken)
     {
         // Only people in a call report on one.
-        _ = rooms.FindByConnection(command.ConnectionId) ?? throw new NotFoundException(MediaRules.NotInRoom);
+        _ = MediaSessions.Member(rooms, command.ConnectionId);
 
         var stats = command.Stats!;
         var platform = CallStatsRules.Platforms.Contains(stats.Platform!) ? stats.Platform! : CallStatsRules.OtherPlatform;

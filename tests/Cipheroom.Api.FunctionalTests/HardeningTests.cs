@@ -24,7 +24,7 @@ public sealed class HardeningTests(WebApplicationFactory<Program> factory) : ICl
     public async Task Hub_calls_are_rate_limited_per_connection()
     {
         await using var flooder = await ConnectAsync();
-        await flooder.InvokeAsync<JoinResult>("JoinRoom", "room-flood", "Mallory", TestIdentity.Dto, TestIdentity.Codecs, Ct);
+        await new TestRoom().HostAsync(flooder);
         await flooder.InvokeAsync<RtcConfig>("GetRtcConfig", Ct);
 
         var error = await Assert.ThrowsAsync<HubException>(() => flooder.InvokeAsync<RtcConfig>("GetRtcConfig", Ct));
@@ -32,7 +32,7 @@ public sealed class HardeningTests(WebApplicationFactory<Program> factory) : ICl
 
         // Other connections have their own bucket.
         await using var neighbour = await ConnectAsync();
-        await neighbour.InvokeAsync<JoinResult>("JoinRoom", "room-flood", "Alice", TestIdentity.Dto, TestIdentity.Codecs, Ct);
+        await neighbour.InvokeAsync<LobbyResult>("JoinLobby", new TestRoom().Id, TestIdentity.Dto, TestIdentity.Codecs, null, null, Ct);
     }
 
     [Fact]

@@ -5,7 +5,7 @@ namespace Cipheroom.Domain.UnitTests.Rooms;
 
 public sealed class RoomMediaTests
 {
-    private readonly Room _room = new(new RoomId("room-1"));
+    private readonly Room _room = new(TestRooms.Id1);
     private readonly Participant _alice;
     private readonly Participant _bob;
 
@@ -38,7 +38,7 @@ public sealed class RoomMediaTests
     [Fact]
     public void Publishing_requires_a_media_session()
     {
-        var carol = _room.Join("conn-c", new DisplayName("Carol"), TestIdentity.Keys);
+        var carol = _room.Join("conn-c");
         Assert.Throws<InvalidOperationException>(() => _room.Publish(carol.Id, [(TrackSource.Camera, "0")]));
     }
 
@@ -65,7 +65,7 @@ public sealed class RoomMediaTests
     public void Unknown_own_or_foreign_tracks_cannot_be_subscribed()
     {
         _room.Publish(_alice.Id, [(TrackSource.Camera, "1")]);
-        var stranger = new Room(new RoomId("room-2")).Join("conn-x", new DisplayName("X"), TestIdentity.Keys);
+        var stranger = new Room(TestRooms.Id2).Join("conn-x");
 
         foreach (var (who, source) in new[] { (_alice.Id, TrackSource.Screen), (_bob.Id, TrackSource.Camera), (stranger.Id, TrackSource.Camera) })
         {
@@ -139,5 +139,5 @@ public sealed class RoomMediaTests
         Assert.Equal(valid, TrackSources.IsValid(value));
 
     private Participant Joined(string connectionId, string name, string sessionId) =>
-        _room.AttachSfuSession(_room.Join(connectionId, new DisplayName(name), TestIdentity.Keys).Id, sessionId);
+        _room.AttachSfuSession(_room.Join(connectionId).Id, sessionId);
 }

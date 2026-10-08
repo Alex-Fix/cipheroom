@@ -34,7 +34,8 @@ public sealed class TelemetryTestsRunAlone;
 public sealed class TelemetryTests(WebApplicationFactory<Program> factory) : IClassFixture<WebApplicationFactory<Program>>
 {
     private const string Secret = "test-telemetry-secret";
-    private const string Room = "telemetry-plain-room";
+    private static readonly TestRoom Call = new();
+    private static readonly string Room = Call.Id;
     private const string TurnToken = "turn-api-token-123";
 
     private readonly List<Activity> _spans = [];
@@ -46,10 +47,10 @@ public sealed class TelemetryTests(WebApplicationFactory<Program> factory) : ICl
         var host = Host();
         await using var connection = await ConnectAsync(host);
 
-        var join = await connection.InvokeAsync<JoinResult>("JoinRoom", Room, "Alice", TestIdentity.Dto, TestIdentity.Codecs, Ct);
+        var join = await Call.HostAsync(connection);
         await connection.InvokeAsync<RtcConfig>("GetRtcConfig", Ct);
 
-        var joinSpan = Span("RoomHub/JoinRoom");
+        var joinSpan = Span("RoomHub/JoinLobby");
         var rtcSpan = Span("RoomHub/GetRtcConfig");
         Assert.Null(joinSpan.ParentId);
         Assert.NotEqual(joinSpan.TraceId, rtcSpan.TraceId);
@@ -57,7 +58,7 @@ public sealed class TelemetryTests(WebApplicationFactory<Program> factory) : ICl
         Assert.Equal(join.SelfId, joinSpan.GetTagItem(HubTelemetryFilter.Tags.Participant));
         Assert.Equal("ok", joinSpan.GetTagItem(HubTelemetryFilter.Tags.Outcome));
 
-        var command = Span("JoinRoomCommand");
+        var command = Span("JoinLobbyCommand");
         Assert.Equal(joinSpan.TraceId, command.TraceId);
         Assert.Equal(joinSpan.SpanId, command.ParentSpanId);
     }
@@ -68,7 +69,7 @@ public sealed class TelemetryTests(WebApplicationFactory<Program> factory) : ICl
         using var turn = new FakeTurnServer();
         var host = Host(turn);
         await using var connection = await ConnectAsync(host);
-        await connection.InvokeAsync<JoinResult>("JoinRoom", Room, "Alice", TestIdentity.Dto, TestIdentity.Codecs, Ct);
+        await Call.HostAsync(connection);
 
         await connection.InvokeAsync<RtcConfig>("GetRtcConfig", Ct);
 
@@ -86,9 +87,9 @@ public sealed class TelemetryTests(WebApplicationFactory<Program> factory) : ICl
         await using var connection = await ConnectAsync(host);
 
         await Assert.ThrowsAsync<HubException>(() =>
-            connection.InvokeAsync<JoinResult>("JoinRoom", "BAD ROOM <script>", "Alice", TestIdentity.Dto, TestIdentity.Codecs, Ct));
+            connection.InvokeAsync<LobbyResult>("JoinLobby", "BAD ROOM <script>", TestIdentity.Dto, TestIdentity.Codecs, null, null, Ct));
 
-        var span = Span("RoomHub/JoinRoom");
+        var span = Span("RoomHub/JoinLobby");
         Assert.Equal("rejected", span.GetTagItem(HubTelemetryFilter.Tags.Outcome));
         Assert.Equal("Invalid room id.", span.GetTagItem(HubTelemetryFilter.Tags.Reason));
         Assert.Null(span.GetTagItem(HubTelemetryFilter.Tags.Room));
@@ -100,11 +101,11 @@ public sealed class TelemetryTests(WebApplicationFactory<Program> factory) : ICl
         using var turn = new FakeTurnServer();
         var host = Host(turn);
         await using var connection = await ConnectAsync(host);
-        await connection.InvokeAsync<JoinResult>("JoinRoom", Room, "Very Private Name", TestIdentity.Dto, TestIdentity.Codecs, Ct);
+        var join = await Call.HostAsync(connection);
         await connection.InvokeAsync<RtcConfig>("GetRtcConfig", Ct);
         await connection.InvokeAsync("LeaveRoom", Ct);
 
-        string[] forbidden = [Room, "Very Private Name", TestIdentity.Ed25519Pub, TurnToken, "turn-key-1", connection.ConnectionId!];
+        string[] forbidden = [Room, join.Identity.Pub, Call.HostKey.Pub, Call.HostX25519Pub, TurnToken, "turn-key-1", connection.ConnectionId!];
         Assert.Contains(_spans, s => s.Kind == ActivityKind.Client);
         foreach (var span in _spans)
         {
@@ -126,11 +127,11 @@ public sealed class TelemetryTests(WebApplicationFactory<Program> factory) : ICl
         using var calls = new MetricCollector<long>(
             host.Services.GetRequiredService<IMeterFactory>(), CipheroomMetrics.MeterName, "cipheroom.hub.calls");
 
-        await connection.InvokeAsync<JoinResult>("JoinRoom", Room, "Alice", TestIdentity.Dto, TestIdentity.Codecs, Ct);
-        await Assert.ThrowsAsync<HubException>(() => connection.InvokeAsync<JoinResult>("JoinRoom", Room, "Alice", TestIdentity.Dto, TestIdentity.Codecs, Ct));
+        await Call.HostAsync(connection);
+        await Assert.ThrowsAsync<HubException>(() => Call.HostAsync(connection));
 
         var counted = calls.GetMeasurementSnapshot().Select(m => ((string)m.Tags["method"]!, (string)m.Tags["outcome"]!));
-        Assert.Equal([("JoinRoom", "ok"), ("JoinRoom", "rejected")], counted);
+        Assert.Equal([("JoinLobby", "ok"), ("JoinLobby", "rejected")], counted);
     }
 
     [Fact]
@@ -153,7 +154,7 @@ public sealed class TelemetryTests(WebApplicationFactory<Program> factory) : ICl
 
         Assert.Equal(ids.Room(Room), ids.Room(Room));
         Assert.Matches("^[0-9a-f]{16}$", ids.Room(Room));
-        Assert.NotEqual(ids.Room(Room), ids.Room("other-room"));
+        Assert.NotEqual(ids.Room(Room), ids.Room(new TestRoom().Id));
         Assert.NotEqual(ids.Room(Room), other.Room(Room));
     }
 

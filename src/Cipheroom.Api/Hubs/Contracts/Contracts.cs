@@ -21,21 +21,75 @@ public sealed record IdentityDto(string? Ed25519Pub, string? X25519Pub, string? 
 }
 
 /// <param name="VideoCodecs">Video codecs the participant can decode (vp8, vp9; vp8 always).</param>
+/// <param name="Ticket">The signed admission that let them in; null for a host (the host key attests them).</param>
 public sealed record ParticipantDto(
     string Id,
-    string DisplayName,
     IReadOnlyList<TrackDto> Tracks,
     IdentityDto Identity,
-    IReadOnlyList<string> VideoCodecs)
+    IReadOnlyList<string> VideoCodecs,
+    TicketDto? Ticket)
 {
     public static ParticipantDto From(Participant p) =>
-        new(p.Id.Value, p.DisplayName.Value, [.. p.Tracks.Select(TrackDto.From)], IdentityDto.From(p.Identity), p.VideoCodecs.Values);
+        new(p.Id.Value, [.. p.Tracks.Select(TrackDto.From)], IdentityDto.From(p.Identity), p.VideoCodecs.Values, p.Ticket is { } t ? new TicketDto(t.Issuer, t.Sig) : null);
 }
 
 /// <summary>A sender-key envelope for one recipient. <c>Blob</c> is opaque to the server (signed, encrypted).</summary>
 public sealed record KeyEnvelopeDto(string? ToId, string? Blob);
 
-public sealed record JoinResult(string SelfId, IReadOnlyList<ParticipantDto> Participants);
+/// <summary>A knock for one admitter: the guest's name, encrypted to that admitter. Opaque to the server.</summary>
+public sealed record KnockDto(string? ToId, string? Blob);
+
+/// <summary>Host's browser only: the host public keys (the room id derives from them) and the host key's signature over the caller's identity.</summary>
+public sealed record HostProofDto(string? HostEd25519Pub, string? HostX25519Pub, string? Attestation);
+
+/// <summary>An admission ticket: the admitting identity and its signature over the admitted identity.</summary>
+public sealed record TicketDto(string? Issuer, string? Sig);
+
+/// <summary>Someone waiting in the lobby, as an admitter sees them (their name arrives encrypted in the knock).</summary>
+public sealed record LobbyGuestDto(string Id, IdentityDto Identity)
+{
+    public static LobbyGuestDto From(LobbyGuest g) => new(g.Id.Value, IdentityDto.From(g.Identity));
+}
+
+/// <param name="SelfId">Our participant id (also while waiting in the lobby).</param>
+/// <param name="Admitted">False while waiting in the lobby: then <paramref name="Participants"/> is empty.</param>
+public sealed record LobbyResult(string SelfId, bool Admitted, IReadOnlyList<ParticipantDto> Participants, AuthorityDto Authority);
+
+public sealed record HostAttestationDto(string Identity, string Sig);
+
+/// <summary>A signed statement by <c>Issuer</c> about <c>Subject</c> (Ed25519 identities, base64url).</summary>
+public sealed record StatementDto(string Subject, string Issuer, string Sig);
+
+public sealed record SettingsDto(string Issuer, long Seq, bool AutoAdmit, string Sig);
+
+/// <summary>A host or co-host in the call right now: where knocks go.</summary>
+public sealed record AdmitterDto(string Id, IdentityDto Identity);
+
+/// <summary>
+/// The room's chain of authority, from the host keys (which the room id commits to) down: host attestations,
+/// co-host grants, removals, settings, and who can admit right now. Public keys and signatures only; every client
+/// verifies it itself.
+/// </summary>
+public sealed record AuthorityDto(
+    string? HostEd25519Pub,
+    string? HostX25519Pub,
+    IReadOnlyList<HostAttestationDto> Hosts,
+    IReadOnlyList<StatementDto> CoHosts,
+    IReadOnlyList<StatementDto> Revoked,
+    SettingsDto? Settings,
+    IReadOnlyList<AdmitterDto> Admitters)
+{
+    public static AuthorityDto From(RoomAuthority a) => new(
+        a.Host?.Ed25519Pub,
+        a.Host?.X25519Pub,
+        [.. a.Hosts.Select(h => new HostAttestationDto(h.Identity, h.Sig))],
+        [.. a.CoHosts.Select(From)],
+        [.. a.Revoked.Select(From)],
+        a.Settings is { } s ? new SettingsDto(s.Issuer, s.Seq, s.AutoAdmit, s.Sig) : null,
+        [.. a.Admitters.Select(p => new AdmitterDto(p.Id.Value, IdentityDto.From(p.Identity)))]);
+
+    private static StatementDto From(Statement s) => new(s.Subject, s.Issuer, s.Sig);
+}
 
 /// <summary>Mirrors the browser's RTCIceServer shape.</summary>
 public sealed record IceServer(string[] Urls, string? Username = null, string? Credential = null);

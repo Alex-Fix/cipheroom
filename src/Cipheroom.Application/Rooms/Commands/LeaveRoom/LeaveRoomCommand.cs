@@ -5,16 +5,25 @@ using Mediator;
 
 namespace Cipheroom.Application.Rooms.Commands.LeaveRoom;
 
-/// <summary>Leave the current room. Returns who left, or null if the connection wasn't in a room.</summary>
-public sealed record LeaveRoomCommand(string ConnectionId) : ICommand<Participant?>;
+/// <summary>Leave the current room or its lobby. Null if the connection was in neither.</summary>
+public sealed record LeaveRoomCommand(string ConnectionId) : ICommand<LeaveRoomResult?>;
+
+/// <param name="Left">Set when a member left the call; <paramref name="LeftLobby"/> when a guest stopped waiting.</param>
+/// <param name="Authority">The room's authority afterwards (admitters may have changed).</param>
+public sealed record LeaveRoomResult(RoomId RoomId, Participant? Left, LobbyGuest? LeftLobby, RoomAuthority Authority);
 
 public sealed class LeaveRoomCommandValidator : AbstractValidator<LeaveRoomCommand>
 {
     public LeaveRoomCommandValidator() => RuleFor(c => c.ConnectionId).NotEmpty();
 }
 
-public sealed class LeaveRoomCommandHandler(IRoomStore rooms) : ICommandHandler<LeaveRoomCommand, Participant?>
+public sealed class LeaveRoomCommandHandler(IRoomStore rooms) : ICommandHandler<LeaveRoomCommand, LeaveRoomResult?>
 {
-    public ValueTask<Participant?> Handle(LeaveRoomCommand command, CancellationToken cancellationToken) =>
-        ValueTask.FromResult(rooms.Leave(command.ConnectionId));
+    public ValueTask<LeaveRoomResult?> Handle(LeaveRoomCommand command, CancellationToken cancellationToken) =>
+        ValueTask.FromResult(rooms.InAnyRoom(command.ConnectionId, room =>
+        {
+            var left = room.Leave(command.ConnectionId);
+            var leftLobby = left is null ? room.LeaveLobby(command.ConnectionId) : null;
+            return new LeaveRoomResult(room.Id, left, leftLobby, room.Authority());
+        }));
 }

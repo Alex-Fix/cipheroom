@@ -20,10 +20,19 @@ public sealed class CipheroomMetrics
     public const string Failed = "failed";
     public const string Cancelled = "cancelled";
 
+    /// <summary>Admission outcomes (no ids): joined straight in (host / reconnect), waiting, admitted, denied, removed, ended.</summary>
+    public const string AdmissionJoined = "joined";
+    public const string AdmissionWaiting = "waiting";
+    public const string AdmissionAdmitted = "admitted";
+    public const string AdmissionDenied = "denied";
+    public const string AdmissionRemoved = "removed";
+    public const string AdmissionEnded = "ended";
+
     private readonly TimeProvider _time;
     private readonly Counter<long> _hubCalls;
     private readonly Counter<long> _rateLimited;
     private readonly Counter<long> _envelopesRelayed;
+    private readonly Counter<long> _admissions;
     private readonly Histogram<double> _sfuDuration;
 
     // Browser call-quality reports (ReportCallStats).
@@ -55,6 +64,7 @@ public sealed class CipheroomMetrics
         _hubCalls = meter.CreateCounter<long>("cipheroom.hub.calls", "{call}", "Hub method invocations by method and outcome.");
         _rateLimited = meter.CreateCounter<long>("cipheroom.hub.rate_limited", "{call}", "Hub calls refused by the per-connection rate limit.");
         _envelopesRelayed = meter.CreateCounter<long>("cipheroom.key_envelopes.relayed", "{envelope}", "E2EE key envelopes relayed to recipients.");
+        _admissions = meter.CreateCounter<long>("cipheroom.admissions", "{event}", "Lobby and host-control events by outcome.");
         _sfuDuration = meter.CreateHistogram<double>(
             "cipheroom.sfu.request.duration",
             "s",
@@ -120,6 +130,8 @@ public sealed class CipheroomMetrics
     public void RateLimited(string method) => _rateLimited.Add(1, new KeyValuePair<string, object?>("method", method));
 
     public void EnvelopesRelayed(int count) => _envelopesRelayed.Add(count);
+
+    public void Admission(string outcome) => _admissions.Add(1, new KeyValuePair<string, object?>("outcome", outcome));
 
     /// <summary>
     /// Records one browser report. Labels: the (validated) platform and path, kind and direction — nothing that

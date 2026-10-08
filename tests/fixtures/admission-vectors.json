@@ -1,0 +1,17 @@
+{
+  "fieldsSample": {
+    "hex": "000000056c6162656c00000002c3a90000000400000007000000020102"
+  },
+  "hostEd25519Pub": "iojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w",
+  "hostX25519Pub": "CQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQk",
+  "roomId": "efddmex6ms7upv5eyuy3bo5oqm",
+  "identity": "gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q",
+  "guest": "7UkoxijRwsbq6QM4kFmVYSlZJzpcY_k2NsFGFKyHN9E",
+  "attestation": "WtdWxIhxNtCUnolPinW-b5O-sZ84suSyDpziKLz20x4L4Lmnj2bPvBIafoqY313ldLAXVk3E3rf-WkOyKaJ9Aw",
+  "ticket": "eM_aqBChdyzeCc-P4LyFe0mu1JlTxqMOiTpGzP4yrvrpcGG2TqiBWcgv5-208D68aGK-J7x251pPwb2_Nfw5BQ",
+  "coHost": "anBBmOj8XgzSy8hzC6xgeZjSEIkxSbWm_hTBp-FVGXS5hFoj4dhPwJmuMiddify5Z1wfb6I2NyjsFWizKC6wAw",
+  "revoke": "tuk4o8DxHra_1QqGObHnCEjWaak9JaW1KrAZ4kuqpcFGLlISxZmyO-_hYPd_v1FqWDoZ9nMDwf0MXQ4WBLLEDQ",
+  "settings": "lNBmTR3AHpcs0dokndpbrJdbE2lJkF5mXDSujM8E5-I1c5Xlep4RR6wNNwAXZV75QNfECo6wj8_L1FQw774FDA",
+  "end": "MhxK8CC5RyV-8JmBAHWdkwpoxznmT2alU62XJdwDqUfoinwuFmclXu0AfYTmLc7Rag1H9tmWtrTlsMiD8wCRCg",
+  "mute": "G7Sj1bahpIqFiogoImvybgXj25wHrbrGy1Ds-JLAcil9rwRupO4KJ5YvPBc3VONenWFBNxUbBELY83QX8c6hDg"
+}

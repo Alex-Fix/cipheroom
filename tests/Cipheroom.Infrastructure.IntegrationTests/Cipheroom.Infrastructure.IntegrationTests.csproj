@@ -6,6 +6,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Shared with the browser's statements.spec.ts: the same bytes must sign and verify on both sides. -->
+    <None Include="..\fixtures\admission-vectors.json" Link="Crypto\admission-vectors.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\Cipheroom.Infrastructure\Cipheroom.Infrastructure.csproj" />
   </ItemGroup>
 
