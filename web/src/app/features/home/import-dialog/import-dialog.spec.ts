@@ -41,6 +41,40 @@ describe('ImportDialog', () => {
     });
   });
 
+  it('shows the container’s error until the passphrase changes, and starts empty when reopened', async () => {
+    const { fixture, modal } = setup();
+    const settle = async () => {
+      await fixture.whenStable();
+      fixture.detectChanges();
+    };
+    const typePassphrase = async (value: string) => {
+      const input = modal().querySelector<HTMLInputElement>('#backup-passphrase')!;
+      input.value = value;
+      input.dispatchEvent(new Event('input'));
+      await settle();
+    };
+    const file = modal().querySelector<HTMLInputElement>('#backup-file')!;
+    Object.defineProperty(file, 'files', { value: [new File(['{"v":1}'], 'backup.key')] });
+    file.dispatchEvent(new Event('change'));
+    await settle();
+    await typePassphrase('wrong one');
+    modal().querySelector<HTMLButtonElement>('.unlock')!.click();
+    // The container says it didn't work.
+    fixture.componentRef.setInput('error', 'Wrong passphrase, or the file was changed.');
+    await settle();
+    expect(modal().textContent).toContain('Wrong passphrase');
+
+    await typePassphrase('another try');
+    expect(modal().textContent).not.toContain('Wrong passphrase');
+
+    fixture.componentRef.setInput('open', false);
+    await settle();
+    fixture.componentRef.setInput('open', true);
+    await settle();
+    expect(modal().querySelector<HTMLInputElement>('#backup-passphrase')!.value).toBe('');
+    expect(modal().querySelector<HTMLButtonElement>('.unlock')!.disabled).toBe(true);
+  });
+
   it('refuses files far too big to be a backup, and shows errors from the container', async () => {
     const { fixture, modal } = setup();
     const file = modal().querySelector<HTMLInputElement>('#backup-file')!;

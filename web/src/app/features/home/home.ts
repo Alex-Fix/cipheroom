@@ -113,17 +113,6 @@ export class Home {
     }
   }
 
-  protected skipBackup(): void {
-    this.modal.confirm({
-      nzTitle: 'Skip the backup?',
-      nzContent:
-        'You won’t be able to host this meeting from another browser, or after clearing this one.',
-      nzOkText: 'Skip',
-      nzOkDanger: true,
-      nzOnOk: () => this.finishBackup(),
-    });
-  }
-
   protected finishBackup(): void {
     const roomId = this.backupFor();
     this.hostKeys.discardPendingBackup();
@@ -168,6 +157,9 @@ export class Home {
       nzContent: 'This browser won’t be its host anymore. A backup file still works.',
       nzOkText: 'Forget',
       nzOkDanger: true,
+      nzCentered: true,
+      // A destructive choice is never the default: Enter doesn't forget.
+      nzAutofocus: 'cancel',
       nzOnOk: () => this.hostKeys.delete(roomId),
     });
   }

@@ -100,13 +100,28 @@ describe('Home', () => {
     expect(localStorage.getItem(DISPLAY_NAME_KEY)).toBe('Alex');
   });
 
-  it('asks before skipping the backup', async () => {
-    const { fixture, button, modal } = await setup({ name: 'Alex' });
+  it('opens the meeting after the backup is skipped too', async () => {
+    const { fixture, button, hostKeys, navigate } = await setup({ name: 'Alex' });
     button('.new-meeting').click();
     await fixture.whenStable();
-    fixture.debugElement.query((d) => d.name === 'app-backup-dialog').triggerEventHandler('skip');
+    fixture.debugElement.query((d) => d.name === 'app-backup-dialog').triggerEventHandler('done');
+
+    expect(hostKeys.discardPendingBackup).toHaveBeenCalled();
+    expect(navigate).toHaveBeenCalledWith(['/r', ROOM]);
+  });
+
+  it('asks before forgetting a meeting, with Cancel focused', async () => {
+    const { el, fixture, hostKeys, modal } = await setup({ name: 'Alex' });
+    hostKeys.meetings.set([{ roomId: ROOM, createdAt: 1 }]);
+    fixture.detectChanges();
+    el.querySelector<HTMLButtonElement>('.meeting .forget')!.click();
+
     expect(modal.confirm).toHaveBeenCalledWith(
-      expect.objectContaining({ nzTitle: 'Skip the backup?' }),
+      expect.objectContaining({
+        nzTitle: 'Forget this meeting?',
+        nzAutofocus: 'cancel',
+        nzCentered: true,
+      }),
     );
   });
 

@@ -1,6 +1,9 @@
 <nz-modal
   [nzVisible]="open()"
   nzTitle="Import a host key"
+  [nzCentered]="true"
+  [nzWidth]="440"
+  [nzMaskClosable]="false"
   [nzFooter]="footer"
   (nzOnCancel)="close()"
 >
@@ -10,13 +13,16 @@
         Host a meeting from this browser using the backup you saved when you created it.
       </p>
       <label for="backup-file">Backup file</label>
-      <input
-        id="backup-file"
-        type="file"
-        accept=".key,application/json"
-        class="file"
-        (change)="pick($event)"
-      />
+      <!-- Re-created on every opening, so no file from before stays picked. -->
+      @for (g of [generation()]; track g) {
+        <input
+          id="backup-file"
+          type="file"
+          accept=".key,application/json"
+          class="file"
+          (change)="pick($event)"
+        />
+      }
       <label for="backup-passphrase">Passphrase</label>
       <input
         nz-input
@@ -25,9 +31,10 @@
         type="password"
         autocomplete="current-password"
         [ngModel]="passphrase()"
-        (ngModelChange)="passphrase.set($event)"
+        (ngModelChange)="setPassphrase($event)"
       />
-      @if (fileError() ?? error(); as message) {
+      <button type="submit" hidden></button>
+      @if (shownError(); as message) {
         <p class="error" role="alert">{{ message }}</p>
       }
     </form>

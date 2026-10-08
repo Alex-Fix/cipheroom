@@ -9,6 +9,12 @@
 
 .form {
   display: flex;
+
+  // While asking "skip?" (kept mounted so going back keeps what was typed).
+  &[hidden] {
+    display: none;
+  }
+
   flex-direction: column;
   gap: 6px;
 

@@ -320,13 +320,18 @@ export class Room implements OnInit, OnDestroy {
     );
   }
 
-  /** Constant text only: nz-modal renders content as HTML. */
+  /**
+   * Constant text only: nz-modal renders content as HTML. Centered, and Cancel has the focus: a destructive choice is
+   * never what Enter does.
+   */
   private confirm(title: string, content: string, ok: string, onOk: () => Promise<void>): void {
     this.modal.confirm({
       nzTitle: title,
       nzContent: content,
       nzOkText: ok,
       nzOkDanger: true,
+      nzCentered: true,
+      nzAutofocus: 'cancel',
       nzOnOk: onOk,
     });
   }

@@ -1,4 +1,12 @@
-import { ChangeDetectionStrategy, Component, computed, input, output, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  effect,
+  input,
+  output,
+  signal,
+} from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { NzButtonModule } from 'ng-zorro-antd/button';
 import { NzIconModule } from 'ng-zorro-antd/icon';
@@ -16,7 +24,8 @@ const STRENGTH_TEXT: Record<PassphraseStrength, string> = {
 
 /**
  * Right after creating a meeting: protect its host key with a passphrase and download the backup — the only way to
- * host it from another browser, and only possible now. Skippable. Presentational.
+ * host it from another browser, and only possible now. Skipping asks once more, inside the same dialog (no stacked
+ * dialogs). Esc goes one step back: form → "skip?" → form; it does nothing while encrypting. Presentational.
  */
 @Component({
   selector: 'app-backup-dialog',
@@ -33,11 +42,13 @@ export class BackupDialog {
   readonly saved = input(false);
 
   readonly save = output<string>();
-  readonly skip = output();
+  /** Closed: backed up, or skipped after confirming. Either way the passphrases are already cleared. */
   readonly done = output();
 
   protected readonly passphrase = signal('');
   protected readonly confirmation = signal('');
+  /** Asking "skip the backup?" instead of showing the form. */
+  protected readonly confirmingSkip = signal(false);
   protected readonly strength = computed(() => passphraseStrength(this.passphrase()));
   protected readonly strengthText = computed(() => STRENGTH_TEXT[this.strength()]);
   protected readonly mismatch = computed(
@@ -47,14 +58,36 @@ export class BackupDialog {
     () =>
       this.strength() !== 'too-short' && this.confirmation() === this.passphrase() && !this.busy(),
   );
+  protected readonly title = computed(() =>
+    this.saved()
+      ? 'Backup saved'
+      : this.confirmingSkip()
+        ? 'Skip the backup?'
+        : 'Back up your host key',
+  );
+
+  constructor() {
+    // Every opening starts from the form.
+    effect(() => {
+      if (this.open()) this.confirmingSkip.set(false);
+    });
+  }
 
   protected submit(): void {
     if (this.canSave()) this.save.emit(this.passphrase());
   }
 
+  /** Esc (and the system back gesture on phones). */
+  protected back(): void {
+    if (this.busy()) return;
+    if (this.saved()) return this.finish();
+    this.confirmingSkip.update((asking) => !asking);
+  }
+
   protected finish(): void {
     this.passphrase.set('');
     this.confirmation.set('');
+    this.confirmingSkip.set(false);
     this.done.emit();
   }
 }
