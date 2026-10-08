@@ -29,6 +29,12 @@ function fakeMedia() {
     availableQualities: signal(['auto', '720p']),
     videoQuality: signal('auto'),
     setVideoQuality: vi.fn().mockResolvedValue(undefined),
+    availableCodecs: ['vp9', 'av1', 'vp8'],
+    decodableCodecs: ['vp8', 'vp9', 'av1'],
+    videoCodec: signal('vp9'),
+    sendingCodec: signal<string | undefined>('vp9'),
+    codecUnsupported: signal(false),
+    setVideoCodec: vi.fn().mockReturnValue(false),
     setTileSize: vi.fn(),
     flipCamera: vi.fn().mockResolvedValue(undefined),
     selectCamera: vi.fn().mockResolvedValue(undefined),
@@ -141,7 +147,11 @@ describe('Room', () => {
   it('joins, connects and turns on mic and camera', async () => {
     const { signaling, media, el, crypto } = await setup();
     expect(crypto.identityBundle).toHaveBeenCalledWith('abc-123');
-    expect(signaling.joinRoom).toHaveBeenCalledWith('abc-123', 'Alex', identity);
+    expect(signaling.joinRoom).toHaveBeenCalledWith('abc-123', 'Alex', identity, [
+      'vp8',
+      'vp9',
+      'av1',
+    ]);
     expect(crypto.start).toHaveBeenCalledWith('abc-123', 'me');
     expect(media.connect).toHaveBeenCalledWith(
       { iceServers: [], forceRelay: false },
@@ -331,6 +341,35 @@ describe('Room', () => {
       // The muted microphone is published again, then muted: unmuting later needs no new negotiation.
       expect(media.setMicrophone.mock.calls).toEqual([[true], [false]]);
       expect(media.setCamera).toHaveBeenCalledWith(true);
+    });
+
+    it('rejoins to apply a codec change that needs it, and only then', async () => {
+      const { fixture, media, signaling } = await setup();
+      vi.useFakeTimers();
+      const controls = fixture.debugElement.query((d) => d.name === 'app-call-controls');
+
+      controls.triggerEventHandler('selectCodec', 'vp9');
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(media.setVideoCodec).toHaveBeenCalledWith('vp9');
+      expect(signaling.joinRoom).toHaveBeenCalledTimes(1);
+
+      media.setVideoCodec.mockReturnValueOnce(true);
+      controls.triggerEventHandler('selectCodec', 'av1');
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(media.disconnect).toHaveBeenCalled();
+      expect(signaling.joinRoom).toHaveBeenCalledTimes(2);
+    });
+
+    it('rejoins when someone joined who can’t decode the codec we send', async () => {
+      const { fixture, media, signaling } = await setup();
+      vi.useFakeTimers();
+
+      media.codecUnsupported.set(true);
+      fixture.detectChanges();
+      media.codecUnsupported.set(false); // the new connection picked a codec everyone can play
+      await vi.advanceTimersByTimeAsync(1000);
+
+      expect(signaling.joinRoom).toHaveBeenCalledTimes(2);
     });
 
     it('rejoins when the signaling connection drops', async () => {

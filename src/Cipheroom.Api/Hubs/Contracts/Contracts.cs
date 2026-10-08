@@ -20,10 +20,16 @@ public sealed record IdentityDto(string? Ed25519Pub, string? X25519Pub, string? 
     public static IdentityDto From(IdentityKeys k) => new(k.Ed25519Pub, k.X25519Pub, k.Sig);
 }
 
-public sealed record ParticipantDto(string Id, string DisplayName, IReadOnlyList<TrackDto> Tracks, IdentityDto Identity)
+/// <param name="VideoCodecs">Video codecs the participant can decode (vp8, vp9, av1; vp8 always).</param>
+public sealed record ParticipantDto(
+    string Id,
+    string DisplayName,
+    IReadOnlyList<TrackDto> Tracks,
+    IdentityDto Identity,
+    IReadOnlyList<string> VideoCodecs)
 {
     public static ParticipantDto From(Participant p) =>
-        new(p.Id.Value, p.DisplayName.Value, [.. p.Tracks.Select(TrackDto.From)], IdentityDto.From(p.Identity));
+        new(p.Id.Value, p.DisplayName.Value, [.. p.Tracks.Select(TrackDto.From)], IdentityDto.From(p.Identity), p.VideoCodecs.Values);
 }
 
 /// <summary>A sender-key envelope for one recipient. <c>Blob</c> is opaque to the server (signed, encrypted).</summary>

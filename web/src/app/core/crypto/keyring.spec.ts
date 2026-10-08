@@ -34,9 +34,9 @@ describe('Keyring', () => {
 
     const receiveKey = keyring.receiveKey('alice', 1)!;
     const decrypted = await crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv: new Uint8Array(12), additionalData: frame.subarray(-9) },
+      { name: 'AES-GCM', iv: new Uint8Array(12), additionalData: frame.subarray(-10) },
       receiveKey,
-      frame.subarray(0, -9),
+      frame.subarray(0, -10),
     );
     expect(new Uint8Array(decrypted)).toEqual(new Uint8Array(40));
   });

@@ -83,7 +83,7 @@ function pipe(
   let transform: (frame: EncodedFrame) => Promise<EncodedFrame | undefined>;
   let receiver: ReceiverState | undefined;
   if (options.side === 'send') {
-    transform = (frame) => cryptor.encrypt(options.kind, frame);
+    transform = (frame) => cryptor.encrypt(options.kind, frame, options.videoCodec);
   } else {
     const state: ReceiverState = {
       kind: options.kind,

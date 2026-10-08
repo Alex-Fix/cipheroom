@@ -28,8 +28,8 @@ public sealed class KeyEnvelopeHubTests(WebApplicationFactory<Program> factory) 
         alice.On<ParticipantDto>("ParticipantJoined", p => joined.Writer.TryWrite(p));
         var bobIdentity = TestIdentity.Dto with { X25519Pub = "QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVphYmNkZWY" };
 
-        await alice.InvokeAsync<JoinResult>("JoinRoom", "keys-1", "Alice", TestIdentity.Dto, Ct);
-        var bobJoin = await bob.InvokeAsync<JoinResult>("JoinRoom", "keys-1", "Bob", bobIdentity, Ct);
+        await alice.InvokeAsync<JoinResult>("JoinRoom", "keys-1", "Alice", TestIdentity.Dto, TestIdentity.Codecs, Ct);
+        var bobJoin = await bob.InvokeAsync<JoinResult>("JoinRoom", "keys-1", "Bob", bobIdentity, TestIdentity.Codecs, Ct);
 
         Assert.Equal(bobIdentity, (await joined.Reader.ReadAsync(Timeout())).Identity);
         Assert.Equal(TestIdentity.Dto, Assert.Single(bobJoin.Participants).Identity);
@@ -41,10 +41,10 @@ public sealed class KeyEnvelopeHubTests(WebApplicationFactory<Program> factory) 
         await using var connection = await ConnectAsync();
         await AssertHubErrorAsync(
             "Invalid identity.",
-            () => connection.InvokeAsync<JoinResult>("JoinRoom", "keys-2", "Alice", null, Ct));
+            () => connection.InvokeAsync<JoinResult>("JoinRoom", "keys-2", "Alice", null, TestIdentity.Codecs, Ct));
         await AssertHubErrorAsync(
             "Invalid identity.",
-            () => connection.InvokeAsync<JoinResult>("JoinRoom", "keys-2", "Alice", TestIdentity.Dto with { Sig = "short" }, Ct));
+            () => connection.InvokeAsync<JoinResult>("JoinRoom", "keys-2", "Alice", TestIdentity.Dto with { Sig = "short" }, TestIdentity.Codecs, Ct));
     }
 
     [Fact]
@@ -65,9 +65,9 @@ public sealed class KeyEnvelopeHubTests(WebApplicationFactory<Program> factory) 
         var bobInbox = Inbox(bob);
         var carolInbox = Inbox(carol);
 
-        var aliceJoin = await alice.InvokeAsync<JoinResult>("JoinRoom", "keys-4", "Alice", TestIdentity.Dto, Ct);
-        var bobJoin = await bob.InvokeAsync<JoinResult>("JoinRoom", "keys-4", "Bob", TestIdentity.Dto, Ct);
-        var carolJoin = await carol.InvokeAsync<JoinResult>("JoinRoom", "keys-4", "Carol", TestIdentity.Dto, Ct);
+        var aliceJoin = await alice.InvokeAsync<JoinResult>("JoinRoom", "keys-4", "Alice", TestIdentity.Dto, TestIdentity.Codecs, Ct);
+        var bobJoin = await bob.InvokeAsync<JoinResult>("JoinRoom", "keys-4", "Bob", TestIdentity.Dto, TestIdentity.Codecs, Ct);
+        var carolJoin = await carol.InvokeAsync<JoinResult>("JoinRoom", "keys-4", "Carol", TestIdentity.Dto, TestIdentity.Codecs, Ct);
 
         await alice.InvokeAsync("SendKeyEnvelopes", new[] { new KeyEnvelopeDto(bobJoin.SelfId, "Zm9yLWJvYg") }, Ct);
         Assert.Equal((aliceJoin.SelfId, "Zm9yLWJvYg"), await bobInbox.ReadAsync(Timeout()));
@@ -87,9 +87,9 @@ public sealed class KeyEnvelopeHubTests(WebApplicationFactory<Program> factory) 
         var bobInbox = Inbox(bob);
         var carolInbox = Inbox(carol);
 
-        await alice.InvokeAsync<JoinResult>("JoinRoom", "keys-5", "Alice", TestIdentity.Dto, Ct);
-        var bobJoin = await bob.InvokeAsync<JoinResult>("JoinRoom", "keys-5", "Bob", TestIdentity.Dto, Ct);
-        var carolJoin = await carol.InvokeAsync<JoinResult>("JoinRoom", "keys-5", "Carol", TestIdentity.Dto, Ct);
+        await alice.InvokeAsync<JoinResult>("JoinRoom", "keys-5", "Alice", TestIdentity.Dto, TestIdentity.Codecs, Ct);
+        var bobJoin = await bob.InvokeAsync<JoinResult>("JoinRoom", "keys-5", "Bob", TestIdentity.Dto, TestIdentity.Codecs, Ct);
+        var carolJoin = await carol.InvokeAsync<JoinResult>("JoinRoom", "keys-5", "Carol", TestIdentity.Dto, TestIdentity.Codecs, Ct);
 
         await alice.InvokeAsync(
             "SendKeyEnvelopes",
@@ -107,8 +107,8 @@ public sealed class KeyEnvelopeHubTests(WebApplicationFactory<Program> factory) 
         await using var mallory = await ConnectAsync();
         var aliceInbox = Inbox(alice);
 
-        var aliceJoin = await alice.InvokeAsync<JoinResult>("JoinRoom", "keys-6", "Alice", TestIdentity.Dto, Ct);
-        await mallory.InvokeAsync<JoinResult>("JoinRoom", "keys-elsewhere", "Mallory", TestIdentity.Dto, Ct);
+        var aliceJoin = await alice.InvokeAsync<JoinResult>("JoinRoom", "keys-6", "Alice", TestIdentity.Dto, TestIdentity.Codecs, Ct);
+        await mallory.InvokeAsync<JoinResult>("JoinRoom", "keys-elsewhere", "Mallory", TestIdentity.Dto, TestIdentity.Codecs, Ct);
 
         await AssertHubErrorAsync(
             "Invalid key envelope.",
@@ -124,7 +124,7 @@ public sealed class KeyEnvelopeHubTests(WebApplicationFactory<Program> factory) 
             "Join a room first.",
             () => connection.InvokeAsync("SendKeyEnvelopes", new[] { new KeyEnvelopeDto("0123456789abcdef", "aGk") }, Ct));
 
-        var join = await connection.InvokeAsync<JoinResult>("JoinRoom", "keys-7", "Alice", TestIdentity.Dto, Ct);
+        var join = await connection.InvokeAsync<JoinResult>("JoinRoom", "keys-7", "Alice", TestIdentity.Dto, TestIdentity.Codecs, Ct);
         await AssertHubErrorAsync(
             "Invalid key envelope.",
             () => connection.InvokeAsync("SendKeyEnvelopes", new[] { new KeyEnvelopeDto(join.SelfId, "aGk") }, Ct));

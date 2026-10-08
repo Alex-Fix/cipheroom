@@ -22,6 +22,12 @@ function vp8Delta(): Uint8Array {
   return bytes;
 }
 
+/** A temporal delimiter OBU and a frame OBU with a random payload. */
+function av1Frame(): Uint8Array {
+  const payload = crypto.getRandomValues(new Uint8Array(50));
+  return new Uint8Array([0x12, 0x00, 0x32, payload.byteLength, ...payload]);
+}
+
 function receiver(kind: MediaKind, participantId?: string): ReceiverState {
   return {
     kind,
@@ -65,6 +71,47 @@ describe('FrameCryptor', () => {
     expect(new Uint8Array(received!.data)).toEqual(original);
     expect(alice.stats.encrypted).toBe(1);
     expect(bob.stats.decrypted).toBe(1);
+  });
+
+  it.each([
+    ['video/VP9', undefined],
+    ['video/AV1', undefined],
+    [undefined, 'vp9'], // a browser that doesn't report codecs: the sender's negotiated codec decides
+  ] as const)('delivers %s frames (negotiated %s)', async (mimeType, negotiated) => {
+    await bobKeys.setReceiveKey('alice', 2, copy(key));
+    const original = mimeType === 'video/AV1' ? av1Frame() : vp8Delta();
+    const sent = (await alice.encrypt('video', frame(original, mimeType), negotiated))!;
+
+    const received = await bob.decrypt(
+      receiver('video', 'alice'),
+      frame(new Uint8Array(sent.data), mimeType),
+    );
+    expect(new Uint8Array(received!.data)).toEqual(original);
+  });
+
+  it('drops frames whose codec byte disagrees with the codec they arrived as', async () => {
+    await bobKeys.setReceiveKey('alice', 2, copy(key));
+    const sent = await alice.encrypt('video', frame(vp8Delta(), 'video/VP9'));
+
+    const r = receiver('video', 'alice');
+    expect(await bob.decrypt(r, frame(new Uint8Array(sent!.data), 'video/VP8'))).toBeUndefined();
+    expect(bob.stats.failed).toBe(1);
+  });
+
+  it('drops video frames on an audio receiver and vice versa', async () => {
+    await bobKeys.setReceiveKey('alice', 2, copy(key));
+    expect(
+      await bob.decrypt(receiver('audio', 'alice'), await aliceSends('video', vp8Delta())),
+    ).toBeUndefined();
+    expect(
+      await bob.decrypt(receiver('video', 'alice'), await aliceSends('audio', new Uint8Array(40))),
+    ).toBeUndefined();
+  });
+
+  it('drops AV1 frames it can’t parse instead of sending them', async () => {
+    const truncated = new Uint8Array([0x32, 0x40]); // frame OBU claiming 64 bytes, carrying none
+    expect(await alice.encrypt('video', frame(truncated, 'video/AV1'))).toBeUndefined();
+    expect(alice.stats.unsupportedCodec).toBe(1);
   });
 
   it('drops outgoing frames until we have a send key — never sends plaintext', async () => {

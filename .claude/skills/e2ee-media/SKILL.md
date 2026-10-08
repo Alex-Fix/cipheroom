@@ -27,9 +27,13 @@ Design: `docs/plans/2026-10-07-e2ee-media-design.md`. Everything lives in `web/s
   and each remote participant's by `keyIndex` from the frame trailer; receivers are tagged with their participant
   and retagged if the SFU reuses them. Media key = `HKDF(senderKey, info="cipheroom/media/v1")`, non-extractable;
   one per sender key, shared by all of that sender's tracks.
-- Layout `[clear header][ciphertext + 16 B tag][counter 8 B][keyIndex 1 B]`, IV = `0⁴ ‖ counter`, AAD = clear
-  header ‖ trailer. VP8 header stays clear (keyframe 10 B, delta 3 B — P bit of byte 0); Opus none. Any other codec
-  → dropped (every video transceiver prefers VP8). If H.264 is ever needed, the worker must learn NAL headers first.
+- Layout v2 `[clear header][ciphertext + 16 B tag][counter 8 B][codec 1 B][keyIndex 1 B]`, IV = `0⁴ ‖ counter`,
+  AAD = clear header ‖ trailer. Codec byte: 0 audio, 1 VP8, 2 VP9, 3 AV1 — the receiver reads it first and checks it
+  against the receiver's kind and the frame's reported codec. VP8 header stays clear (keyframe 10 B, delta 3 B — P
+  bit of byte 0); VP9 and Opus none. AV1 is OBU-preserving: each OBU's header + size stay clear, its payload is
+  encrypted with IV = `index ‖ counter` (index 1… over non-empty OBUs — the packetizer drops temporal delimiters) and
+  AAD = OBU header ‖ trailer; the trailer rides at the end of the last OBU. Any other codec → dropped (each video
+  transceiver negotiates only the call's codec). If H.264 is ever needed, the worker must learn NAL headers first.
 - No key → drop (send and receive). Missing key arrives → keyframe request; 10 failures in a row → keyframe request.
 - Unsupported browser (no encoded transforms / Ed25519 / X25519) → can't join; never fall back to plaintext.
 

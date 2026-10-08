@@ -17,6 +17,7 @@ public sealed class InMemoryRoomStore : IRoomStore
         string connectionId,
         DisplayName displayName,
         IdentityKeys identity,
+        VideoCodecs videoCodecs,
         [NotNullWhen(true)] out Participant? self,
         [NotNullWhen(true)] out IReadOnlyList<Participant>? others)
     {
@@ -33,7 +34,7 @@ public sealed class InMemoryRoomStore : IRoomStore
                 _rooms[roomId] = room = new Room(roomId);
 
             others = [.. room.Participants];
-            self = room.Join(connectionId, displayName, identity);
+            self = room.Join(connectionId, displayName, identity, videoCodecs);
             _byConnection[connectionId] = self;
             return true;
         }

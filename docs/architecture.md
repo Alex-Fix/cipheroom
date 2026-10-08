@@ -71,7 +71,8 @@ Cipheroom.Api ──► Cipheroom.Application ──► Cipheroom.Domain
    everyone in envelopes (`SendKeyEnvelopes`); everyone else rotates and sends us theirs.
 3. `GetRtcConfig()` → Cloudflare STUN/TURN servers; the browser opens one `RTCPeerConnection`, with the frame
    transforms on every sender and receiver.
-4. The browser **publishes its own tracks first** (`PublishTracks`): microphone and camera (f/h/q simulcast, VP8);
+4. The browser **publishes its own tracks first** (`PublishTracks`): microphone and camera (f/h/q simulcast, in the
+   video codec chosen at join — VP9 by default, see "Video codecs" below);
    devices that are off are published muted / as placeholder frames. iOS Safari can't add a camera once the
    connection began by answering the SFU, so this order is a rule.
 5. Then it **receives** others: `SubscribeTracks` → SFU offer → answer (`Renegotiate`); new and removed tracks arrive
@@ -87,9 +88,12 @@ lives in `web/src/app/core/crypto/` (WebCrypto only); the api only relays public
 
 **Frame encryption is ours:** one worker (`frame-crypto.worker.ts`), AES-GCM-256, applied with encoded transforms
 (`RTCRtpScriptTransform`, `createEncodedStreams` fallback on Chrome) to every sender and receiver `MediaService`
-creates — before any frame flows. Frame layout: `[clear header][ciphertext + tag][counter 8 B][keyIndex 1 B]`; the
-VP8 payload header (10 bytes on keyframes, 3 otherwise) stays in the clear so the SFU can forward and switch layers;
-Opus has none. Every video transceiver prefers VP8; other codecs are dropped, never sent raw. Frames without a key
+creates — before any frame flows. Frame layout (v2):
+`[clear header][ciphertext + tag][counter 8 B][codec 1 B][keyIndex 1 B]`, the codec byte authenticated so the SFU
+can't relabel a frame. The VP8 payload header (10 bytes on keyframes, 3 otherwise) stays in the clear so the SFU can
+forward and switch layers; VP9 and Opus have none. AV1 keeps its OBU structure (each OBU's header and size clear,
+its payload encrypted; the trailer inside the last OBU) because Chrome's packetizer splits frames by OBU. Every
+video transceiver negotiates only the call's codec; anything else is dropped, never sent raw. Frames without a key
 are dropped on both sides. Browsers without encoded transforms or Ed25519/X25519 can't join; there's no plaintext
 fallback.
 
@@ -136,6 +140,17 @@ the frame worker's key interface stays the same.
   ([`observability.md`](observability.md)).
 - Debug: `?e2ee=passthrough` makes one browser skip decrypting what it receives (others look broken there) — a
   check that the SFU carries ciphertext; what it sends stays encrypted.
+
+## Video codecs
+
+Design: [`plans/2026-10-08-video-compression-design.md`](plans/2026-10-08-video-compression-design.md). Users pick
+VP9 (default, ~⅓ fewer bytes than VP8), AV1 (experimental) or VP8 in the ⋯ menu; it's remembered per browser.
+Each participant tells the others what it can decode (`videoCodecs` in `JoinRoom`), and each sender picks its codec
+when it joins: its choice if everyone can decode it, else VP9, else VP8. Cloudflare doesn't forward a codec change on
+a published track, so changing it — or someone joining who can't decode it — makes that sender rejoin (~1–2 s).
+VP9/AV1 layers are sent with `scalabilityMode: L1T3` (otherwise Chrome sends VP9 as one SVC stream, AV1 as one layer).
+AV1 is experimental: Cloudflare drops its Dependency Descriptor and can't read our encrypted payload, so a viewer
+that dropped to a lower simulcast layer never switches back up.
 
 ## Media path — free, no public IP
 

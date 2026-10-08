@@ -16,6 +16,7 @@ import { NzIconModule } from 'ng-zorro-antd/icon';
 import { NzMessageService } from 'ng-zorro-antd/message';
 import { CryptoService } from '../../core/crypto/crypto.service';
 import { MediaService } from '../../core/media/media.service';
+import { VideoCodec } from '../../core/media/codecs';
 import { CallParticipant } from '../../core/media/media.types';
 import { VideoQuality } from '../../core/media/quality';
 import { SignalingService } from '../../core/signaling/signaling.service';
@@ -110,6 +111,11 @@ export class Room implements OnInit, OnDestroy {
       this.lastSafetyCode = current;
     });
 
+    // Someone joined who can't decode the codec we send: rejoin, which picks one everyone can play.
+    effect(() => {
+      if (this.joined() && this.media.codecUnsupported()) untracked(() => void this.rejoin());
+    });
+
     // Lost the media connection (ICE restarts gave up) or the signaling connection: rejoin from scratch.
     effect(() => {
       if (!this.joined()) return;
@@ -169,6 +175,13 @@ export class Room implements OnInit, OnDestroy {
     }
   }
 
+  /** A different codec takes effect by rejoining: Cloudflare can't switch codecs on a published track. */
+  protected async setCodec(codec: VideoCodec): Promise<void> {
+    if (!this.media.setVideoCodec(codec)) return;
+    this.rejoinAttempts = 0;
+    await this.rejoin();
+  }
+
   protected async copyLink(): Promise<void> {
     try {
       // navigator.clipboard is undefined on plain-HTTP LAN origins.
@@ -205,7 +218,12 @@ export class Room implements OnInit, OnDestroy {
       const roomId = this.roomId();
       // Fails before joining when this browser can't encrypt: nobody ever sees us join unencrypted.
       const identity = await this.crypto.identityBundle(roomId);
-      const { selfId } = await this.signaling.joinRoom(roomId, displayName, identity);
+      const { selfId } = await this.signaling.joinRoom(
+        roomId,
+        displayName,
+        identity,
+        this.media.decodableCodecs,
+      );
       const frames = await this.crypto.start(roomId, selfId);
       this.media.connect(await this.signaling.getRtcConfig(), { id: selfId, displayName }, frames);
       this.joined.set(true);

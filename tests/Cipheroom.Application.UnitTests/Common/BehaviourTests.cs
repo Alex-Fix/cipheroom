@@ -9,7 +9,7 @@ namespace Cipheroom.Application.UnitTests.Common;
 
 public sealed class BehaviourTests
 {
-    private static readonly JoinRoomCommand Secretive = new("conn", "room-1", "Very Private Name", TestIdentity.Input);
+    private static readonly JoinRoomCommand Secretive = new("conn", "room-1", "Very Private Name", TestIdentity.Input, TestIdentity.Codecs);
 
     [Fact]
     public async Task Validation_failure_stops_before_the_handler()
@@ -19,7 +19,7 @@ public sealed class BehaviourTests
         var handlerCalled = false;
 
         var error = await Assert.ThrowsAsync<ValidationException>(async () => await behaviour.Handle(
-            new JoinRoomCommand("conn", "BAD", "Alice", TestIdentity.Input),
+            new JoinRoomCommand("conn", "BAD", "Alice", TestIdentity.Input, TestIdentity.Codecs),
             (_, _) => { handlerCalled = true; return ValueTask.FromResult<JoinRoomResult>(null!); },
             TestContext.Current.CancellationToken));
 

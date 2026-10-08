@@ -27,7 +27,7 @@ public sealed class CallStatsHubTests(WebApplicationFactory<Program> factory) : 
     public async Task Participants_can_report_call_quality()
     {
         await using var connection = await ConnectAsync();
-        await connection.InvokeAsync<JoinResult>("JoinRoom", "stats-1", "Alice", TestIdentity.Dto, Ct);
+        await connection.InvokeAsync<JoinResult>("JoinRoom", "stats-1", "Alice", TestIdentity.Dto, TestIdentity.Codecs, Ct);
 
         await connection.InvokeAsync("ReportCallStats", Report, Ct);
     }
@@ -38,7 +38,7 @@ public sealed class CallStatsHubTests(WebApplicationFactory<Program> factory) : 
         await using var connection = await ConnectAsync();
         await AssertHubErrorAsync("Join a room first.", () => connection.InvokeAsync("ReportCallStats", Report, Ct));
 
-        await connection.InvokeAsync<JoinResult>("JoinRoom", "stats-2", "Alice", TestIdentity.Dto, Ct);
+        await connection.InvokeAsync<JoinResult>("JoinRoom", "stats-2", "Alice", TestIdentity.Dto, TestIdentity.Codecs, Ct);
         await AssertHubErrorAsync("Invalid stats.", () => connection.InvokeAsync("ReportCallStats", Report with { IntervalSeconds = 0 }, Ct));
         await AssertHubErrorAsync("Invalid stats.", () =>
             connection.InvokeAsync("ReportCallStats", Report with { VideoReceived = Report.VideoReceived! with { Height = 99_999 } }, Ct));

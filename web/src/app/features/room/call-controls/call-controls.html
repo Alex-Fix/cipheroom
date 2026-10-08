@@ -108,6 +108,35 @@
         }
       </ul>
     </li>
+    @if (codecs().length > 1) {
+      <li nz-menu-divider></li>
+      <li nz-menu-group nzTitle="Video codec">
+        <ul>
+          @for (c of codecs(); track c) {
+            <li
+              nz-menu-item
+              class="codec-item"
+              [attr.aria-checked]="c === codec()"
+              role="menuitemradio"
+              (click)="selectCodec.emit(c)"
+            >
+              <span class="check" aria-hidden="true">
+                @if (c === codec()) {
+                  <nz-icon nzType="check" />
+                }
+              </span>
+              {{ codecLabels[c] }}
+            </li>
+          }
+          @if (sendingCodec() && sendingCodec() !== codec()) {
+            <li nz-menu-item nzDisabled class="codec-note">
+              Sending {{ codecNames[sendingCodec()!] }}: not everyone here can play
+              {{ codecNames[codec()] }}
+            </li>
+          }
+        </ul>
+      </li>
+    }
   </ul>
 </nz-dropdown-menu>
 

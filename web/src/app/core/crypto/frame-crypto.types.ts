@@ -1,5 +1,5 @@
 // Messages between the page (FrameCrypto) and frame-crypto.worker.ts.
-import { MediaKind } from './frame-codec';
+import { MediaKind, VideoFrameCodec } from './frame-codec';
 
 export type EncodedFrame = RTCEncodedVideoFrame | RTCEncodedAudioFrame;
 
@@ -13,6 +13,8 @@ export interface TransformOptions {
   participantId?: string;
   /** Debug (`?e2ee=passthrough`): receive without decrypting, to prove the SFU carries ciphertext. */
   passThrough?: boolean;
+  /** Video senders: the negotiated codec, for browsers that don't report it per frame. */
+  videoCodec?: VideoFrameCodec;
 }
 
 /** Page → worker. Sender keys are transferred (the page's buffer is detached), never copied. */
