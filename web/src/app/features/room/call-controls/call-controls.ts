@@ -14,10 +14,7 @@ const QUALITY_LABELS: Record<VideoQuality, string> = {
   '720p': '720p',
 };
 
-const CODEC_NAMES: Record<VideoCodec, string> = { vp9: 'VP9', av1: 'AV1', vp8: 'VP8' };
-
-/** AV1: Cloudflare can't switch viewers back up to a sharper layer (docs/plans/…-video-compression-design.md). */
-const CODEC_LABELS: Record<VideoCodec, string> = { ...CODEC_NAMES, av1: 'AV1 (experimental)' };
+const CODEC_NAMES: Record<VideoCodec, string> = { vp9: 'VP9', vp8: 'VP8' };
 
 /** Bottom call control bar. Presentational: state in, intents out. */
 @Component({
@@ -58,6 +55,5 @@ export class CallControls {
   readonly leave = output();
 
   protected readonly qualityLabels = QUALITY_LABELS;
-  protected readonly codecLabels = CODEC_LABELS;
   protected readonly codecNames = CODEC_NAMES;
 }

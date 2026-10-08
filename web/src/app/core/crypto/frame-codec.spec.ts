@@ -29,49 +29,6 @@ function vp8Frame(keyframe: boolean, length = 64): Uint8Array<ArrayBuffer> {
   return frame;
 }
 
-/** OBU header byte: type in bits 6–3, extension flag 0x04, has-size flag 0x02. */
-const obuHeader = (type: number, { size = true, extension = false } = {}) =>
-  (type << 3) | (extension ? 0x04 : 0) | (size ? 0x02 : 0);
-
-/** Temporal delimiter, sequence header, and a frame OBU with an extension byte and a 200-byte payload. */
-function av1Frame(): Uint8Array<ArrayBuffer> {
-  const sequence = crypto.getRandomValues(new Uint8Array(12));
-  const payload = crypto.getRandomValues(new Uint8Array(200));
-  return new Uint8Array([
-    obuHeader(2),
-    0x00,
-    obuHeader(1),
-    sequence.byteLength,
-    ...sequence,
-    obuHeader(6, { extension: true }),
-    0x08,
-    0xc8,
-    0x01,
-    ...payload, // leb128(200) = c8 01
-  ]);
-}
-
-/** OBU (header, payload) pairs, as a receiver-side parser would see them. */
-function obus(frame: Uint8Array): { header: number; payload: Uint8Array }[] {
-  const out = [];
-  let offset = 0;
-  while (offset < frame.byteLength) {
-    const header = frame[offset];
-    offset += header & 0x04 ? 2 : 1;
-    let size = 0;
-    let shift = 0;
-    for (;;) {
-      const byte = frame[offset++];
-      size += (byte & 0x7f) << shift;
-      shift += 7;
-      if (!(byte & 0x80)) break;
-    }
-    out.push({ header, payload: frame.subarray(offset, offset + size) });
-    offset += size;
-  }
-  return out;
-}
-
 describe('frame codec', () => {
   it('keeps the VP8 payload header in the clear (10 bytes on keyframes, 3 on delta frames), nothing else', () => {
     expect(clearHeaderBytes('vp8', vp8Frame(true))).toBe(10);
@@ -97,68 +54,6 @@ describe('frame codec', () => {
     expect(frameKeyIndex(encrypted)).toBe(3);
     expect(encryptedFrameCodec(encrypted)).toBe(codec);
     expect(await decryptFrame(encrypted, key, any)).toEqual(frame);
-  });
-
-  describe('AV1', () => {
-    it('keeps the OBU structure: headers clear, payloads encrypted, trailer at the end of the last OBU', async () => {
-      const frame = av1Frame();
-      const encrypted = await encryptFrame('av1', frame, await aesKey(), 5, 9n);
-
-      const before = obus(frame);
-      const after = obus(encrypted);
-      expect(after.map((o) => o.header)).toEqual(before.map((o) => o.header));
-      expect(after[0].payload.byteLength).toBe(0); // temporal delimiter untouched
-      expect(after[1].payload.byteLength).toBe(12 + TAG_BYTES);
-      expect(after[2].payload.byteLength).toBe(200 + TAG_BYTES + TRAILER_BYTES);
-      expect(after[2].payload.subarray(0, 200)).not.toEqual(before[2].payload);
-      expect(frameKeyIndex(encrypted)).toBe(5);
-      expect(encryptedFrameCodec(encrypted)).toBe('av1');
-    });
-
-    it('round-trips', async () => {
-      const key = await aesKey();
-      const frame = av1Frame();
-      expect(await decryptFrame(await encryptFrame('av1', frame, key, 0, 1n), key, any)).toEqual(
-        frame,
-      );
-    });
-
-    it('still decrypts when the packetizer dropped the temporal delimiter (OBU index skips empty OBUs)', async () => {
-      const key = await aesKey();
-      const frame = av1Frame();
-      const encrypted = await encryptFrame('av1', frame, key, 0, 1n);
-
-      expect(await decryptFrame(encrypted.slice(2), key, any)).toEqual(frame.slice(2));
-    });
-
-    it('still decrypts when the last OBU arrives without a size field', async () => {
-      const key = await aesKey();
-      const frame = new Uint8Array([obuHeader(6), 0x05, 1, 2, 3, 4, 5]);
-      const encrypted = await encryptFrame('av1', frame, key, 0, 1n);
-      const withoutSize = new Uint8Array([obuHeader(6, { size: false }), ...encrypted.subarray(2)]);
-
-      expect(await decryptFrame(withoutSize, key, any)).toEqual(frame);
-    });
-
-    it('rejects a tampered OBU header or payload', async () => {
-      const key = await aesKey();
-      const encrypted = await encryptFrame('av1', av1Frame(), key, 0, 7n);
-      for (const index of [2, 4, 40]) {
-        const tampered = encrypted.slice();
-        tampered[index] ^= 0x08;
-        await expect(decryptFrame(tampered, key, any)).rejects.toThrow();
-      }
-    });
-
-    it('refuses frames it can’t parse or that have nothing to carry the trailer', async () => {
-      const key = await aesKey();
-      await expect(
-        encryptFrame('av1', new Uint8Array([obuHeader(6), 0x40]), key, 0, 0n),
-      ).rejects.toThrow();
-      await expect(
-        encryptFrame('av1', new Uint8Array([obuHeader(2), 0x00]), key, 0, 0n),
-      ).rejects.toThrow();
-    });
   });
 
   it('uses a different IV per counter', async () => {
@@ -202,6 +97,21 @@ describe('frame codec', () => {
     await expect(decryptFrame(encrypted, await aesKey(), any)).rejects.toThrow();
   });
 
+  it('rejects codec byte 3 (reserved: it was AV1)', async () => {
+    const key = await aesKey();
+    const encrypted = await encryptFrame(
+      'vp9',
+      crypto.getRandomValues(new Uint8Array(64)),
+      key,
+      0,
+      7n,
+    );
+    encrypted[encrypted.byteLength - 2] = 3;
+
+    expect(encryptedFrameCodec(encrypted)).toBeUndefined();
+    await expect(decryptFrame(encrypted, key, any)).rejects.toThrow('Unexpected frame codec.');
+  });
+
   it('rejects frames too short to be encrypted, or with an unknown codec byte', async () => {
     const short = new Uint8Array(TAG_BYTES + TRAILER_BYTES - 1);
     expect(frameKeyIndex(short)).toBeUndefined();
@@ -212,10 +122,10 @@ describe('frame codec', () => {
     expect(encryptedFrameCodec(unknown)).toBeUndefined();
   });
 
-  it('maps reported codecs to layouts: VP8, VP9, AV1 and Opus only', () => {
+  it('maps reported codecs to layouts: VP8, VP9 and Opus only', () => {
     expect(frameCodecOf('video', 'video/VP8')).toBe('vp8');
     expect(frameCodecOf('video', 'video/VP9')).toBe('vp9');
-    expect(frameCodecOf('video', 'video/AV1')).toBe('av1');
+    expect(frameCodecOf('video', 'video/AV1')).toBeUndefined();
     expect(frameCodecOf('video', 'video/H264')).toBeUndefined();
     expect(frameCodecOf('audio', 'audio/opus')).toBe('audio');
     expect(frameCodecOf('audio', 'audio/PCMU')).toBeUndefined();
@@ -223,7 +133,7 @@ describe('frame codec', () => {
 
   it('uses the negotiated codec when the browser doesn’t report one', () => {
     expect(frameCodecOf('video', undefined)).toBe('vp8');
-    expect(frameCodecOf('video', undefined, 'av1')).toBe('av1');
+    expect(frameCodecOf('video', undefined, 'vp9')).toBe('vp9');
     expect(frameCodecOf('audio', undefined)).toBe('audio');
   });
 });

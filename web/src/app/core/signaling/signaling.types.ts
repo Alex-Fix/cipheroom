@@ -24,7 +24,7 @@ export interface ParticipantDto {
   displayName: string;
   tracks: TrackDto[];
   identity: IdentityDto;
-  /** Video codecs this participant can decode, among `vp8` (always), `vp9`, `av1`. */
+  /** Video codecs this participant can decode, among `vp8` (always), `vp9`. */
   videoCodecs: string[];
 }
 

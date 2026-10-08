@@ -129,17 +129,18 @@ public sealed class RoomHubTests(WebApplicationFactory<Program> factory) : IClas
         var joined = Channel.CreateUnbounded<ParticipantDto>();
         alice.On<ParticipantDto>("ParticipantJoined", p => joined.Writer.TryWrite(p));
 
-        await alice.InvokeAsync<JoinResult>("JoinRoom", "room-codecs", "Alice", TestIdentity.Dto, "av1,vp8".Split(','), Ct);
-        var bobJoin = await bob.InvokeAsync<JoinResult>("JoinRoom", "room-codecs", "Bob", TestIdentity.Dto, "vp8,vp9".Split(','), Ct);
+        await alice.InvokeAsync<JoinResult>("JoinRoom", "room-codecs", "Alice", TestIdentity.Dto, "vp9,vp8".Split(','), Ct);
+        var bobJoin = await bob.InvokeAsync<JoinResult>("JoinRoom", "room-codecs", "Bob", TestIdentity.Dto, "vp8".Split(","), Ct);
 
         // Canonical order, whatever order the client sent.
-        Assert.Equal(["vp8", "av1"], Assert.Single(bobJoin.Participants).VideoCodecs);
-        Assert.Equal(["vp8", "vp9"], (await joined.Reader.ReadAsync(Timeout())).VideoCodecs);
+        Assert.Equal(["vp8", "vp9"], Assert.Single(bobJoin.Participants).VideoCodecs);
+        Assert.Equal(["vp8"], (await joined.Reader.ReadAsync(Timeout())).VideoCodecs);
     }
 
     [Theory]
     [InlineData("vp9")]
     [InlineData("vp8,h264")]
+    [InlineData("vp8,av1")]
     public async Task Invalid_video_codecs_are_rejected(string codecs)
     {
         await using var connection = await ConnectAsync();

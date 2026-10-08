@@ -91,9 +91,8 @@ lives in `web/src/app/core/crypto/` (WebCrypto only); the api only relays public
 creates — before any frame flows. Frame layout (v2):
 `[clear header][ciphertext + tag][counter 8 B][codec 1 B][keyIndex 1 B]`, the codec byte authenticated so the SFU
 can't relabel a frame. The VP8 payload header (10 bytes on keyframes, 3 otherwise) stays in the clear so the SFU can
-forward and switch layers; VP9 and Opus have none. AV1 keeps its OBU structure (each OBU's header and size clear,
-its payload encrypted; the trailer inside the last OBU) because Chrome's packetizer splits frames by OBU. Every
-video transceiver negotiates only the call's codec; anything else is dropped, never sent raw. Frames without a key
+forward and switch layers; VP9 and Opus have none (codec byte 3, formerly AV1, is reserved). Every video
+transceiver negotiates only the call's codec; anything else is dropped, never sent raw. Frames without a key
 are dropped on both sides. Browsers without encoded transforms or Ed25519/X25519 can't join; there's no plaintext
 fallback.
 
@@ -143,14 +142,14 @@ the frame worker's key interface stays the same.
 
 ## Video codecs
 
-Design: [`plans/2026-10-08-video-compression-design.md`](plans/2026-10-08-video-compression-design.md). Users pick
-VP9 (default, ~⅓ fewer bytes than VP8), AV1 (experimental) or VP8 in the ⋯ menu; it's remembered per browser.
-Each participant tells the others what it can decode (`videoCodecs` in `JoinRoom`), and each sender picks its codec
-when it joins: its choice if everyone can decode it, else VP9, else VP8. Cloudflare doesn't forward a codec change on
-a published track, so changing it — or someone joining who can't decode it — makes that sender rejoin (~1–2 s).
-VP9/AV1 layers are sent with `scalabilityMode: L1T3` (otherwise Chrome sends VP9 as one SVC stream, AV1 as one layer).
-AV1 is experimental: Cloudflare drops its Dependency Descriptor and can't read our encrypted payload, so a viewer
-that dropped to a lower simulcast layer never switches back up.
+Designs: [`plans/2026-10-08-video-compression-design.md`](plans/2026-10-08-video-compression-design.md),
+[`plans/2026-10-08-remove-av1-design.md`](plans/2026-10-08-remove-av1-design.md). Users pick VP9 (default, ~⅓ fewer
+bytes than VP8) or VP8 in the ⋯ menu; it's remembered per browser. Each participant tells the others what it can
+decode (`videoCodecs` in `JoinRoom`), and each sender picks its codec when it joins: its choice if everyone can
+decode it, else VP8. Cloudflare doesn't forward a codec change on a published track, so changing it — or someone
+joining who can't decode it — makes that sender rejoin (~1–2 s). VP9 layers are sent with `scalabilityMode: L1T3`
+(otherwise Chrome sends VP9 as one SVC stream). AV1 was removed: with Cloudflare dropping its Dependency Descriptor
+and our encrypted payload, a viewer that dropped to a lower simulcast layer never switched back up.
 
 ## Media path — free, no public IP
 

@@ -30,9 +30,8 @@ describe('video quality', () => {
 
   it('needs fewer bits with more efficient codecs', () => {
     expect(bitrateFor(1080, 'vp9')).toBe(1_950_000);
-    expect(bitrateFor(1080, 'av1')).toBe(1_500_000);
-    expect(cameraEncodings(720, 'av1').map((e) => e.maxBitrate)).toEqual([
-      750_000, 250_000, 100_000,
+    expect(cameraEncodings(720, 'vp9').map((e) => e.maxBitrate)).toEqual([
+      975_000, 325_000, 130_000,
     ]);
   });
 

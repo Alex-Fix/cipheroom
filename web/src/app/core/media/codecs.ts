@@ -1,20 +1,20 @@
 /**
- * Video codec choice (design: docs/plans/2026-10-08-video-compression-design.md). Every frame is end-to-end
+ * Video codec choice (designs: docs/plans/2026-10-08-video-compression-design.md, …-remove-av1-design.md). Every
+ * frame is end-to-end
  * encrypted whatever the codec (see crypto/frame-codec.ts); the codec only changes how many bytes a picture costs.
  *
  * - VP9 (default): ~⅓ fewer bytes than VP8 for the same picture, decoded by every modern browser.
- * - AV1 (experimental): fewer still, but Cloudflare can't switch a viewer back up to a sharper simulcast layer
- *   once it dropped to a lower one (it ignores AV1's Dependency Descriptor and can't read our encrypted payload).
  * - VP8: the baseline every client decodes.
+ * AV1 was removed: Cloudflare can't switch a viewer back up to a sharper simulcast layer with it.
  *
  * Cloudflare doesn't forward a codec change on a published track, so the codec is chosen when we join, from who's
  * in the call; changing it (or a newcomer who can't decode it) means rejoining.
  */
 
-export type VideoCodec = 'vp9' | 'av1' | 'vp8';
+export type VideoCodec = 'vp9' | 'vp8';
 
 /** Picker order. */
-export const VIDEO_CODECS: readonly VideoCodec[] = ['vp9', 'av1', 'vp8'];
+export const VIDEO_CODECS: readonly VideoCodec[] = ['vp9', 'vp8'];
 
 export const DEFAULT_VIDEO_CODEC: VideoCodec = 'vp9';
 
@@ -22,7 +22,7 @@ export const DEFAULT_VIDEO_CODEC: VideoCodec = 'vp9';
 const FALLBACKS: readonly VideoCodec[] = ['vp9', 'vp8'];
 
 /** Wire order of `videoCodecs` in JoinRoom / ParticipantDto. */
-const WIRE_ORDER: readonly VideoCodec[] = ['vp8', 'vp9', 'av1'];
+const WIRE_ORDER: readonly VideoCodec[] = ['vp8', 'vp9'];
 
 /** A codec capability as RTCRtpSender/RTCRtpReceiver.getCapabilities report it. */
 export interface CodecCapability {
@@ -93,9 +93,8 @@ export function codecPreferences(
 }
 
 /**
- * Scalability mode for each simulcast layer: VP9 and AV1 need an explicit single-spatial-layer mode, or Chrome
- * turns our three encodings into one SVC stream (VP9) or a single layer (AV1) that Cloudflare's rid-based layer
- * selection can't use. Chrome doesn't list scalability modes in getCapabilities, so this is always asked for;
+ * Scalability mode for each simulcast layer: VP9 needs an explicit single-spatial-layer mode, or Chrome turns our
+ * three encodings into one SVC stream that Cloudflare's rid-based layer selection can't use. Chrome doesn't list scalability modes in getCapabilities, so this is always asked for;
  * browsers that reject it get the encodings without it (MediaService).
  */
 export function simulcastScalabilityMode(codec: VideoCodec): string | undefined {

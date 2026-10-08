@@ -1,6 +1,9 @@
 # Video compression (AV1 / VP9) — design
 Status: approved, revised after the spike (see "Revision") · Date: 2026-10-08
 
+> **Superseded in part:** AV1 was removed afterwards — see `2026-10-08-remove-av1-design.md`. The AV1 spike notes
+> below are kept in case it comes back.
+
 ## Revision (after the spike)
 
 - **User picks the codec:** ⋯ menu "Video codec" — VP9 (default), AV1 (experimental), VP8; remembered per browser.
