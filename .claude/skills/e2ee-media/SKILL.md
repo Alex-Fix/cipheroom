@@ -11,8 +11,18 @@ key, frame, or chat message.**
 ## Who does what
 Design: `docs/plans/2026-10-07-e2ee-media-design.md`. Everything lives in `web/src/app/core/crypto/`:
 - `crypto.service.ts` — **the boundary** (provided per room route): per-call identity, our sender keys and rotation,
-  incoming envelopes, the worker's keyring, `safetyCode` / `secured` / `unverified` signals. `start(roomId, selfId)`
-  after JoinRoom returns the frame transforms for MediaService; `stop()` ends the session (identity kept for rejoin).
+  incoming envelopes and names, the worker's keyring, `safetyCode` / `secured` / `unverified` / `names` signals, and
+  the room's verified `authority` (host proof, signing and verifying tickets, grants, removals, settings, mute and
+  end; sealing/opening knocks). `start(roomId, selfId, name)` after admission returns the frame transforms for
+  MediaService; `stop()` ends the session (identity kept for rejoin).
+- `host-key.ts` / `host-key-store.ts` / `host-key-backup.ts` / `host-keys.service.ts` — meetings' host keys: room id
+  derivation, non-extractable IndexedDB storage, the one-time PBKDF2 + AES-GCM backup file. Components only see room
+  ids and the encrypted file (`HostKeysService`).
+- `statements.ts` — admission statements (labels `cipheroom/{host,cohost,ticket,revoke,settings,end,mute}/v1`),
+  `verifyAuthority`, `isAdmitted`. Byte-identical to the api's `AdmissionMessages`, pinned by
+  `tests/fixtures/admission-vectors.json`.
+- `knock.ts` — a lobby guest's name encrypted to one admitter; `names.ts` — name padding; `agreement.ts` — the
+  X25519 → HKDF step shared by envelopes and knocks.
 - `identity.ts` — per-call Ed25519 + X25519 (non-extractable, memory only), self-signed bundle, `verifyIdentity`.
 - `envelopes.ts` — `sealEnvelope` / `openEnvelope` with typed rejections.
 - `safety-code.ts` — 4 named emoji + 8 digits; `SAFETY_EMOJI` order is part of the format.
@@ -36,18 +46,21 @@ Design: `docs/plans/2026-10-07-e2ee-media-design.md`. Everything lives in `web/s
 - No key → drop (send and receive). Missing key arrives → keyframe request; 10 failures in a row → keyframe request.
 - Unsupported browser (no encoded transforms / Ed25519 / X25519) → can't join; never fall back to plaintext.
 
-## Envelope format (v1)
+## Envelope format (v2)
 ```
-blob = base64url(JSON { v: 1, roomId, epoch, keyIndex, fromId, toId, eph, iv, ct, sig })   ~550 chars, ≤ 1 KB
+blob = base64url(JSON { v: 2, roomId, epoch, keyIndex, fromId, toId, eph, iv, ct, sig })   ~1,000 chars, ≤ 2 KB
 k    = HKDF-SHA-256(X25519(eph, recipient x25519), salt = roomId, info = "cipheroom/env/v1")
 aad  = fields("cipheroom/env-header/v1", roomId, epoch, keyIndex, fromId, toId)
-ct   = AES-GCM(k, iv, aad, senderKey)
+ct   = AES-GCM(k, iv, aad, senderKey ‖ padded name)        (names.ts: 2-byte length + UTF-8, zero-padded to 258 B)
 sig  = Ed25519(sender identity, fields("cipheroom/env-sig/v1", aad, eph, iv, ct))
 ```
 - `keyIndex = epoch mod 16`. Check the signature first (against the identity shown in the call), then: room,
   inner `fromId` = relayed `fromId`, `toId` = self, epoch > last accepted from that sender.
 
 ## Rotation
+- Envelopes go to (and are accepted from) participants whose bundle verifies **and** who are admitted: attested by
+  the host key, or holding a ticket from a host or co-host, and not revoked. A verified revocation drops that
+  participant's keys at once and rotates without them.
 - On every join and leave (debounced 300 ms): new random key, `epoch + 1`, one envelope per *verified* participant
   in one `SendKeyEnvelopes` call, switch 500 ms after the server accepted it — at once if sending failed (a leaver
   must never keep reading). The very first key is used immediately.
@@ -59,6 +72,11 @@ sig  = Ed25519(sender identity, fields("cipheroom/env-sig/v1", aad, eph, iv, ct)
 - [ ] Private keys created with `extractable: false`.
 - [ ] Can't join/publish if E2EE setup fails — no silent unencrypted fallback.
 - [ ] Every envelope signature verified before use; identities that don't verify get no keys and are flagged.
+- [ ] Keys only for admitted participants (host attestation or ticket from a host/co-host, not revoked); every new
+      signed statement has its own `cipheroom/<name>/v1` label, includes the room id, and is added to the shared
+      vectors so the api and browser encode the same bytes.
+- [ ] Display names only inside encrypted, padded payloads (knocks, envelopes) — never in SignalR plaintext fields.
+- [ ] Host keys non-extractable at rest; the exportable copy only in memory until the one-time backup or skip.
 - [ ] Safety code recomputed and shown whenever participant set changes.
 - [ ] No SFU data channels for app data (chat goes over SignalR, encrypted) — they're outside our key management.
 - [ ] Every sender and receiver `MediaService` creates gets the transform before media flows (incl. placeholder and

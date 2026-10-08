@@ -8,16 +8,21 @@ import {
 import { withTrackMuted, withTracksPublished, withTracksUnpublished } from './participants';
 import {
   AnswerDto,
+  AuthorityDto,
   CallStatsDto,
   ClientEvents,
+  HostProofDto,
   HubMethods,
   IdentityDto,
-  JoinResult,
   KeyEnvelopeDto,
+  KnockDto,
+  LobbyGuestDto,
+  LobbyResult,
   ParticipantDto,
   PublishTrackDto,
   RtcConfig,
   SubscribeResult,
+  TicketDto,
   TrackDto,
   TrackRefDto,
   TrackSource,
@@ -28,9 +33,25 @@ import {
 export type KeyEnvelopeListener = (fromId: string, blob: string) => void;
 
 /**
- * All signaling over SignalR: rooms, media negotiation with the SFU (the api relays SDP to Cloudflare) and E2EE key
- * envelopes (opaque to the api). The api never sees media or keys. `participants` mirrors the room, including who
- * publishes which tracks and everyone's public identity.
+ * Lobby and host-control events (server → us). Signed ones (`muteRequested`, `callEnded`) must be verified by
+ * CryptoService before anyone acts on them.
+ */
+export type LobbyEvent =
+  | { type: 'knock'; guest: LobbyGuestDto; blob: string }
+  | { type: 'lobbyLeft'; guestId: string }
+  | { type: 'admitted'; result: LobbyResult }
+  | { type: 'denied' }
+  | { type: 'removed' }
+  | { type: 'muteRequested'; fromId: string; seq: number; sig: string }
+  | { type: 'callEnded'; issuer: string; sig: string };
+
+export type LobbyEventListener = (event: LobbyEvent) => void;
+
+/**
+ * All signaling over SignalR: the lobby and host controls, rooms, media negotiation with the SFU (the api relays SDP
+ * to Cloudflare) and E2EE key envelopes and knocks (opaque to the api). The api never sees media, keys or names.
+ * `participants` mirrors the room (who publishes which tracks, everyone's public identity and ticket); `authority`
+ * is the room's signed chain of authority as the server relays it (CryptoService verifies it).
  */
 @Injectable({ providedIn: 'root' })
 export class SignalingService {
@@ -38,26 +59,67 @@ export class SignalingService {
 
   readonly connected = signal(false);
   readonly participants = signal<ParticipantDto[]>([]);
+  readonly authority = signal<AuthorityDto | undefined>(undefined);
   private readonly keyEnvelopeListeners = new Set<KeyEnvelopeListener>();
+  private readonly lobbyListeners = new Set<LobbyEventListener>();
 
-  /** `identity`: our public keys for this call (from CryptoService); required — there are no unencrypted joins. */
-  /** `videoCodecs`: what this browser can decode (others pick a codec we can play). */
-  async joinRoom(
+  /**
+   * Enters a room: straight in with a host proof or a ticket from earlier in this call, otherwise into the lobby
+   * (`admitted: false`) until an admitter lets us in (`admitted` event). `identity`: our public keys for this call —
+   * required, there are no unencrypted joins. `videoCodecs`: what this browser can decode.
+   */
+  async joinLobby(
     roomId: string,
-    displayName: string,
     identity: IdentityDto,
     videoCodecs: readonly string[],
-  ): Promise<JoinResult> {
+    hostProof: HostProofDto | null,
+    ticket: TicketDto | null,
+  ): Promise<LobbyResult> {
     const connection = await this.ensureConnected();
-    const result = await connection.invoke<JoinResult>(
-      HubMethods.JoinRoom,
+    const result = await connection.invoke<LobbyResult>(
+      HubMethods.JoinLobby,
       roomId,
-      displayName,
       identity,
       videoCodecs,
+      hostProof,
+      ticket,
     );
+    this.authority.set(result.authority);
     this.participants.set(result.participants);
     return result;
+  }
+
+  /** From the lobby: our name, encrypted to each admitter. */
+  async knock(knocks: KnockDto[]): Promise<void> {
+    await this.invoke(HubMethods.Knock, knocks);
+  }
+
+  async admit(guestId: string, ticket: string): Promise<void> {
+    await this.invoke(HubMethods.Admit, guestId, ticket);
+  }
+
+  async deny(guestId: string): Promise<void> {
+    await this.invoke(HubMethods.Deny, guestId);
+  }
+
+  async grantCoHost(participantId: string, grant: string): Promise<void> {
+    await this.invoke(HubMethods.GrantCoHost, participantId, grant);
+  }
+
+  async removeParticipant(participantId: string, revocation: string): Promise<void> {
+    await this.invoke(HubMethods.RemoveParticipant, participantId, revocation);
+  }
+
+  async updateSettings(seq: number, autoAdmit: boolean, sig: string): Promise<void> {
+    await this.invoke(HubMethods.UpdateSettings, seq, autoAdmit, sig);
+  }
+
+  async askToMute(participantId: string, seq: number, sig: string): Promise<void> {
+    await this.invoke(HubMethods.AskToMute, participantId, seq, sig);
+  }
+
+  async endCall(sig: string): Promise<void> {
+    await this.invoke(HubMethods.EndCall, sig);
   }
 
   async getRtcConfig(): Promise<RtcConfig> {
@@ -117,16 +179,27 @@ export class SignalingService {
     return () => this.keyEnvelopeListeners.delete(listener);
   }
 
+  /** Lobby and host-control events. Returns a function that removes the listener. */
+  onLobbyEvent(listener: LobbyEventListener): () => void {
+    this.lobbyListeners.add(listener);
+    return () => this.lobbyListeners.delete(listener);
+  }
+
   async leave(): Promise<void> {
     const connection = this.connection;
     this.connection = undefined;
     this.participants.set([]);
+    this.authority.set(undefined);
     // Stopping the connection also leaves the room server-side (OnDisconnectedAsync).
     await connection?.stop();
   }
 
   private async invoke<T = void>(method: string, ...args: unknown[]): Promise<T> {
     return (await this.ensureConnected()).invoke<T>(method, ...args);
+  }
+
+  private emit(event: LobbyEvent): void {
+    this.lobbyListeners.forEach((listener) => listener(event));
   }
 
   private async ensureConnected(): Promise<HubConnection> {
@@ -154,6 +227,28 @@ export class SignalingService {
     );
     connection.on(ClientEvents.KeyEnvelopeReceived, (fromId: string, blob: string) =>
       this.keyEnvelopeListeners.forEach((listener) => listener(fromId, blob)),
+    );
+    connection.on(ClientEvents.AuthorityUpdated, (authority: AuthorityDto) =>
+      this.authority.set(authority),
+    );
+    connection.on(ClientEvents.KnockReceived, (guest: LobbyGuestDto, blob: string) =>
+      this.emit({ type: 'knock', guest, blob }),
+    );
+    connection.on(ClientEvents.LobbyLeft, (guestId: string) =>
+      this.emit({ type: 'lobbyLeft', guestId }),
+    );
+    connection.on(ClientEvents.Admitted, (result: LobbyResult) => {
+      this.authority.set(result.authority);
+      this.participants.set(result.participants);
+      this.emit({ type: 'admitted', result });
+    });
+    connection.on(ClientEvents.Denied, () => this.emit({ type: 'denied' }));
+    connection.on(ClientEvents.Removed, () => this.emit({ type: 'removed' }));
+    connection.on(ClientEvents.MuteRequested, (fromId: string, seq: number, sig: string) =>
+      this.emit({ type: 'muteRequested', fromId, seq, sig }),
+    );
+    connection.on(ClientEvents.CallEnded, (issuer: string, sig: string) =>
+      this.emit({ type: 'callEnded', issuer, sig }),
     );
     connection.onclose(() => this.connected.set(false));
 

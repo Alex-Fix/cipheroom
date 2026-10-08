@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Http.Connections;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.AspNetCore.SignalR.Client;
+using static Cipheroom.Api.FunctionalTests.TestCall;
 
 namespace Cipheroom.Api.FunctionalTests;
 
@@ -17,43 +18,32 @@ public sealed class KeyEnvelopeHubTests(WebApplicationFactory<Program> factory) 
         .UseSetting("Turn:Cloudflare:KeyId", "")
         .UseSetting("Turn:Cloudflare:ApiToken", ""));
 
-    private static CancellationToken Ct => TestContext.Current.CancellationToken;
-
     [Fact]
     public async Task Identities_are_relayed_to_everyone_in_the_room()
     {
+        var room = new TestRoom();
         await using var alice = await ConnectAsync();
         await using var bob = await ConnectAsync();
-        var joined = Channel.CreateUnbounded<ParticipantDto>();
-        alice.On<ParticipantDto>("ParticipantJoined", p => joined.Writer.TryWrite(p));
-        var bobIdentity = TestIdentity.Dto with { X25519Pub = "QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVphYmNkZWY" };
+        var joined = Events<ParticipantDto>(alice, "ParticipantJoined");
 
-        await alice.InvokeAsync<JoinResult>("JoinRoom", "keys-1", "Alice", TestIdentity.Dto, TestIdentity.Codecs, Ct);
-        var bobJoin = await bob.InvokeAsync<JoinResult>("JoinRoom", "keys-1", "Bob", bobIdentity, TestIdentity.Codecs, Ct);
+        var host = await room.HostAsync(alice);
+        var guest = await room.AdmitAsync(host, bob);
 
-        Assert.Equal(bobIdentity, (await joined.Reader.ReadAsync(Timeout())).Identity);
-        Assert.Equal(TestIdentity.Dto, Assert.Single(bobJoin.Participants).Identity);
+        Assert.Equal(guest.Identity.Identity, (await joined.ReadAsync(Timeout())).Identity);
+        Assert.Equal(host.Identity.Identity, Assert.Single(guest.Join.Participants).Identity);
     }
 
     [Fact]
     public async Task Joining_without_a_valid_identity_is_rejected()
     {
+        var room = new TestRoom();
         await using var connection = await ConnectAsync();
         await AssertHubErrorAsync(
             "Invalid identity.",
-            () => connection.InvokeAsync<JoinResult>("JoinRoom", "keys-2", "Alice", null, TestIdentity.Codecs, Ct));
+            () => connection.InvokeAsync<LobbyResult>("JoinLobby", room.Id, null, TestIdentity.Codecs, null, null, Ct));
         await AssertHubErrorAsync(
             "Invalid identity.",
-            () => connection.InvokeAsync<JoinResult>("JoinRoom", "keys-2", "Alice", TestIdentity.Dto with { Sig = "short" }, TestIdentity.Codecs, Ct));
-    }
-
-    [Fact]
-    public async Task Clients_that_send_no_identity_argument_cannot_join()
-    {
-        await using var connection = await ConnectAsync();
-        // Pre-E2EE clients called JoinRoom(roomId, displayName): they must never end up in a call unencrypted.
-        await Assert.ThrowsAsync<HubException>(() => connection.InvokeAsync<JoinResult>("JoinRoom", "keys-3", "Old", Ct));
-        await AssertHubErrorAsync("Join a room first.", () => connection.InvokeAsync<RtcConfig>("GetRtcConfig", Ct));
+            () => connection.InvokeAsync<LobbyResult>("JoinLobby", room.Id, TestIdentity.Dto with { Sig = "short" }, TestIdentity.Codecs, null, null, Ct));
     }
 
     [Fact]
@@ -64,10 +54,7 @@ public sealed class KeyEnvelopeHubTests(WebApplicationFactory<Program> factory) 
         await using var carol = await ConnectAsync();
         var bobInbox = Inbox(bob);
         var carolInbox = Inbox(carol);
-
-        var aliceJoin = await alice.InvokeAsync<JoinResult>("JoinRoom", "keys-4", "Alice", TestIdentity.Dto, TestIdentity.Codecs, Ct);
-        var bobJoin = await bob.InvokeAsync<JoinResult>("JoinRoom", "keys-4", "Bob", TestIdentity.Dto, TestIdentity.Codecs, Ct);
-        var carolJoin = await carol.InvokeAsync<JoinResult>("JoinRoom", "keys-4", "Carol", TestIdentity.Dto, TestIdentity.Codecs, Ct);
+        var (aliceJoin, bobJoin, carolJoin) = await ThreeInARoomAsync(alice, bob, carol);
 
         await alice.InvokeAsync("SendKeyEnvelopes", new[] { new KeyEnvelopeDto(bobJoin.SelfId, "Zm9yLWJvYg") }, Ct);
         Assert.Equal((aliceJoin.SelfId, "Zm9yLWJvYg"), await bobInbox.ReadAsync(Timeout()));
@@ -86,10 +73,7 @@ public sealed class KeyEnvelopeHubTests(WebApplicationFactory<Program> factory) 
         await using var carol = await ConnectAsync();
         var bobInbox = Inbox(bob);
         var carolInbox = Inbox(carol);
-
-        await alice.InvokeAsync<JoinResult>("JoinRoom", "keys-5", "Alice", TestIdentity.Dto, TestIdentity.Codecs, Ct);
-        var bobJoin = await bob.InvokeAsync<JoinResult>("JoinRoom", "keys-5", "Bob", TestIdentity.Dto, TestIdentity.Codecs, Ct);
-        var carolJoin = await carol.InvokeAsync<JoinResult>("JoinRoom", "keys-5", "Carol", TestIdentity.Dto, TestIdentity.Codecs, Ct);
+        var (_, bobJoin, carolJoin) = await ThreeInARoomAsync(alice, bob, carol);
 
         await alice.InvokeAsync(
             "SendKeyEnvelopes",
@@ -107,8 +91,8 @@ public sealed class KeyEnvelopeHubTests(WebApplicationFactory<Program> factory) 
         await using var mallory = await ConnectAsync();
         var aliceInbox = Inbox(alice);
 
-        var aliceJoin = await alice.InvokeAsync<JoinResult>("JoinRoom", "keys-6", "Alice", TestIdentity.Dto, TestIdentity.Codecs, Ct);
-        await mallory.InvokeAsync<JoinResult>("JoinRoom", "keys-elsewhere", "Mallory", TestIdentity.Dto, TestIdentity.Codecs, Ct);
+        var aliceJoin = await new TestRoom().HostAsync(alice);
+        await new TestRoom().HostAsync(mallory);
 
         await AssertHubErrorAsync(
             "Invalid key envelope.",
@@ -124,16 +108,23 @@ public sealed class KeyEnvelopeHubTests(WebApplicationFactory<Program> factory) 
             "Join a room first.",
             () => connection.InvokeAsync("SendKeyEnvelopes", new[] { new KeyEnvelopeDto("0123456789abcdef", "aGk") }, Ct));
 
-        var join = await connection.InvokeAsync<JoinResult>("JoinRoom", "keys-7", "Alice", TestIdentity.Dto, TestIdentity.Codecs, Ct);
+        var join = await new TestRoom().HostAsync(connection);
         await AssertHubErrorAsync(
             "Invalid key envelope.",
             () => connection.InvokeAsync("SendKeyEnvelopes", new[] { new KeyEnvelopeDto(join.SelfId, "aGk") }, Ct));
         await AssertHubErrorAsync(
             "Invalid key envelope.",
-            () => connection.InvokeAsync("SendKeyEnvelopes", new[] { new KeyEnvelopeDto("0123456789abcdef", new string('A', 1025)) }, Ct));
+            () => connection.InvokeAsync("SendKeyEnvelopes", new[] { new KeyEnvelopeDto("0123456789abcdef", new string('A', 2049)) }, Ct));
         await AssertHubErrorAsync(
             "Invalid key envelope.",
             () => connection.InvokeAsync("SendKeyEnvelopes", Array.Empty<KeyEnvelopeDto>(), Ct));
+    }
+
+    private static async Task<(TestMember, TestMember, TestMember)> ThreeInARoomAsync(HubConnection alice, HubConnection bob, HubConnection carol)
+    {
+        var room = new TestRoom();
+        var host = await room.HostAsync(alice);
+        return (host, await room.AdmitAsync(host, bob), await room.AdmitAsync(host, carol));
     }
 
     private static ChannelReader<(string FromId, string Blob)> Inbox(HubConnection connection)
@@ -162,7 +153,4 @@ public sealed class KeyEnvelopeHubTests(WebApplicationFactory<Program> factory) 
         await connection.StartAsync(Ct);
         return connection;
     }
-
-    private static CancellationToken Timeout() =>
-        CancellationTokenSource.CreateLinkedTokenSource(Ct, new CancellationTokenSource(TimeSpan.FromSeconds(5)).Token).Token;
 }

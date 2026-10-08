@@ -1,4 +1,5 @@
 using Cipheroom.Application.Common.Interfaces;
+using Cipheroom.Infrastructure.Crypto;
 using Cipheroom.Infrastructure.Rooms;
 using Cipheroom.Infrastructure.Rtc;
 using Cipheroom.Infrastructure.Rtc.Cloudflare;
@@ -15,6 +16,7 @@ public static class DependencyInjection
     {
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<IRoomStore, InMemoryRoomStore>();
+        services.AddSingleton<ISignatureVerifier, Ed25519SignatureVerifier>();
 
         services.AddOptions<TurnOptions>().BindConfiguration(TurnOptions.Section).ValidateDataAnnotations().ValidateOnStart();
 

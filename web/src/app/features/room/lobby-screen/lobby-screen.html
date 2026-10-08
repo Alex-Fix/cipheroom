@@ -1,0 +1,29 @@
+<section class="lobby" [attr.data-state]="state()" role="status" aria-live="polite">
+  <nz-icon class="icon" [nzType]="copy().icon" />
+  <h2>{{ copy().title }}</h2>
+  <p>{{ copy().text }}</p>
+  <div class="actions">
+    @if (state() === 'waiting') {
+      <button nz-button nzShape="round" nzSize="large" class="cancel" (click)="cancel.emit()">
+        Cancel
+      </button>
+    } @else {
+      <button nz-button nzShape="round" nzSize="large" class="home" (click)="home.emit()">
+        Back to Home
+      </button>
+      @if (state() === 'denied') {
+        <button
+          nz-button
+          nzType="primary"
+          nzShape="round"
+          nzSize="large"
+          class="ask-again"
+          [disabled]="!canAskAgain()"
+          (click)="askAgain.emit()"
+        >
+          Ask Again
+        </button>
+      }
+    }
+  </div>
+</section>

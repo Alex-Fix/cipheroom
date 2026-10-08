@@ -1,6 +1,7 @@
 using Cipheroom.Application.Common.Exceptions;
 using Cipheroom.Application.Common.Interfaces;
 using Cipheroom.Application.Rtc.Queries.GetRtcConfig;
+using Cipheroom.Application.UnitTests.Common;
 using Cipheroom.Domain.Rooms;
 using NSubstitute;
 
@@ -26,12 +27,12 @@ public sealed class GetRtcConfigQueryTests
     [Fact]
     public async Task Returns_the_ice_servers_for_the_participant()
     {
-        var self = new Participant(ParticipantId.New(), new RoomId("room-1"), "conn", new DisplayName("Alice"), TestIdentity.Keys);
-        _rooms.FindByConnection("conn").Returns(self);
+        var rooms = new FakeRoomStore();
+        var self = rooms.Join("conn");
         IceServer[] servers = [new(["turn:x"], "u", "p")];
         _ice.GetAsync(self.Id, Arg.Any<CancellationToken>()).Returns(new IceConfig(servers, ForceRelay: true));
 
-        var result = await new GetRtcConfigQueryHandler(_rooms, _ice)
+        var result = await new GetRtcConfigQueryHandler(rooms, _ice)
             .Handle(new GetRtcConfigQuery("conn"), TestContext.Current.CancellationToken);
 
         Assert.Equal(new RtcConfigResult(servers, true), result);

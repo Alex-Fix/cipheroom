@@ -2,12 +2,14 @@ using System.Text.RegularExpressions;
 
 namespace Cipheroom.Domain.Rooms;
 
-/// <summary>Room identifier as it appears in invite links: lowercase letters, digits and dashes.</summary>
+/// <summary>
+/// Room identifier as it appears in invite links: 26 lowercase base32 characters derived from the room's host public
+/// keys (see Application <c>AdmissionMessages.RoomIdFor</c>), so the link itself says who the host is.
+/// </summary>
 public sealed partial record RoomId
 {
-    public const int MinLength = 3;
-    public const int MaxLength = 64;
-    public const string Pattern = "^[a-z0-9-]{3,64}$";
+    public const int Length = 26;
+    public const string Pattern = "^[a-z2-7]{26}$";
 
     public RoomId(string value)
     {

@@ -128,7 +128,7 @@ export class MediaService implements OnDestroy {
   readonly availableCodecs: readonly VideoCodec[] = VIDEO_CODECS.filter((c) =>
     encodableCodecs().includes(c),
   );
-  /** Codecs this browser can decode (sent with JoinRoom). */
+  /** Codecs this browser can decode (sent with JoinLobby). */
   readonly decodableCodecs: readonly string[] = decodableCodecs();
   /** Codec we send in this call (may be a fallback from `videoCodec`); unset while not connected. */
   readonly sendingCodec = signal<VideoCodec | undefined>(undefined);
@@ -144,6 +144,7 @@ export class MediaService implements OnDestroy {
     const me: CallParticipant = {
       identity: self.id,
       name: self.displayName,
+      role: this.crypto.isHost() ? 'host' : this.crypto.canAdmit() ? 'cohost' : 'guest',
       isLocal: true,
       isSpeaking: this.speaking().has(self.id),
       micMuted: !this.micEnabled(),
@@ -151,7 +152,20 @@ export class MediaService implements OnDestroy {
       sharingScreen: this.screenShareEnabled(),
     };
     const speaking = this.speaking();
-    return [me, ...this.signaling.participants().map((p) => remoteParticipant(p, speaking))];
+    const names = this.crypto.names();
+    return [
+      me,
+      ...this.signaling
+        .participants()
+        .map((p) =>
+          remoteParticipant(
+            p,
+            nameOf(names, p.id),
+            this.crypto.roleOf(p.identity.ed25519Pub),
+            speaking,
+          ),
+        ),
+    ];
   });
 
   readonly tiles = computed<Tile[]>(() => {
@@ -180,8 +194,9 @@ export class MediaService implements OnDestroy {
     const remote = this.remoteTracks();
     const speaking = this.speaking();
     const secured = this.crypto.secured();
+    const names = this.crypto.names();
     for (const p of this.signaling.participants()) {
-      tiles.push(...remoteTiles(p, remote, speaking, !secured.has(p.id)));
+      tiles.push(...remoteTiles(p, nameOf(names, p.id), remote, speaking, !secured.has(p.id)));
     }
     return tiles;
   });
@@ -777,14 +792,25 @@ function mediaState(state: RTCPeerConnectionState): MediaState {
   }
 }
 
-function remoteParticipant(p: ParticipantDto, speaking: ReadonlySet<string>): CallParticipant {
+/** Shown until someone's first key envelope (which carries their name) arrives. */
+export const UNNAMED = 'Guest';
+
+const nameOf = (names: ReadonlyMap<string, string>, id: string): string => names.get(id) ?? UNNAMED;
+
+function remoteParticipant(
+  p: ParticipantDto,
+  name: string,
+  role: CallParticipant['role'],
+  speaking: ReadonlySet<string>,
+): CallParticipant {
   const track = (source: TrackSource) => p.tracks.find((t) => t.source === source);
   const mic = track('microphone');
   const camera = track('camera');
   const screen = track('screen');
   return {
     identity: p.id,
-    name: p.displayName,
+    name,
+    role,
     isLocal: false,
     isSpeaking: speaking.has(p.id),
     micMuted: !mic || mic.muted,
@@ -795,6 +821,7 @@ function remoteParticipant(p: ParticipantDto, speaking: ReadonlySet<string>): Ca
 
 function remoteTiles(
   p: ParticipantDto,
+  name: string,
   remote: ReadonlyMap<TrackKey, MediaStreamTrack>,
   speaking: ReadonlySet<string>,
   securing: boolean,
@@ -806,8 +833,8 @@ function remoteTiles(
   const tiles: Tile[] = [
     {
       key: `${p.id}:camera`,
-      name: p.displayName,
-      displayName: p.displayName,
+      name,
+      displayName: name,
       isLocal: false,
       isScreen: false,
       isSpeaking: speaking.has(p.id),
@@ -820,7 +847,7 @@ function remoteTiles(
   ];
   const screenTrack = screen && !screen.muted ? remote.get(trackKey(p.id, 'screen')) : undefined;
   if (screenTrack) {
-    tiles.push({ ...screenTile(p.id, p.displayName, p.displayName, false, screenTrack), securing });
+    tiles.push({ ...screenTile(p.id, name, name, false, screenTrack), securing });
   }
   return tiles;
 }

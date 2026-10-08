@@ -23,8 +23,10 @@ A protocol change is incomplete unless **all** of these are updated in the same 
    `WebApplicationFactory` host, assert relay/broadcast).
 
 ## Server rules
-- Validate inputs: lengths (displayName ≤ 64, envelope blob ≤ 1 KB, chat ciphertext ≤ 64 KB), ids are known members of the
-  caller's room, caller is admitted (host-only methods check host role). Relaying to an arbitrary connection id outside the room is a bug.
+- Validate inputs: lengths (envelope and knock blobs ≤ 2 KB, chat ciphertext ≤ 64 KB), ids are known members of the
+  caller's room, caller is admitted (lobby guests get `Not admitted.`), host-only methods check the role, and every
+  signed statement is verified (`ISignatureVerifier`) before the server acts on it. Display names never go to the
+  server: they travel end-to-end encrypted (knocks, key envelopes). Relaying to an arbitrary connection id outside the room is a bug.
 - Relay targeted messages with `Clients.Client(targetId)`; never `Clients.All`.
 - Room state lives behind the `IRoomStore` port (in-memory, thread-safe adapter in Infrastructure). Clean up in
   `OnDisconnectedAsync` via the `LeaveRoom` command.

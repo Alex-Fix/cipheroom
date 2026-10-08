@@ -1,0 +1,89 @@
+<nz-modal
+  [nzVisible]="open()"
+  [nzTitle]="titleTpl"
+  [nzCentered]="true"
+  [nzWidth]="440"
+  [nzClosable]="false"
+  [nzMaskClosable]="false"
+  [nzFooter]="footer"
+  (nzOnCancel)="back()"
+>
+  <ng-container *nzModalContent>
+    @if (saved()) {
+      <p class="lead">
+        <nz-icon nzType="check" class="ok" /> Keep the file and your passphrase somewhere safe —
+        anyone with both can host this meeting.
+      </p>
+    } @else {
+      <!-- The form stays mounted while asking "skip?", so going back keeps what was typed. -->
+      @if (confirmingSkip()) {
+        <p class="lead">
+          Without a backup you can't host this meeting from another browser, or after this browser's
+          data is cleared. You can't make one later.
+        </p>
+      }
+      <p class="lead" [hidden]="confirmingSkip()">
+        This browser is the host of your new meeting. To host it from another device, or if this
+        browser's data is cleared, you'll need a backup. <strong>You can only make it now.</strong>
+      </p>
+      <form class="form" [hidden]="confirmingSkip()" (ngSubmit)="submit()">
+        <label for="passphrase">Passphrase</label>
+        <input
+          nz-input
+          id="passphrase"
+          name="passphrase"
+          type="password"
+          autocomplete="new-password"
+          [ngModel]="passphrase()"
+          (ngModelChange)="passphrase.set($event)"
+        />
+        <p class="strength" [attr.data-strength]="strength()">{{ strengthText() }}</p>
+        <label for="confirmation">Repeat passphrase</label>
+        <input
+          nz-input
+          id="confirmation"
+          name="confirmation"
+          type="password"
+          autocomplete="new-password"
+          [ngModel]="confirmation()"
+          (ngModelChange)="confirmation.set($event)"
+        />
+        @if (mismatch()) {
+          <p class="error" role="alert">The passphrases don't match.</p>
+        }
+        <p class="footnote">
+          The file is encrypted with this passphrase in your browser; nothing is uploaded. There's
+          no way to recover a forgotten passphrase.
+        </p>
+        <!-- Enter in either field submits. -->
+        <button type="submit" hidden></button>
+      </form>
+    }
+  </ng-container>
+  <!-- A template, not a string: nz-modal doesn't update a plain-text title while it's open. -->
+  <ng-template #titleTpl>{{ title() }}</ng-template>
+  <ng-template #footer>
+    @if (saved()) {
+      <button nz-button nzType="primary" class="continue" (click)="finish()">Continue</button>
+    } @else if (confirmingSkip()) {
+      <button nz-button class="go-back" (click)="confirmingSkip.set(false)">Back Up</button>
+      <button nz-button nzType="primary" nzDanger class="skip-anyway" (click)="finish()">
+        Skip Anyway
+      </button>
+    } @else {
+      <button nz-button class="skip" [disabled]="busy()" (click)="confirmingSkip.set(true)">
+        Skip
+      </button>
+      <button
+        nz-button
+        nzType="primary"
+        class="save"
+        [nzLoading]="busy()"
+        [disabled]="!canSave()"
+        (click)="submit()"
+      >
+        <nz-icon nzType="download" /> Download Backup
+      </button>
+    }
+  </ng-template>
+</nz-modal>

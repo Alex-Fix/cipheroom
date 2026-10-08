@@ -1,15 +1,19 @@
+import { agreedKey } from './agreement';
 import { fields, fromBase64Url, toBase64Url, utf8 } from './encoding';
 import { Identity, PUBLIC_KEY_BYTES, SIGNATURE_BYTES, VerifiedIdentity } from './identity';
 import { KEYRING_SIZE, SENDER_KEY_BYTES } from './keyring';
+import { PADDED_NAME_BYTES, padName, unpadName } from './names';
 
 /**
- * Sender-key envelopes (v1): how a participant's sender key reaches one other participant through the untrusted
- * server. Design: docs/plans/2026-10-07-e2ee-media-design.md → "Sender keys and envelopes".
+ * Sender-key envelopes (v2): how a participant's sender key — and their display name, which never reaches the server
+ * in plaintext — reaches one other participant through the untrusted server. Design:
+ * docs/plans/2026-10-07-e2ee-media-design.md → "Sender keys and envelopes"; v2 (names) in
+ * docs/plans/2026-10-08-lobby-admission-design.md.
  *
- *   header = { v: 1, roomId, epoch, keyIndex, fromId, toId }
+ *   header = { v: 2, roomId, epoch, keyIndex, fromId, toId }
  *   k   = HKDF-SHA-256(X25519(ephemeral, recipient), salt = roomId, info = "cipheroom/env/v1")
  *   aad = fields("cipheroom/env-header/v1", roomId, epoch, keyIndex, fromId, toId)   (see encoding.ts)
- *   ct  = AES-GCM(k, iv = random 12 B, aad, senderKey)
+ *   ct  = AES-GCM(k, iv = random 12 B, aad, senderKey ‖ padded name)
  *   sig = Ed25519(sender identity, fields("cipheroom/env-sig/v1", aad, ephPub, iv, ct))
  *   blob = base64url(JSON { ...header, eph, iv, ct, sig })      — opaque to the server
  */
@@ -28,6 +32,8 @@ export interface OpenedEnvelope {
   keyIndex: number;
   /** 32 bytes — hand straight to FrameCrypto, which transfers (detaches) it. */
   senderKey: ArrayBuffer;
+  /** The sender's display name (signed by them, so the server can't swap it). */
+  name: string;
 }
 
 /** Why an envelope was rejected: counted locally, never sent anywhere. */
@@ -47,9 +53,9 @@ export class EnvelopeError extends Error {
 }
 
 /** Largest blob the server relays (base64url characters). */
-export const MAX_ENVELOPE_BLOB = 1024;
-const VERSION = 1;
-const ENVELOPE_INFO = utf8('cipheroom/env/v1');
+export const MAX_ENVELOPE_BLOB = 2048;
+const VERSION = 2;
+const ENVELOPE_INFO = 'cipheroom/env/v1';
 /** Domain separation: the identity key also signs the bundle ("cipheroom/id/v1"). */
 const HEADER_LABEL = 'cipheroom/env-header/v1';
 const SIGNATURE_LABEL = 'cipheroom/env-sig/v1';
@@ -72,6 +78,7 @@ interface WireEnvelope {
 export async function sealEnvelope(
   header: EnvelopeHeader,
   senderKey: Uint8Array<ArrayBuffer>,
+  name: string,
   sender: Identity,
   recipient: VerifiedIdentity,
 ): Promise<string> {
@@ -82,17 +89,25 @@ export async function sealEnvelope(
     'deriveBits',
   ])) as CryptoKeyPair;
   const eph = new Uint8Array(await crypto.subtle.exportKey('raw', ephemeral.publicKey));
-  const key = await wrappingKey(ephemeral.privateKey, recipient.agreement, header.roomId, [
-    'encrypt',
-  ]);
+  const key = await agreedKey(
+    ephemeral.privateKey,
+    recipient.agreement,
+    header.roomId,
+    ENVELOPE_INFO,
+    ['encrypt'],
+  );
   const iv = crypto.getRandomValues(new Uint8Array(IV_BYTES));
+  const payload = new Uint8Array(SENDER_KEY_BYTES + PADDED_NAME_BYTES);
+  payload.set(senderKey);
+  payload.set(padName(name), SENDER_KEY_BYTES);
   const ct = new Uint8Array(
     await crypto.subtle.encrypt(
       { name: 'AES-GCM', iv, additionalData: headerFields(header) },
       key,
-      senderKey,
+      payload,
     ),
   );
+  payload.fill(0);
   const sig = new Uint8Array(
     await crypto.subtle.sign('Ed25519', sender.signing.privateKey, signedPart(header, eph, iv, ct)),
   );
@@ -150,14 +165,22 @@ export async function openEnvelope(
 
   try {
     const ephKey = await crypto.subtle.importKey('raw', eph, 'X25519', false, []);
-    const key = await wrappingKey(self.agreement.privateKey, ephKey, header.roomId, ['decrypt']);
-    const senderKey = await crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv, additionalData: headerFields(header) },
-      key,
-      ct,
+    const key = await agreedKey(self.agreement.privateKey, ephKey, header.roomId, ENVELOPE_INFO, [
+      'decrypt',
+    ]);
+    const payload = new Uint8Array(
+      await crypto.subtle.decrypt(
+        { name: 'AES-GCM', iv, additionalData: headerFields(header) },
+        key,
+        ct,
+      ),
     );
-    if (senderKey.byteLength !== SENDER_KEY_BYTES) throw new Error('Invalid sender key.');
-    return { epoch: header.epoch, keyIndex: header.keyIndex, senderKey };
+    if (payload.byteLength !== SENDER_KEY_BYTES + PADDED_NAME_BYTES)
+      throw new Error('Invalid payload.');
+    const name = unpadName(payload.subarray(SENDER_KEY_BYTES));
+    const senderKey = payload.slice(0, SENDER_KEY_BYTES).buffer;
+    payload.fill(0);
+    return { epoch: header.epoch, keyIndex: header.keyIndex, senderKey, name };
   } catch {
     throw new EnvelopeError('undecryptable');
   }
@@ -165,27 +188,6 @@ export async function openEnvelope(
 
 /** Key index for an epoch: what senders put in the header and every frame. */
 export const keyIndexOf = (epoch: number): number => epoch % KEYRING_SIZE;
-
-async function wrappingKey(
-  privateKey: CryptoKey,
-  publicKey: CryptoKey,
-  roomId: string,
-  usages: KeyUsage[],
-): Promise<CryptoKey> {
-  const shared = await crypto.subtle.deriveBits(
-    { name: 'X25519', public: publicKey },
-    privateKey,
-    256,
-  );
-  const material = await crypto.subtle.importKey('raw', shared, 'HKDF', false, ['deriveKey']);
-  return crypto.subtle.deriveKey(
-    { name: 'HKDF', hash: 'SHA-256', salt: utf8(roomId), info: ENVELOPE_INFO },
-    material,
-    { name: 'AES-GCM', length: 256 },
-    false,
-    usages,
-  );
-}
 
 function headerFields(h: EnvelopeHeader): Uint8Array<ArrayBuffer> {
   return fields(HEADER_LABEL, h.roomId, h.epoch, h.keyIndex, h.fromId, h.toId);

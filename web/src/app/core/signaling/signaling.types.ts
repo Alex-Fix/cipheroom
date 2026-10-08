@@ -19,24 +19,96 @@ export interface IdentityDto {
   sig: string;
 }
 
+/**
+ * Someone in the call. No display name: names only travel end-to-end encrypted (in key envelopes). `ticket` is the
+ * signed admission that let them in (null for a host, whom the host key attests) — every client verifies it.
+ */
 export interface ParticipantDto {
   id: string;
-  displayName: string;
   tracks: TrackDto[];
   identity: IdentityDto;
   /** Video codecs this participant can decode, among `vp8` (always), `vp9`. */
   videoCodecs: string[];
+  ticket: TicketDto | null;
+}
+
+/** An admission ticket: the admitting identity (Ed25519, base64url) and its signature over the admitted identity. */
+export interface TicketDto {
+  issuer: string;
+  sig: string;
+}
+
+/** Host's browser only: the host public keys (the room id derives from them) and the host key's attestation. */
+export interface HostProofDto {
+  hostEd25519Pub: string;
+  hostX25519Pub: string;
+  attestation: string;
+}
+
+/** A knock for one admitter: our name, encrypted to them. Opaque to the server. */
+export interface KnockDto {
+  toId: string;
+  blob: string;
+}
+
+/** Someone waiting in the lobby, as an admitter sees them. */
+export interface LobbyGuestDto {
+  id: string;
+  identity: IdentityDto;
+}
+
+export interface HostAttestationDto {
+  identity: string;
+  sig: string;
+}
+
+/** A signed statement by `issuer` about `subject` (Ed25519 identities, base64url): co-host grant or removal. */
+export interface StatementDto {
+  subject: string;
+  issuer: string;
+  sig: string;
+}
+
+export interface SettingsDto {
+  issuer: string;
+  seq: number;
+  autoAdmit: boolean;
+  sig: string;
+}
+
+/** A host or co-host in the call right now: where knocks go. */
+export interface AdmitterDto {
+  id: string;
+  identity: IdentityDto;
+}
+
+/**
+ * The room's chain of authority, from the host keys (which the room id commits to) down. Public keys and signatures
+ * only; CryptoService verifies all of it — the server's word counts for nothing.
+ */
+export interface AuthorityDto {
+  hostEd25519Pub: string | null;
+  hostX25519Pub: string | null;
+  hosts: HostAttestationDto[];
+  coHosts: StatementDto[];
+  revoked: StatementDto[];
+  settings: SettingsDto | null;
+  admitters: AdmitterDto[];
+}
+
+/** `admitted` false = waiting in the lobby (no participants). `ticket`: ours, to rejoin this call without knocking. */
+export interface LobbyResult {
+  selfId: string;
+  admitted: boolean;
+  participants: ParticipantDto[];
+  authority: AuthorityDto;
+  ticket: TicketDto | null;
 }
 
 /** A sender-key envelope for one recipient; `blob` is opaque to the server (signed, encrypted end to end). */
 export interface KeyEnvelopeDto {
   toId: string;
   blob: string;
-}
-
-export interface JoinResult {
-  selfId: string;
-  participants: ParticipantDto[];
 }
 
 /** ICE servers for the peer connection to the SFU (Cloudflare STUN/TURN); `forceRelay` = TURN only (testing). */
@@ -125,7 +197,15 @@ export interface CallStatsDto {
 
 /** Client → server hub methods. */
 export const HubMethods = {
-  JoinRoom: 'JoinRoom',
+  JoinLobby: 'JoinLobby',
+  Knock: 'Knock',
+  Admit: 'Admit',
+  Deny: 'Deny',
+  GrantCoHost: 'GrantCoHost',
+  RemoveParticipant: 'RemoveParticipant',
+  UpdateSettings: 'UpdateSettings',
+  AskToMute: 'AskToMute',
+  EndCall: 'EndCall',
   LeaveRoom: 'LeaveRoom',
   GetRtcConfig: 'GetRtcConfig',
   PublishTracks: 'PublishTracks',
@@ -148,4 +228,12 @@ export const ClientEvents = {
   TracksUnpublished: 'TracksUnpublished',
   TrackMuted: 'TrackMuted',
   KeyEnvelopeReceived: 'KeyEnvelopeReceived',
+  KnockReceived: 'KnockReceived',
+  LobbyLeft: 'LobbyLeft',
+  Admitted: 'Admitted',
+  Denied: 'Denied',
+  AuthorityUpdated: 'AuthorityUpdated',
+  Removed: 'Removed',
+  MuteRequested: 'MuteRequested',
+  CallEnded: 'CallEnded',
 } as const;

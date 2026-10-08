@@ -1,5 +1,6 @@
 using Cipheroom.Application.Common.Exceptions;
 using Cipheroom.Application.Common.Interfaces;
+using Cipheroom.Application.Media;
 using FluentValidation;
 using Mediator;
 
@@ -22,7 +23,7 @@ public sealed class GetRtcConfigQueryHandler(
     public async ValueTask<RtcConfigResult> Handle(GetRtcConfigQuery query, CancellationToken cancellationToken)
     {
         // Only admitted participants get media access.
-        var self = rooms.FindByConnection(query.ConnectionId) ?? throw new NotFoundException("Join a room first.");
+        var self = MediaSessions.Member(rooms, query.ConnectionId);
 
         var ice = await iceServers.GetAsync(self.Id, cancellationToken);
         return new RtcConfigResult(ice.IceServers, ice.ForceRelay);

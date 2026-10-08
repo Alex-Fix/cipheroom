@@ -27,6 +27,10 @@ want private calls without trusting a vendor, and it runs on a home computer wit
   kept 7 days, behind Grafana's login ([`docs/observability.md`](docs/observability.md))
 - 🔐 End-to-end encrypted media: per-call keys, rotated whenever someone joins or leaves, and a safety code to
   compare out loud. Browsers that can't encrypt can't join — calls never fall back to unencrypted
+- 🚪 Lobby and host controls: a meeting belongs to a host key kept in the creator's browser (with a
+  passphrase-protected backup). Guests knock and wait; the host or a co-host lets them in, removes people, asks them
+  to mute, or ends the call. Every decision is signed and checked by each browser, so even a malicious server can't
+  slip anyone in — and display names never reach the server unencrypted
 
 ## How it works
 
@@ -50,7 +54,9 @@ and checks that people only receive tracks from their own room; the media itself
 
 **Privacy model:** the API, Cloudflare's SFU and the TURN relay are all treated as untrusted. Every participant
 encrypts media in the browser with keys exchanged as signed, encrypted envelopes. Servers only relay ciphertext.
-Metadata (who, when, IP addresses) remains visible to the servers and Cloudflare. With the optional observability stack, your own server also keeps pseudonymous call
+Who may join is decided by signatures from the meeting's host key, which every browser checks itself, and display
+names travel only end-to-end encrypted. Metadata (when, IP addresses, how many people, which random id is host)
+remains visible to the servers and Cloudflare. With the optional observability stack, your own server also keeps pseudonymous call
 metadata and call-quality numbers for 7 days (no names, IPs or plain room ids). Details:
 [`docs/architecture.md`](docs/architecture.md).
 
@@ -65,7 +71,8 @@ scripts/secrets.sh     # creates deploy/.env — fill in CF_SFU_APP_ID / CF_SFU_
 scripts/dev.sh         # API on :5080 + Angular on :4200
 ```
 
-Open http://localhost:4200 in two browser windows and join the same room.
+Open http://localhost:4200, create a **New Meeting** (you're its host), and open the invite link in a second
+browser window: it knocks, and you let it in from the People panel.
 
 ## Self-hosting
 
@@ -90,7 +97,7 @@ You need a domain on Cloudflare (the free plan is fine) and a machine running Do
    scripts/security-check.sh https://call.example.com
    ```
 
-To check it from real networks, join from a phone on mobile data (Wi-Fi off) and a laptop in the same room. To test
+To check it from real networks, join from a phone on mobile data (Wi-Fi off) and a laptop in the same meeting. To test
 the TURN fallback, set `TURN_FORCE_RELAY=true` and run `scripts/up.sh --tunnel` again. Keep an eye on usage: 4K video
 is ~3.6 GB per viewer-hour against the 1 TB/month free tier — set up a Cloudflare billing notification.
 
@@ -113,7 +120,7 @@ is ~3.6 GB per viewer-hour against the 1 TB/month free tier — set up a Cloudfl
 - [x] Single-hostname deployment via Cloudflare Tunnel
 - [x] **End-to-end encryption**: per-call identities, sender keys, rotation on join/leave, safety codes
 - [ ] Remember contacts' keys across calls (TOFU) — today identities are fresh per call
-- [ ] Lobby and host admission
+- [x] Lobby and host admission: host keys, signed tickets, co-hosts, remove, auto-admit, end for everyone
 - [ ] End-to-end encrypted chat
 - [x] Observability: traces, logs, metrics, call-quality reports, Grafana dashboards (self-hosted, optional)
 - [ ] Usage guard for the Cloudflare Realtime free tier (SFU + TURN) — usage is already measured and graphed

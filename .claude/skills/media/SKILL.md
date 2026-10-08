@@ -24,7 +24,7 @@ Design: `docs/plans/2026-10-07-cloudflare-sfu-design.md`. Protocol: `docs/signal
   them throws. Remote tiles are `securing` until that participant's key arrived. See the `e2ee-media` skill.
 
 ## Flow
-1. `CryptoService.identityBundle` → `JoinRoom` → `CryptoService.start` → `GetRtcConfig` (ICE servers) →
+1. `LobbyService.enter` (`CryptoService.identityBundle` → `JoinLobby`, waits for admission) → `CryptoService.start` → `GetRtcConfig` (ICE servers) →
    `MediaService.connect(config, self, frames)`.
 2. **Publish own tracks first** (room `publishOwnTracks`): microphone and camera via `PublishTracks(offer, [{mid,
    source}])`; devices that are off are still published (mic muted, camera as placeholder frames via

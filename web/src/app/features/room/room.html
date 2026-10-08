@@ -7,6 +7,12 @@
     [safetyCode]="crypto.safetyCode()"
     [unverified]="crypto.unverified().size"
     [manualCopy]="manualCopy()"
+    [waiting]="lobby.guests().length"
+    [canAdmit]="crypto.canAdmit()"
+    [isHost]="crypto.isHost()"
+    [autoAdmit]="crypto.authority().autoAdmit"
+    (setAutoAdmit)="setAutoAdmit($event)"
+    (endCall)="endCall()"
     (copyLink)="copyLink()"
     (manualCopyClosed)="manualCopy.set(false)"
     (rejoin)="retry()"
@@ -40,6 +46,15 @@
         </button>
       </div>
     </section>
+  } @else if (lobbyScreen(); as screen) {
+    <app-lobby-screen
+      [state]="screen"
+      [hostHere]="hostHere()"
+      [canAskAgain]="canAskAgain()"
+      (cancel)="cancelWaiting()"
+      (home)="leave()"
+      (askAgain)="askAgain()"
+    />
   } @else {
     @if (!media.canPlaybackAudio()) {
       <div class="audio-blocked glass" role="status">
@@ -77,9 +92,9 @@
       [codecs]="media.availableCodecs"
       [codec]="media.videoCodec()"
       [sendingCodec]="media.sendingCodec()"
-      (toggleMic)="setDevice('microphone', !media.micEnabled())"
-      (toggleCamera)="setDevice('camera', !media.cameraEnabled())"
-      (toggleScreenShare)="setDevice('screen', !media.screenShareEnabled())"
+      (toggleMic)="toggleDevice('microphone', !media.micEnabled())"
+      (toggleCamera)="toggleDevice('camera', !media.cameraEnabled())"
+      (toggleScreenShare)="toggleDevice('screen', !media.screenShareEnabled())"
       (flipCamera)="switchCamera()"
       (selectCamera)="switchCamera($event)"
       (selectQuality)="setQuality($event)"
@@ -91,6 +106,13 @@
   <app-participants-panel
     [open]="showParticipants()"
     [participants]="media.participants()"
+    [guests]="lobby.guests()"
+    [canAdmit]="crypto.canAdmit()"
+    [isHost]="crypto.isHost()"
     (closed)="showParticipants.set(false)"
+    (admit)="admit($event)"
+    (deny)="deny($event)"
+    (admitAll)="admitAll()"
+    (act)="act($event)"
   />
 </div>

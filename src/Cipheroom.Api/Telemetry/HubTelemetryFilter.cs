@@ -51,7 +51,7 @@ public sealed class HubTelemetryFilter(IRoomStore rooms, TelemetryIds ids, Ciphe
         {
             metrics.HubCall(method, outcome);
             activity?.SetTag(Tags.Outcome, outcome);
-            // After JoinRoom the caller is in a room; after LeaveRoom it was.
+            // After JoinLobby (or Admit) the caller may be in a room; after LeaveRoom it was.
             if (activity is not null && (rooms.FindByConnection(connectionId) ?? before) is { } participant)
             {
                 activity.SetTag(Tags.Room, ids.Room(participant.RoomId.Value));

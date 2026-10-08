@@ -6,6 +6,8 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Ed25519 verification (MIT, fully managed: nothing native for the chiseled image). -->
+    <PackageReference Include="BouncyCastle.Cryptography" />
     <PackageReference Include="Microsoft.Extensions.Http.Resilience" />
   </ItemGroup>
 

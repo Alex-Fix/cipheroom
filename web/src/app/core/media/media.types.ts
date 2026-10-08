@@ -23,8 +23,11 @@ export interface Tile {
 
 /** One person in the call — i.e. someone who can receive your audio and video. */
 export interface CallParticipant {
+  /** Participant id. */
   identity: string;
   name: string;
+  /** What our own checks of the room's signed authority say they may do. */
+  role: 'host' | 'cohost' | 'guest';
   isLocal: boolean;
   isSpeaking: boolean;
   micMuted: boolean;

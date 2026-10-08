@@ -5,7 +5,7 @@
     <p class="subtitle">Private video calls on your own server.</p>
   </header>
 
-  <form class="form" (ngSubmit)="join()">
+  <div class="form">
     <div class="group">
       <div class="row">
         <label class="row-label" for="name">Name</label>
@@ -14,57 +14,21 @@
           nzVariant="borderless"
           id="name"
           name="name"
-          [(ngModel)]="name"
-          #nameModel="ngModel"
+          [ngModel]="name()"
+          (ngModelChange)="name.set($event)"
           maxlength="64"
           required
           autocomplete="nickname"
           placeholder="Your name"
         />
       </div>
-      <div class="row">
-        <label class="row-label" for="room">Room</label>
-        <input
-          nz-input
-          nzVariant="borderless"
-          id="room"
-          name="room"
-          [(ngModel)]="roomId"
-          #roomModel="ngModel"
-          pattern="[a-z0-9-]{3,64}"
-          required
-          autocapitalize="off"
-          autocorrect="off"
-          spellcheck="false"
-        />
-        <button
-          type="button"
-          class="regenerate"
-          nz-button
-          nzType="text"
-          nzShape="circle"
-          nz-tooltip
-          nzTooltipTitle="New random room"
-          aria-label="New random room"
-          (click)="regenerateRoom()"
-        >
-          <nz-icon nzType="reload" />
-        </button>
-      </div>
     </div>
-
     @if (!supported()) {
       <p class="footnote error" role="alert">
         {{ unsupportedMessage }} Use a current Chrome, Safari or Firefox.
       </p>
-    } @else if (roomModel.invalid && roomModel.dirty) {
-      <p class="footnote error" role="alert">
-        Room names use 3–64 characters: lowercase letters, digits and dashes.
-      </p>
-    } @else if (nameModel.invalid && nameModel.dirty) {
-      <p class="footnote error" role="alert">Enter a name others will see.</p>
     } @else {
-      <p class="footnote">Share the room link with the people you want to call.</p>
+      <p class="footnote">Only people in your calls see your name — it's encrypted end to end.</p>
     }
 
     <button
@@ -72,13 +36,115 @@
       nzType="primary"
       nzBlock
       nzSize="large"
-      class="join"
-      type="submit"
-      [disabled]="!supported() || !name().trim() || !validRoom()"
+      class="primary new-meeting"
+      type="button"
+      [nzLoading]="creating()"
+      [disabled]="!supported() || !hasName() || !hostKeys.canHost()"
+      (click)="newMeeting()"
     >
-      Join
+      <nz-icon nzType="plus" /> New Meeting
     </button>
-  </form>
+    @if (!hostKeys.canHost()) {
+      <p class="footnote">This browser can't keep host keys (private mode?). You can still join.</p>
+    }
+
+    <form class="join-form" (ngSubmit)="join()">
+      <div class="group">
+        <div class="row">
+          <input
+            nz-input
+            nzVariant="borderless"
+            id="link"
+            name="link"
+            [ngModel]="link()"
+            (ngModelChange)="link.set($event)"
+            placeholder="Paste an invite link"
+            autocapitalize="off"
+            autocorrect="off"
+            spellcheck="false"
+          />
+          <button
+            nz-button
+            nzType="link"
+            class="join"
+            type="submit"
+            [disabled]="!supported() || !hasName() || !roomId()"
+          >
+            Join
+          </button>
+        </div>
+      </div>
+      @if (link().trim() && !roomId()) {
+        <p class="footnote error" role="alert">That isn't a Cipheroom invite link.</p>
+      }
+    </form>
+
+    @if (hostKeys.meetings().length) {
+      <h2 class="section">Your meetings</h2>
+      <ul class="group meetings" aria-label="Your meetings">
+        @for (m of hostKeys.meetings(); track m.roomId) {
+          <li class="row meeting">
+            <span class="meeting-name">
+              <nz-icon nzType="crown" class="crown" />
+              <span class="code">{{ short(m.roomId) }}</span>
+            </span>
+            <button
+              nz-button
+              nzType="text"
+              nzShape="circle"
+              nz-tooltip
+              nzTooltipTitle="Copy invite link"
+              aria-label="Copy invite link"
+              class="copy"
+              (click)="copyLink(m.roomId)"
+            >
+              <nz-icon nzType="copy" />
+            </button>
+            <button
+              nz-button
+              nzType="text"
+              nzShape="circle"
+              nz-tooltip
+              nzTooltipTitle="Forget"
+              aria-label="Forget this meeting"
+              class="forget"
+              (click)="forget(m.roomId)"
+            >
+              <nz-icon nzType="delete" />
+            </button>
+            <button
+              nz-button
+              nzType="link"
+              class="open"
+              [disabled]="!supported() || !hasName()"
+              (click)="open(m.roomId)"
+            >
+              Start
+            </button>
+          </li>
+        }
+      </ul>
+    }
+
+    <button nz-button nzType="link" class="import" type="button" (click)="importing.set(true)">
+      <nz-icon nzType="upload" /> Import a host key backup
+    </button>
+  </div>
 
   <p class="e2ee"><nz-icon nzType="lock" /> Self-hosted · end-to-end encrypted</p>
+
+  <app-backup-dialog
+    [open]="!!backupFor()"
+    [busy]="backingUp()"
+    [saved]="backupSaved()"
+    (save)="saveBackup($event)"
+    (done)="finishBackup()"
+  />
+  <app-import-dialog
+    [open]="importing()"
+    [busy]="importBusy()"
+    [error]="importError()"
+    (unlock)="importBackup($event)"
+    (closed)="importing.set(false); importError.set(undefined)"
+  />
 </main>

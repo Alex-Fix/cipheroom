@@ -89,6 +89,13 @@ body {
   outline-offset: 2px;
 }
 
+// ng-zorro tints a hovered or focused default button's label dark blue (rgb(16, 96, 176) in the dark theme): hard to
+// read on a dialog. Dialogs focus Cancel on open (never the destructive choice), so keep labels readable; the focus
+// ring above shows focus.
+.ant-modal .ant-btn:not(.ant-btn-primary, .ant-btn-dangerous, :disabled):is(:hover, :focus) {
+  color: var(--label);
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

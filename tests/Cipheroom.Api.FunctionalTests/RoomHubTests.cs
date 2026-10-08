@@ -1,10 +1,10 @@
 using System.Net;
-using System.Threading.Channels;
 using Cipheroom.Api.Hubs.Contracts;
 using Microsoft.AspNetCore.Http.Connections;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.AspNetCore.SignalR.Client;
+using static Cipheroom.Api.FunctionalTests.TestCall;
 
 namespace Cipheroom.Api.FunctionalTests;
 
@@ -16,58 +16,59 @@ public sealed class RoomHubTests(WebApplicationFactory<Program> factory) : IClas
 {
     private readonly WebApplicationFactory<Program> _factory = factory.WithWebHostBuilder(b => b
         .UseSetting("Turn:Cloudflare:KeyId", "")
-        .UseSetting("Turn:Cloudflare:ApiToken", ""));
-
-    private static CancellationToken Ct => TestContext.Current.CancellationToken;
+        .UseSetting("Turn:Cloudflare:ApiToken", "")
+        .UseSetting("RateLimiting:Hub:TokenLimit", "1000")
+        .UseSetting("RateLimiting:Hub:TokensPerSecond", "1000"));
 
     [Fact]
     public async Task Participants_are_notified_of_joins_and_leaves()
     {
+        var room = new TestRoom();
         await using var alice = await ConnectAsync();
-        var joined = Channel.CreateUnbounded<ParticipantDto>();
-        var left = Channel.CreateUnbounded<string>();
-        alice.On<ParticipantDto>("ParticipantJoined", p => joined.Writer.TryWrite(p));
-        alice.On<string>("ParticipantLeft", id => left.Writer.TryWrite(id));
+        var joined = Events<ParticipantDto>(alice, "ParticipantJoined");
+        var left = Events<string>(alice, "ParticipantLeft");
 
-        var aliceJoin = await alice.InvokeAsync<JoinResult>("JoinRoom", "room-1", "Alice", TestIdentity.Dto, TestIdentity.Codecs, Ct);
-        Assert.Empty(aliceJoin.Participants);
+        var host = await room.HostAsync(alice);
+        Assert.True(host.Join.Admitted);
+        Assert.Empty(host.Join.Participants);
 
         var bob = await ConnectAsync();
-        var bobJoin = await bob.InvokeAsync<JoinResult>("JoinRoom", "room-1", "  Bob ", TestIdentity.Dto, TestIdentity.Codecs, Ct);
+        var guest = await room.AdmitAsync(host, bob);
 
-        var bobAsSeenByAlice = await joined.Reader.ReadAsync(Timeout());
-        Assert.Equal((bobJoin.SelfId, "Bob"), (bobAsSeenByAlice.Id, bobAsSeenByAlice.DisplayName));
-        Assert.Empty(bobAsSeenByAlice.Tracks);
-        var aliceAsSeenByBob = Assert.Single(bobJoin.Participants);
-        Assert.Equal((aliceJoin.SelfId, "Alice"), (aliceAsSeenByBob.Id, aliceAsSeenByBob.DisplayName));
+        var bobAsSeenByAlice = await joined.ReadAsync(Timeout());
+        Assert.Equal(guest.SelfId, bobAsSeenByAlice.Id);
+        Assert.Equal(guest.Identity.Identity, bobAsSeenByAlice.Identity);
+        Assert.Equal(new TicketDto(host.Identity.Pub, room.TicketFor(host, guest.Identity)), bobAsSeenByAlice.Ticket);
+        var aliceAsSeenByBob = Assert.Single(guest.Join.Participants);
+        Assert.Equal(host.SelfId, aliceAsSeenByBob.Id);
+        Assert.Null(aliceAsSeenByBob.Ticket); // the host key attests the host
 
         await bob.DisposeAsync();
-        Assert.Equal(bobJoin.SelfId, await left.Reader.ReadAsync(Timeout()));
+        Assert.Equal(guest.SelfId, await left.ReadAsync(Timeout()));
     }
 
     [Fact]
     public async Task LeaveRoom_notifies_others_and_allows_joining_again()
     {
+        var room = new TestRoom();
         await using var alice = await ConnectAsync();
         await using var bob = await ConnectAsync();
-        var left = Channel.CreateUnbounded<string>();
-        alice.On<string>("ParticipantLeft", id => left.Writer.TryWrite(id));
-
-        await alice.InvokeAsync<JoinResult>("JoinRoom", "room-leave", "Alice", TestIdentity.Dto, TestIdentity.Codecs, Ct);
-        var bobJoin = await bob.InvokeAsync<JoinResult>("JoinRoom", "room-leave", "Bob", TestIdentity.Dto, TestIdentity.Codecs, Ct);
+        var left = Events<string>(alice, "ParticipantLeft");
+        var host = await room.HostAsync(alice);
+        var guest = await room.AdmitAsync(host, bob);
 
         await bob.InvokeAsync("LeaveRoom", Ct);
-        Assert.Equal(bobJoin.SelfId, await left.Reader.ReadAsync(Timeout()));
+        Assert.Equal(guest.SelfId, await left.ReadAsync(Timeout()));
 
-        var rejoin = await bob.InvokeAsync<JoinResult>("JoinRoom", "room-leave-2", "Bob", TestIdentity.Dto, TestIdentity.Codecs, Ct);
-        Assert.Empty(rejoin.Participants);
+        var rejoin = await new TestRoom().HostAsync(bob);
+        Assert.Empty(rejoin.Join.Participants);
     }
 
     [Fact]
     public async Task Participant_ids_are_random_hex_not_connection_ids()
     {
         await using var connection = await ConnectAsync();
-        var join = await connection.InvokeAsync<JoinResult>("JoinRoom", "room-ids", "Alice", TestIdentity.Dto, TestIdentity.Codecs, Ct);
+        var join = await new TestRoom().HostAsync(connection);
 
         Assert.Matches("^[0-9a-f]{16}$", join.SelfId);
         Assert.NotEqual(connection.ConnectionId, join.SelfId);
@@ -77,10 +78,9 @@ public sealed class RoomHubTests(WebApplicationFactory<Program> factory) : IClas
     public async Task Rtc_config_requires_joining_and_has_no_relay_when_turn_is_unconfigured()
     {
         await using var connection = await ConnectAsync();
-
         await AssertHubErrorAsync("Join a room first.", () => connection.InvokeAsync<RtcConfig>("GetRtcConfig", Ct));
 
-        await connection.InvokeAsync<JoinResult>("JoinRoom", "room-2", "Carol", TestIdentity.Dto, TestIdentity.Codecs, Ct);
+        await new TestRoom().HostAsync(connection);
         var config = await connection.InvokeAsync<RtcConfig>("GetRtcConfig", Ct);
 
         Assert.Empty(config.IceServers);
@@ -88,53 +88,32 @@ public sealed class RoomHubTests(WebApplicationFactory<Program> factory) : IClas
     }
 
     [Theory]
-    [InlineData("UPPER")]
+    [InlineData("room-1")] // the old random format: those links don't work anymore
+    [InlineData("UPPERCASEUPPERCASEUPPERCAS")]
     [InlineData("ab")]
-    [InlineData("room id")]
     [InlineData(null)]
     public async Task Invalid_room_id_is_rejected(string? roomId)
     {
         await using var connection = await ConnectAsync();
         await AssertHubErrorAsync(
             "Invalid room id.",
-            () => connection.InvokeAsync<JoinResult>("JoinRoom", roomId, "Dave", TestIdentity.Dto, TestIdentity.Codecs, Ct));
-    }
-
-    [Theory]
-    [InlineData("")]
-    [InlineData("   ")]
-    [InlineData(null)]
-    public async Task Invalid_display_name_is_rejected(string? displayName)
-    {
-        await using var connection = await ConnectAsync();
-        await AssertHubErrorAsync(
-            "Display name must be 1-64 characters.",
-            () => connection.InvokeAsync<JoinResult>("JoinRoom", "room-3", displayName, TestIdentity.Dto, TestIdentity.Codecs, Ct));
-    }
-
-    [Fact]
-    public async Task Display_name_longer_than_64_characters_is_rejected()
-    {
-        await using var connection = await ConnectAsync();
-        await AssertHubErrorAsync(
-            "Display name must be 1-64 characters.",
-            () => connection.InvokeAsync<JoinResult>("JoinRoom", "room-3", new string('a', 65), TestIdentity.Dto, TestIdentity.Codecs, Ct));
+            () => connection.InvokeAsync<LobbyResult>("JoinLobby", roomId, TestIdentity.Dto, TestIdentity.Codecs, null, null, Ct));
     }
 
     [Fact]
     public async Task Video_codecs_are_relayed_to_the_others()
     {
+        var room = new TestRoom();
         await using var alice = await ConnectAsync();
         await using var bob = await ConnectAsync();
-        var joined = Channel.CreateUnbounded<ParticipantDto>();
-        alice.On<ParticipantDto>("ParticipantJoined", p => joined.Writer.TryWrite(p));
+        var joined = Events<ParticipantDto>(alice, "ParticipantJoined");
 
-        await alice.InvokeAsync<JoinResult>("JoinRoom", "room-codecs", "Alice", TestIdentity.Dto, "vp9,vp8".Split(','), Ct);
-        var bobJoin = await bob.InvokeAsync<JoinResult>("JoinRoom", "room-codecs", "Bob", TestIdentity.Dto, "vp8".Split(","), Ct);
+        var host = await room.HostAsync(alice, ["vp9", "vp8"]);
+        var guest = await room.AdmitAsync(host, bob, ["vp8"]);
 
         // Canonical order, whatever order the client sent.
-        Assert.Equal(["vp8", "vp9"], Assert.Single(bobJoin.Participants).VideoCodecs);
-        Assert.Equal(["vp8"], (await joined.Reader.ReadAsync(Timeout())).VideoCodecs);
+        Assert.Equal(["vp8", "vp9"], Assert.Single(guest.Join.Participants).VideoCodecs);
+        Assert.Equal(["vp8"], (await joined.ReadAsync(Timeout())).VideoCodecs);
     }
 
     [Theory]
@@ -143,22 +122,27 @@ public sealed class RoomHubTests(WebApplicationFactory<Program> factory) : IClas
     [InlineData("vp8,av1")]
     public async Task Invalid_video_codecs_are_rejected(string codecs)
     {
+        var room = new TestRoom();
         await using var connection = await ConnectAsync();
         await AssertHubErrorAsync(
             "Invalid video codecs.",
-            () => connection.InvokeAsync<JoinResult>("JoinRoom", "room-3", "Dave", TestIdentity.Dto, codecs.Split(','), Ct));
+            () => connection.InvokeAsync<LobbyResult>("JoinLobby", room.Id, TestIdentity.Dto, codecs.Split(','), null, null, Ct));
         await AssertHubErrorAsync(
             "Invalid video codecs.",
-            () => connection.InvokeAsync<JoinResult>("JoinRoom", "room-3", "Dave", TestIdentity.Dto, null, Ct));
+            () => connection.InvokeAsync<LobbyResult>("JoinLobby", room.Id, TestIdentity.Dto, null, null, null, Ct));
     }
 
     [Fact]
-    public async Task Clients_that_send_no_codecs_argument_cannot_join()
+    public async Task Old_clients_cannot_join()
     {
+        var room = new TestRoom();
         await using var connection = await ConnectAsync();
-        // Clients from before codec selection: they'd be sent codecs they can't decode.
+        // JoinRoom is gone (it let anyone with the link straight in and sent names in plaintext).
         await Assert.ThrowsAsync<HubException>(
-            () => connection.InvokeAsync<JoinResult>("JoinRoom", "room-old", "Old", TestIdentity.Dto, Ct));
+            () => connection.InvokeAsync<LobbyResult>("JoinRoom", room.Id, "Old", TestIdentity.Dto, TestIdentity.Codecs, Ct));
+        // Clients that leave arguments out fail SignalR's argument binding.
+        await Assert.ThrowsAsync<HubException>(
+            () => connection.InvokeAsync<LobbyResult>("JoinLobby", room.Id, TestIdentity.Dto, TestIdentity.Codecs, Ct));
         await AssertHubErrorAsync("Join a room first.", () => connection.InvokeAsync<RtcConfig>("GetRtcConfig", Ct));
     }
 
@@ -166,10 +150,8 @@ public sealed class RoomHubTests(WebApplicationFactory<Program> factory) : IClas
     public async Task Joining_twice_is_rejected()
     {
         await using var connection = await ConnectAsync();
-        await connection.InvokeAsync<JoinResult>("JoinRoom", "room-4", "Eve", TestIdentity.Dto, TestIdentity.Codecs, Ct);
-        await AssertHubErrorAsync(
-            "Already in a room.",
-            () => connection.InvokeAsync<JoinResult>("JoinRoom", "room-5", "Eve", TestIdentity.Dto, TestIdentity.Codecs, Ct));
+        await new TestRoom().HostAsync(connection);
+        await AssertHubErrorAsync("Already in a room.", () => new TestRoom().HostAsync(connection));
     }
 
     [Fact]
@@ -201,7 +183,4 @@ public sealed class RoomHubTests(WebApplicationFactory<Program> factory) : IClas
         await connection.StartAsync(Ct);
         return connection;
     }
-
-    private static CancellationToken Timeout() =>
-        CancellationTokenSource.CreateLinkedTokenSource(Ct, new CancellationTokenSource(TimeSpan.FromSeconds(5)).Token).Token;
 }

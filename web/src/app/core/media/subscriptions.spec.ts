@@ -6,7 +6,7 @@ const identity: IdentityDto = { ed25519Pub: 'ed', x25519Pub: 'x', sig: 'sig' };
 
 const alice: ParticipantDto = {
   id: 'a',
-  displayName: 'Alice',
+  ticket: null,
   identity,
   videoCodecs: ['vp8'],
   tracks: [
@@ -16,7 +16,7 @@ const alice: ParticipantDto = {
 };
 const bob: ParticipantDto = {
   id: 'b',
-  displayName: 'Bob',
+  ticket: null,
   identity,
   videoCodecs: ['vp8'],
   tracks: [],

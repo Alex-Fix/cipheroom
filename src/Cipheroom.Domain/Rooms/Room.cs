@@ -3,33 +3,257 @@ using Cipheroom.Domain.Common;
 namespace Cipheroom.Domain.Rooms;
 
 /// <summary>
-/// A call room, its participants and who publishes / receives which media tracks. Rooms exist while someone is in
-/// them. Media rules live here: one track per source, tracks are only visible inside their room.
+/// A call room: its members, the lobby of people waiting to be let in, who may admit them (the host key's chain of
+/// signed statements), and who publishes / receives which media tracks. Rooms exist while someone is in them or
+/// waiting. Media rules live here: one track per source, tracks are only visible inside their room.
+/// <para>
+/// Admission rules live here too; signatures are checked before a statement reaches the room (Application layer), and
+/// again by every client. The server's view of roles only gates what it relays — keys go where clients' own checks say.
+/// </para>
 /// </summary>
 public sealed class Room(RoomId id)
 {
     public const string UnknownTrack = "Unknown track.";
     public const string InvalidKeyEnvelope = "Invalid key envelope.";
+    public const string NotAllowed = "Not allowed.";
+    public const string NotAdmitted = "Not admitted.";
+    public const string LobbyFull = "Lobby is full.";
+    public const string InvalidHostProof = "Invalid host proof.";
+    public const string AskedTooOften = "Already asked, try again later.";
+    public const string UnknownParticipant = "Unknown participant.";
+    public const string InvalidKnock = "Invalid knock.";
+
+    /// <summary>People waiting at once.</summary>
+    public const int MaxLobby = 20;
+
+    /// <summary>Host attestations, co-host grants and removals kept per room (each is a few hundred bytes).</summary>
+    public const int MaxAuthorityEntries = 64;
+
+    /// <summary>How long someone who was turned away waits before they can ask again (on that connection).</summary>
+    public static readonly TimeSpan DenyCooldown = TimeSpan.FromSeconds(30);
 
     private readonly List<Participant> _participants = [];
+    private readonly List<LobbyGuest> _lobby = [];
+    private readonly List<HostAttestation> _hosts = [];
+    private readonly List<Statement> _coHosts = [];
+    private readonly List<Statement> _revoked = [];
+    private readonly Dictionary<string, DateTimeOffset> _deniedUntil = [];
 
     public RoomId Id { get; } = id;
 
     public IReadOnlyList<Participant> Participants => _participants;
 
-    public bool IsEmpty => _participants.Count == 0;
+    public IReadOnlyList<LobbyGuest> Lobby => _lobby;
 
-    /// <summary>Adds a participant with a fresh random id. Returns the new participant.</summary>
-    public Participant Join(string connectionId, DisplayName displayName, IdentityKeys identity, VideoCodecs? videoCodecs = null)
+    public HostKeys? Host { get; private set; }
+
+    public RoomSettings? Settings { get; private set; }
+
+    public bool IsEmpty => _participants.Count == 0 && _lobby.Count == 0;
+
+    /// <summary>Members who can admit, remove and end the call right now.</summary>
+    public IReadOnlyList<Participant> Admitters => [.. _participants.Where(p => p.IsAdmitter)];
+
+    public bool HasConnection(string connectionId) =>
+        _participants.Exists(p => p.ConnectionId == connectionId) || _lobby.Exists(g => g.ConnectionId == connectionId);
+
+    public RoomAuthority Authority() => new(Host, [.. _hosts], [.. _coHosts], [.. _revoked], Settings, Admitters);
+
+    /// <summary>
+    /// The host's browser joins straight in. <paramref name="keys"/> must derive this room's id and
+    /// <paramref name="attestation"/> must be the host key's signature over the caller's identity (both checked by
+    /// the caller). A later host proof must name the same keys.
+    /// </summary>
+    public Participant JoinAsHost(string connectionId, IdentityKeys identity, VideoCodecs videoCodecs, HostKeys keys, string attestation)
+    {
+        if (Host is not null && Host != keys)
+            throw new DomainException(InvalidHostProof);
+        EnsureNewConnection(connectionId);
+        EnsureNotRevoked(identity);
+        if (!_hosts.Exists(h => h.Identity == identity.Ed25519Pub))
+        {
+            EnsureAuthorityRoom();
+            _hosts.Add(new HostAttestation(identity.Ed25519Pub, attestation));
+        }
+
+        Host = keys;
+        return Replace(AddParticipant(connectionId, identity, videoCodecs) with { Role = ParticipantRole.Host });
+    }
+
+    /// <summary>
+    /// Someone who was admitted earlier in this call (same identity, e.g. after a reconnect) joins straight in.
+    /// The ticket's signature is checked by the caller; here its issuer must have been a host or co-host.
+    /// </summary>
+    public bool CanRejoinWith(IdentityKeys identity, Statement ticket) =>
+        ticket.Subject == identity.Ed25519Pub && IsAuthorityIdentity(ticket.Issuer) && !IsRevoked(identity.Ed25519Pub);
+
+    public Participant JoinWithTicket(string connectionId, IdentityKeys identity, VideoCodecs videoCodecs, Statement ticket)
+    {
+        if (!CanRejoinWith(identity, ticket))
+            throw new DomainException(NotAllowed);
+        var role = IsCoHostIdentity(identity.Ed25519Pub) ? ParticipantRole.CoHost : ParticipantRole.Guest;
+        return Replace(AddParticipant(connectionId, identity, videoCodecs) with { Role = role, Ticket = ticket });
+    }
+
+    /// <summary>Waits in the lobby until an admitter lets them in.</summary>
+    public LobbyGuest EnterLobby(string connectionId, IdentityKeys identity, VideoCodecs videoCodecs, DateTimeOffset now)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionId);
-        if (_participants.Exists(p => p.ConnectionId == connectionId))
-            throw new InvalidOperationException("Connection is already in this room.");
-
-        var participant = new Participant(ParticipantId.New(), Id, connectionId, displayName, identity)
+        EnsureNewConnection(connectionId);
+        if (_deniedUntil.TryGetValue(connectionId, out var until))
         {
-            VideoCodecs = videoCodecs ?? VideoCodecs.Baseline,
-        };
+            if (until > now)
+                throw new DomainException(AskedTooOften);
+            _deniedUntil.Remove(connectionId);
+        }
+        EnsureNotRevoked(identity);
+        if (_lobby.Count >= MaxLobby)
+            throw new DomainException(LobbyFull);
+
+        var guest = new LobbyGuest(ParticipantId.New(), Id, connectionId, identity, videoCodecs);
+        _lobby.Add(guest);
+        return guest;
+    }
+
+    public LobbyGuest? LeaveLobby(string connectionId)
+    {
+        var index = _lobby.FindIndex(g => g.ConnectionId == connectionId);
+        if (index < 0)
+            return null;
+        var guest = _lobby[index];
+        _lobby.RemoveAt(index);
+        return guest;
+    }
+
+    /// <summary>Admitters a lobby guest's knock (their encrypted name) goes to: each must be an admitter right now.</summary>
+    public IReadOnlyList<Participant> KnockRecipients(ParticipantId guestId, IReadOnlyCollection<ParticipantId> admitterIds)
+    {
+        if (!_lobby.Exists(g => g.Id == guestId))
+            throw new DomainException(NotAdmitted);
+        var recipients = admitterIds.Select(Find).ToArray();
+        if (recipients.Any(r => r is not { IsAdmitter: true }))
+            throw new DomainException(InvalidKnock);
+        return recipients!;
+    }
+
+    /// <summary>
+    /// Moves a lobby guest into the call. <paramref name="ticketSig"/> is the admitter's identity signature over the
+    /// guest's identity (checked by the caller).
+    /// </summary>
+    public Participant Admit(ParticipantId admitterId, ParticipantId guestId, string ticketSig)
+    {
+        var admitter = RequireAdmitter(admitterId);
+        var guest = FindGuest(guestId);
+        _lobby.Remove(guest);
+        var ticket = new Statement(guest.Identity.Ed25519Pub, admitter.Identity.Ed25519Pub, ticketSig);
+        return Replace(AddParticipant(guest.ConnectionId, guest.Identity, guest.VideoCodecs, guest.Id) with { Ticket = ticket });
+    }
+
+    /// <summary>Turns a lobby guest away; that connection can ask again after <see cref="DenyCooldown"/>.</summary>
+    public LobbyGuest Deny(ParticipantId admitterId, ParticipantId guestId, DateTimeOffset now)
+    {
+        RequireAdmitter(admitterId);
+        var guest = FindGuest(guestId);
+        _lobby.Remove(guest);
+        foreach (var expired in _deniedUntil.Where(d => d.Value <= now).Select(d => d.Key).ToArray())
+            _deniedUntil.Remove(expired);
+        _deniedUntil[guest.ConnectionId] = now + DenyCooldown;
+        return guest;
+    }
+
+    /// <summary>The host makes a guest a co-host (<paramref name="sig"/>: the host identity's grant, checked by the caller).</summary>
+    public Participant GrantCoHost(ParticipantId hostId, ParticipantId targetId, string sig)
+    {
+        var host = Get(hostId);
+        var target = Find(targetId) ?? throw new DomainException(UnknownParticipant);
+        if (host.Role != ParticipantRole.Host || target.Role != ParticipantRole.Guest)
+            throw new DomainException(NotAllowed);
+        EnsureAuthorityRoom();
+        _coHosts.Add(new Statement(target.Identity.Ed25519Pub, host.Identity.Ed25519Pub, sig));
+        return Replace(target with { Role = ParticipantRole.CoHost });
+    }
+
+    /// <summary>
+    /// Removes someone from the call for good (their identity is revoked). Hosts can remove anyone else; co-hosts only
+    /// guests. Everyone's subscriptions to their tracks go too.
+    /// </summary>
+    public Participant Remove(ParticipantId actorId, ParticipantId targetId, string sig)
+    {
+        var actor = RequireAdmitter(actorId);
+        var target = Find(targetId) ?? throw new DomainException(UnknownParticipant);
+        if (target.Id == actor.Id || (actor.Role == ParticipantRole.CoHost && target.Role != ParticipantRole.Guest))
+            throw new DomainException(NotAllowed);
+        EnsureAuthorityRoom();
+        _revoked.Add(new Statement(target.Identity.Ed25519Pub, actor.Identity.Ed25519Pub, sig));
+        return Leave(target.ConnectionId)!;
+    }
+
+    /// <summary>The host changes room settings; <paramref name="seq"/> must be newer than the current one.</summary>
+    public RoomSettings UpdateSettings(ParticipantId hostId, uint seq, bool autoAdmit, string sig)
+    {
+        var host = Get(hostId);
+        if (host.Role != ParticipantRole.Host || (Settings is not null && seq <= Settings.Seq))
+            throw new DomainException(NotAllowed);
+        return Settings = new RoomSettings(host.Identity.Ed25519Pub, seq, autoAdmit, sig);
+    }
+
+    /// <summary>An admitter asks another member to mute (advisory — the member's browser decides).</summary>
+    public Participant MuteTarget(ParticipantId actorId, ParticipantId targetId)
+    {
+        RequireAdmitter(actorId);
+        var target = Find(targetId) ?? throw new DomainException(UnknownParticipant);
+        return target.Id == actorId ? throw new DomainException(NotAllowed) : target;
+    }
+
+    /// <summary>Ends the call for everyone: members and lobby leave. Returns everyone's connection.</summary>
+    public IReadOnlyList<string> End(ParticipantId actorId)
+    {
+        RequireAdmitter(actorId);
+        string[] connections = [.. _participants.Select(p => p.ConnectionId), .. _lobby.Select(g => g.ConnectionId)];
+        _participants.Clear();
+        _lobby.Clear();
+        return connections;
+    }
+
+    public Participant RequireAdmitter(ParticipantId id)
+    {
+        var participant = Get(id);
+        return participant.IsAdmitter ? participant : throw new DomainException(NotAllowed);
+    }
+
+    /// <summary>Whether <paramref name="identity"/> (Ed25519, base64url) was ever a host or co-host in this room.</summary>
+    public bool IsAuthorityIdentity(string identity) => _hosts.Exists(h => h.Identity == identity) || IsCoHostIdentity(identity);
+
+    public bool IsRevoked(string identity) => _revoked.Exists(r => r.Subject == identity);
+
+    private bool IsCoHostIdentity(string identity) => _coHosts.Exists(c => c.Subject == identity);
+
+    private void EnsureNotRevoked(IdentityKeys identity)
+    {
+        if (IsRevoked(identity.Ed25519Pub))
+            throw new DomainException(NotAllowed);
+    }
+
+    private void EnsureAuthorityRoom()
+    {
+        if (_hosts.Count + _coHosts.Count + _revoked.Count >= MaxAuthorityEntries)
+            throw new DomainException(NotAllowed);
+    }
+
+    private void EnsureNewConnection(string connectionId)
+    {
+        if (HasConnection(connectionId))
+            throw new InvalidOperationException("Connection is already in this room.");
+    }
+
+    private LobbyGuest FindGuest(ParticipantId guestId) =>
+        _lobby.Find(g => g.Id == guestId) ?? throw new DomainException(UnknownParticipant);
+
+    private Participant AddParticipant(string connectionId, IdentityKeys identity, VideoCodecs videoCodecs, ParticipantId? id = null)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(connectionId);
+        EnsureNewConnection(connectionId);
+        var participant = new Participant(id ?? ParticipantId.New(), Id, connectionId, identity) { VideoCodecs = videoCodecs };
         _participants.Add(participant);
         return participant;
     }

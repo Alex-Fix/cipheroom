@@ -40,9 +40,13 @@ public static partial class MediaRules
 /// <summary>Media sessions are created lazily: on the first publish or subscribe.</summary>
 internal static class MediaSessions
 {
+    /// <summary>The caller as a member of their room: "Join a room first." if in none, "Not admitted." if still waiting in a lobby.</summary>
+    public static Participant Member(IRoomStore rooms, string connectionId) =>
+        rooms.InRoom(connectionId, (_, self) => self) ?? throw new NotFoundException(MediaRules.NotInRoom);
+
     public static async Task<Participant> EnsureAsync(IRoomStore rooms, ISfu sfu, string connectionId, CancellationToken cancellationToken)
     {
-        var self = rooms.FindByConnection(connectionId) ?? throw new NotFoundException(MediaRules.NotInRoom);
+        var self = Member(rooms, connectionId);
         if (self.SfuSessionId is not null)
             return self;
 
@@ -54,7 +58,7 @@ internal static class MediaSessions
     /// <summary>The caller's existing session (renegotiation and closing need one already).</summary>
     public static string Require(IRoomStore rooms, string connectionId)
     {
-        var self = rooms.FindByConnection(connectionId) ?? throw new NotFoundException(MediaRules.NotInRoom);
+        var self = Member(rooms, connectionId);
         return self.SfuSessionId ?? throw new DomainException(MediaRules.NoMediaSession);
     }
 }
