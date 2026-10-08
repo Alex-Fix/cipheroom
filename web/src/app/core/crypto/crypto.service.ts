@@ -19,6 +19,7 @@ import {
 import { SENDER_KEY_BYTES } from './keyring';
 import { SafetyCode, safetyCode } from './safety-code';
 import { E2EE_UNSUPPORTED } from './support';
+import type { E2eeStatsDto } from '../signaling/signaling.types';
 
 /** Bursts of joins/leaves within this window cause one rotation. */
 export const ROTATION_DEBOUNCE_MS = 300;
@@ -83,6 +84,10 @@ export class CryptoService implements OnDestroy {
   /** Dropped envelopes by reason (diagnostics only). */
   readonly droppedEnvelopes = signal<Partial<Record<EnvelopeDrop, number>>>({});
 
+  /** When we started waiting for each participant's first key (time spent "Securing…", for call-quality reports). */
+  private readonly securingSince = new Map<string, number>();
+  private securingMs = 0;
+
   constructor() {
     effect(() => {
       const participants = this.signaling.participants();
@@ -143,6 +148,7 @@ export class CryptoService implements OnDestroy {
     clearTimeout(session.rotationTimer);
     session.switchTimers.forEach((t) => clearTimeout(t));
     session.frames.terminate();
+    [...this.securingSince.keys()].forEach((id) => this.stopWaiting(id));
     this.session = undefined;
     this.safetyCodeRun++;
     this.safetyCode.set(undefined);
@@ -152,6 +158,31 @@ export class CryptoService implements OnDestroy {
 
   ngOnDestroy(): void {
     this.stop();
+  }
+
+  /**
+   * End-to-end encryption health since this call's encryption started, for call-quality reports: frame counters from
+   * the worker, dropped envelopes, and the total time participants spent "Securing…". Counts and seconds only.
+   */
+  telemetry(now = Date.now()): E2eeStatsDto {
+    const frames = this.session?.frames.latestStats;
+    let waiting = 0;
+    this.securingSince.forEach((since) => (waiting += now - since));
+    return {
+      framesEncrypted: frames?.encrypted ?? 0,
+      framesDecrypted: frames?.decrypted ?? 0,
+      framesFailed: frames?.failed ?? 0,
+      framesMissingKey: frames?.missingKey ?? 0,
+      envelopesDropped: Object.values(this.droppedEnvelopes()).reduce((a, b) => a + (b ?? 0), 0),
+      securingSeconds: (this.securingMs + waiting) / 1000,
+    };
+  }
+
+  private stopWaiting(id: string): void {
+    const since = this.securingSince.get(id);
+    if (since === undefined) return;
+    this.securingMs += Date.now() - since;
+    this.securingSince.delete(id);
   }
 
   private async ensureIdentity(roomId: string): Promise<Identity> {
@@ -182,16 +213,19 @@ export class CryptoService implements OnDestroy {
       const identity = verifyIdentity(p.identity, session.roomId).then((verified) => {
         if (!verified && session.peers.get(p.id)?.identity === identity) {
           this.unverified.update((ids) => new Set(ids).add(p.id));
+          this.stopWaiting(p.id); // no key will ever come
         }
         return verified;
       });
       session.peers.set(p.id, { identity });
+      this.securingSince.set(p.id, Date.now());
       changed = true;
     }
     for (const id of [...session.peers.keys()]) {
       if (present.has(id)) continue;
       session.peers.delete(id);
       session.frames.removeParticipant(id);
+      this.stopWaiting(id);
       this.secured.update((ids) => without(ids, id));
       this.unverified.update((ids) => without(ids, id));
       changed = true;
@@ -306,6 +340,7 @@ export class CryptoService implements OnDestroy {
       if (session.stopped || session.peers.get(fromId) !== peer) return;
       peer.lastEpoch = opened.epoch;
       session.frames.setReceiveKey(fromId, opened.keyIndex, opened.senderKey);
+      this.stopWaiting(fromId);
       this.secured.update((ids) => (ids.has(fromId) ? ids : new Set(ids).add(fromId)));
     } catch (e) {
       if (!(e instanceof EnvelopeError)) throw e;

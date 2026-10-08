@@ -31,7 +31,8 @@
 | Cloudflare Realtime SFU | forwards media between browsers, simulcast layer selection | end-to-end encrypted frames (codec payload header in the clear), metadata |
 | Cloudflare TURN | fallback relay for client networks that block direct UDP | DTLS-SRTP packets |
 | `web` | static Angular app (ng-zorro UI, icons bundled — no runtime CDN fetches) + security headers | nothing sensitive |
-| `cloudflared` | one public HTTPS hostname → `web` (which proxies `/api`, `/hubs` to the api) | TLS-terminated HTTP/WS |
+| `cloudflared` | one public HTTPS hostname → `web` (which proxies `/api`, `/hubs` to the api, `/grafana/` to Grafana) | TLS-terminated HTTP/WS |
+| Observability (profile `observability`) | otel-collector → Prometheus / Loki / Tempo, Grafana at `/grafana/` behind its own hardened login, node-exporter, cAdvisor — [`observability.md`](observability.md) | pseudonymous metadata: hashed room ids, random participant ids, call timing, call-quality numbers (7 days) |
 
 **One signaling channel:** SignalR (`/hubs/room`) carries everything — rooms, media negotiation (the api relays offers
 and answers to the SFU with its app secret, which never reaches clients), key envelopes and, later, chat. Media
@@ -130,6 +131,9 @@ the frame worker's key interface stays the same.
 - A malicious server can drop envelopes or hide a leave (calls break, or a leaver keeps getting keys until the next
   rotation) — visible as "who's in the call", never a decryption.
 - Not independently audited. Server-side recording/transcription is impossible by design.
+- With observability on, the home server also keeps (7 days) traces and logs per hub call with keyed room hashes and
+  random participant ids, and browsers' call-quality numbers — never keys, envelopes, SDP, names or IPs
+  ([`observability.md`](observability.md)).
 - Debug: `?e2ee=passthrough` makes one browser skip decrypting what it receives (others look broken there) — a
   check that the SFU carries ciphertext; what it sends stays encrypted.
 

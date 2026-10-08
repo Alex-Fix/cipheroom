@@ -42,9 +42,14 @@ export class FrameCrypto {
     onStats?: (stats: FrameStats) => void,
   ) {
     this.worker.addEventListener('message', ({ data }: MessageEvent<FrameStats>) => {
-      if (data.type === 'stats') onStats?.(data);
+      if (data.type !== 'stats') return;
+      this.latestStats = data;
+      onStats?.(data);
     });
   }
+
+  /** The worker's counters since it started (every few seconds; counts only). */
+  latestStats?: FrameStats;
 
   /** Extra RTCPeerConnection settings this API needs. */
   get peerConnectionConfig(): object {

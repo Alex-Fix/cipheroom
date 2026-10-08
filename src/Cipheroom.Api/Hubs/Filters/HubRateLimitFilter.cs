@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.Threading.RateLimiting;
+using Cipheroom.Application.Common.Telemetry;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Options;
 
@@ -28,11 +29,13 @@ public sealed partial class HubRateLimitFilter : IHubFilter, IDisposable
 
     private readonly PartitionedRateLimiter<string> _limiter;
     private readonly ILogger<HubRateLimitFilter> _logger;
+    private readonly CipheroomMetrics _metrics;
 
-    public HubRateLimitFilter(IOptions<HubRateLimitOptions> options, ILogger<HubRateLimitFilter> logger)
+    public HubRateLimitFilter(IOptions<HubRateLimitOptions> options, CipheroomMetrics metrics, ILogger<HubRateLimitFilter> logger)
     {
         var opts = options.Value;
         _logger = logger;
+        _metrics = metrics;
         _limiter = PartitionedRateLimiter.Create<string, string>(connectionId =>
             RateLimitPartition.GetTokenBucketLimiter(connectionId, _ => new TokenBucketRateLimiterOptions
             {
@@ -52,6 +55,7 @@ public sealed partial class HubRateLimitFilter : IHubFilter, IDisposable
         if (!lease.IsAcquired)
         {
             LogLimited(_logger, invocationContext.HubMethodName);
+            _metrics.RateLimited(invocationContext.HubMethodName);
             throw new HubException(TooManyRequests);
         }
 

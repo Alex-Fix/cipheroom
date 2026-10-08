@@ -3,6 +3,9 @@ using Cipheroom.Domain.Rooms;
 
 namespace Cipheroom.Application.Common.Interfaces;
 
+/// <summary>Counts across all rooms.</summary>
+public sealed record RoomStoreStats(int Rooms, int Participants);
+
 /// <summary>Live room state. Each connection is in at most one room.</summary>
 public interface IRoomStore
 {
@@ -19,6 +22,9 @@ public interface IRoomStore
         [NotNullWhen(true)] out IReadOnlyList<Participant>? others);
 
     Participant? FindByConnection(string connectionId);
+
+    /// <summary>How many rooms and participants there are right now (for metrics).</summary>
+    RoomStoreStats Stats();
 
     /// <summary>Removes the connection from its room; empty rooms are dropped. Null if it wasn't in one.</summary>
     Participant? Leave(string connectionId);

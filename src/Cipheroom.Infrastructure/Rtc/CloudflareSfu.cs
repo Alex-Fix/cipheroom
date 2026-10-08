@@ -1,5 +1,6 @@
 using Cipheroom.Application.Common.Exceptions;
 using Cipheroom.Application.Common.Interfaces;
+using Cipheroom.Application.Common.Telemetry;
 using Cipheroom.Infrastructure.Rtc.Cloudflare;
 
 namespace Cipheroom.Infrastructure.Rtc;
@@ -7,17 +8,18 @@ namespace Cipheroom.Infrastructure.Rtc;
 /// <summary>
 /// <see cref="ISfu"/> on Cloudflare Realtime SFU. Adapter only: HTTP lives in <see cref="CloudflareSfuClient"/>.
 /// Every failure (HTTP, Cloudflare error code, per-track error, timeout) becomes a <see cref="MediaServerException"/>.
+/// Every request is timed by operation (<see cref="CipheroomMetrics"/>).
 /// </summary>
-public sealed class CloudflareSfu(CloudflareSfuClient cloudflare) : ISfu
+public sealed class CloudflareSfu(CloudflareSfuClient cloudflare, CipheroomMetrics metrics) : ISfu
 {
     // Highest quality first; Cloudflare steps down (asciibetical: f → h → q) when the receiver can't keep up.
     private const string FirstLayer = "f";
 
     public Task<string> CreateSessionAsync(CancellationToken cancellationToken) =>
-        Call(async () => (await cloudflare.NewSessionAsync(cancellationToken)).SessionId, cancellationToken);
+        Call("create_session", async () => (await cloudflare.NewSessionAsync(cancellationToken)).SessionId, cancellationToken);
 
     public Task<string> PublishAsync(string sessionId, string offerSdp, IReadOnlyList<SfuLocalTrack> tracks, CancellationToken cancellationToken) =>
-        Call(async () =>
+        Call("publish", async () =>
         {
             var response = await cloudflare.NewTracksAsync(
                 sessionId,
@@ -30,7 +32,7 @@ public sealed class CloudflareSfu(CloudflareSfuClient cloudflare) : ISfu
         }, cancellationToken);
 
     public Task<SfuSubscribeResult> SubscribeAsync(string sessionId, IReadOnlyList<SfuRemoteTrack> tracks, CancellationToken cancellationToken) =>
-        Call(async () =>
+        Call("subscribe", async () =>
         {
             var response = await cloudflare.NewTracksAsync(
                 sessionId,
@@ -54,10 +56,10 @@ public sealed class CloudflareSfu(CloudflareSfuClient cloudflare) : ISfu
         }, cancellationToken);
 
     public Task RenegotiateAsync(string sessionId, string answerSdp, CancellationToken cancellationToken) =>
-        Call(() => cloudflare.RenegotiateAsync(sessionId, new RenegotiateRequest(new SessionDescription("answer", answerSdp)), cancellationToken), cancellationToken);
+        Call("renegotiate", () => cloudflare.RenegotiateAsync(sessionId, new RenegotiateRequest(new SessionDescription("answer", answerSdp)), cancellationToken), cancellationToken);
 
     public Task<string> RestartIceAsync(string sessionId, string offerSdp, CancellationToken cancellationToken) =>
-        Call(async () =>
+        Call("restart_ice", async () =>
         {
             var response = await cloudflare.RenegotiateAsync(sessionId, new RenegotiateRequest(new SessionDescription("offer", offerSdp)), cancellationToken);
             return Sdp(response.SessionDescription);
@@ -65,10 +67,10 @@ public sealed class CloudflareSfu(CloudflareSfuClient cloudflare) : ISfu
 
     public Task CloseTracksAsync(string sessionId, IReadOnlyList<string> mids, CancellationToken cancellationToken) =>
         // Forced: no SDP exchange. Per-track errors mean "already closed / absent" — fine for a close.
-        Call(() => cloudflare.CloseTracksAsync(sessionId, new CloseTracksRequest([.. mids.Select(m => new SfuTrack(Mid: m))], Force: true), cancellationToken), cancellationToken);
+        Call("close_tracks", () => cloudflare.CloseTracksAsync(sessionId, new CloseTracksRequest([.. mids.Select(m => new SfuTrack(Mid: m))], Force: true), cancellationToken), cancellationToken);
 
     public Task SelectLayerAsync(string sessionId, string mid, SfuRemoteTrack track, string rid, CancellationToken cancellationToken) =>
-        Call(async () =>
+        Call("select_layer", async () =>
         {
             var response = await cloudflare.UpdateTracksAsync(sessionId, new TracksRequest([Remote(track, rid) with { Mid = mid }]), cancellationToken);
             EnsureNoTrackErrors(response.Tracks);
@@ -90,11 +92,11 @@ public sealed class CloudflareSfu(CloudflareSfuClient cloudflare) : ISfu
             throw new MediaServerException(new CloudflareSfuException(200, failed.ErrorCode));
     }
 
-    private static async Task<T> Call<T>(Func<Task<T>> call, CancellationToken cancellationToken)
+    private async Task<T> Call<T>(string operation, Func<Task<T>> call, CancellationToken cancellationToken)
     {
         try
         {
-            return await call();
+            return await metrics.MeasureSfuAsync(operation, call, cancellationToken);
         }
         catch (Exception ex) when (ex is CloudflareSfuException or HttpRequestException
             || (ex is OperationCanceledException && !cancellationToken.IsCancellationRequested))

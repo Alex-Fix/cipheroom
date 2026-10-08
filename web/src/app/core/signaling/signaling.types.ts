@@ -72,6 +72,55 @@ export interface SubscribeResult {
   tracks: SubscribedTrackDto[];
 }
 
+/** Coarse browser bucket for call-quality reports (anything else is recorded as `other`). */
+export type CallPlatform =
+  | 'ios-safari'
+  | 'android-chrome'
+  | 'desktop-chrome'
+  | 'desktop-safari'
+  | 'desktop-firefox'
+  | 'other';
+
+/** One direction of one media kind over the report interval, summed over its streams. */
+export interface StreamStatsDto {
+  bytes: number;
+  packets: number;
+  packetsLost: number;
+  jitterMs: number | null;
+  /** Received video: time frozen during the interval. */
+  freezeSeconds: number | null;
+  /** Received video: tallest stream; sent video: what we encode. */
+  height: number | null;
+  fps: number | null;
+}
+
+/** End-to-end encryption health over the interval: counts and seconds only. */
+export interface E2eeStatsDto {
+  framesEncrypted: number;
+  framesDecrypted: number;
+  framesFailed: number;
+  framesMissingKey: number;
+  envelopesDropped: number;
+  securingSeconds: number;
+}
+
+/**
+ * A call-quality summary for the last ~15 s (ReportCallStats): numbers only — no ids, names, addresses or media.
+ * The server records it as metrics; nobody else sees it.
+ */
+export interface CallStatsDto {
+  platform: CallPlatform;
+  path: 'direct' | 'relay' | 'unknown';
+  intervalSeconds: number;
+  /** Round trip on the connection to Cloudflare. */
+  rttMs: number | null;
+  audioSent: StreamStatsDto | null;
+  audioReceived: StreamStatsDto | null;
+  videoSent: StreamStatsDto | null;
+  videoReceived: StreamStatsDto | null;
+  e2ee: E2eeStatsDto | null;
+}
+
 /** Client → server hub methods. */
 export const HubMethods = {
   JoinRoom: 'JoinRoom',
@@ -86,6 +135,7 @@ export const HubMethods = {
   SetTrackMuted: 'SetTrackMuted',
   SelectVideoLayer: 'SelectVideoLayer',
   SendKeyEnvelopes: 'SendKeyEnvelopes',
+  ReportCallStats: 'ReportCallStats',
 } as const;
 
 /** Server → client events. */

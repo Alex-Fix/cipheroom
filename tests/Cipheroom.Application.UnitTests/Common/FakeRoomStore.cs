@@ -38,6 +38,8 @@ internal sealed class FakeRoomStore : IRoomStore
 
     public Participant? FindByConnection(string connectionId) => InRoom(connectionId, (_, self) => self);
 
+    public RoomStoreStats Stats() => new(_rooms.Values.Count(r => !r.IsEmpty), _byConnection.Count);
+
     public Participant? Leave(string connectionId) =>
         _byConnection.Remove(connectionId, out var known) ? _rooms[known.Room].Leave(connectionId) : null;
 

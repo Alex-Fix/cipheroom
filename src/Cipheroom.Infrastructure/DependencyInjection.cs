@@ -2,6 +2,7 @@ using Cipheroom.Application.Common.Interfaces;
 using Cipheroom.Infrastructure.Rooms;
 using Cipheroom.Infrastructure.Rtc;
 using Cipheroom.Infrastructure.Rtc.Cloudflare;
+using Cipheroom.Infrastructure.Usage;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Http.Resilience;
 using Microsoft.Extensions.Options;
@@ -37,6 +38,18 @@ public static class DependencyInjection
             // Track and session mutations aren't idempotent: a retried POST/PUT could add tracks twice.
             .AddStandardResilienceHandler(o => o.Retry.DisableForUnsafeHttpMethods());
         services.AddTransient<ISfu, CloudflareSfu>();
+
+        // Free-tier usage from Cloudflare's GraphQL Analytics (read-only token), polled in the background.
+        services.AddOptions<RealtimeUsageOptions>().BindConfiguration(RealtimeUsageOptions.Section).ValidateDataAnnotations().ValidateOnStart();
+        services.AddHttpClient<CloudflareAnalyticsClient>((sp, http) =>
+            {
+                var cloudflare = sp.GetRequiredService<IOptions<RealtimeUsageOptions>>().Value.Cloudflare;
+                http.BaseAddress = new Uri(cloudflare.ApiBaseUrl);
+                http.DefaultRequestHeaders.Authorization = new("Bearer", cloudflare.ApiToken);
+            })
+            .AddStandardResilienceHandler();
+        services.AddTransient<IRealtimeUsage, CloudflareRealtimeUsage>();
+        services.AddHostedService<RealtimeUsagePoller>();
 
         // Resolved per use so configuration (and typed HttpClient lifetimes) are honoured.
         services.AddTransient<IIceServerProvider>(sp =>

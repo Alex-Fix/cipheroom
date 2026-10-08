@@ -372,6 +372,34 @@ describe('CryptoService', () => {
     });
   });
 
+  it('reports E2EE health: time spent waiting for keys and dropped envelopes', async () => {
+    const alice = server.client('alice');
+    let now = 1_000_000;
+    vi.spyOn(Date, 'now').mockImplementation(() => now);
+    await server.join(alice);
+    expect(alice.crypto.telemetry(now).securingSeconds).toBe(0);
+
+    // Carol is listed but never sends her key: Alice keeps waiting ("Securing…").
+    const carol = await server.client('carol').crypto.identityBundle(ROOM);
+    alice.participants.update((list) => [
+      ...list,
+      { id: 'carol', displayName: 'Carol', tracks: [], identity: carol },
+    ]);
+    await settle();
+    now += 2_000;
+    expect(alice.crypto.telemetry(now).securingSeconds).toBe(2);
+
+    // She leaves: the clock stops.
+    alice.participants.set([]);
+    await settle();
+    now += 60_000;
+    expect(alice.crypto.telemetry(now).securingSeconds).toBe(2);
+
+    alice.inbox('mallory', 'AAAA');
+    await settle();
+    expect(alice.crypto.telemetry(now).envelopesDropped).toBe(1);
+  });
+
   it('stop ends the call’s encryption: worker gone, later envelopes ignored', async () => {
     const alice = server.client('alice');
     const bob = server.client('bob');

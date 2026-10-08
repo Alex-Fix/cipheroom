@@ -13,4 +13,8 @@
     <ProjectReference Include="..\Cipheroom.Application\Cipheroom.Application.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="Cipheroom.Infrastructure.IntegrationTests" />
+  </ItemGroup>
+
 </Project>

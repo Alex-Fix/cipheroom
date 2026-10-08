@@ -16,6 +16,13 @@ services:
       # Trust X-Forwarded-* from our proxies only (cloudflared → nginx → api). The api publishes no ports, so only
       # containers on the compose network (Docker's 172.16.0.0/12 range) can reach it.
       ForwardedHeaders__KnownNetworks__0: 172.16.0.0/12
+      # Telemetry: exported only when scripts/up.sh --observability sets the endpoint (otherwise console logs only).
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_METRIC_EXPORT_INTERVAL: "30000"
+      Telemetry__Secret: ${TELEMETRY_SECRET:-}
+      # Free-tier usage from Cloudflare's analytics (read-only token); without them dashboards estimate it.
+      RealtimeUsage__Cloudflare__AccountId: ${CF_ACCOUNT_ID:-}
+      RealtimeUsage__Cloudflare__ApiToken: ${CF_ANALYTICS_API_TOKEN:-}
     restart: unless-stopped
 
   web:
@@ -37,3 +44,135 @@ services:
     depends_on: [web]
     restart: unless-stopped
     profiles: [tunnel]
+
+  # ── Observability (profile `observability`, scripts/up.sh --observability) ─────────────────────────────────────────
+  # Self-hosted, nothing published: Grafana is reached through web (nginx) at /grafana/, protected by its own login
+  # (hardened below; nginx rate-limits the login page).
+  # Design: docs/plans/2026-10-07-observability-design.md
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.162.0
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./observability/otel-collector.yaml:/etc/otelcol/config.yaml:ro
+    mem_limit: 256m
+    restart: unless-stopped
+    profiles: [observability]
+
+  prometheus:
+    image: prom/prometheus:v3.15.0
+    command:
+      - --config.file=/etc/prometheus/prometheus.yaml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=7d
+      - --storage.tsdb.retention.size=5GB
+      - --web.enable-otlp-receiver
+    volumes:
+      - ./observability/prometheus.yaml:/etc/prometheus/prometheus.yaml:ro
+      - prometheus-data:/prometheus
+    mem_limit: 384m
+    restart: unless-stopped
+    profiles: [observability]
+
+  loki:
+    image: grafana/loki:3.7.8
+    command: ["-config.file=/etc/loki/config.yaml"]
+    volumes:
+      - ./observability/loki.yaml:/etc/loki/config.yaml:ro
+      - loki-data:/loki
+    mem_limit: 256m
+    restart: unless-stopped
+    profiles: [observability]
+
+  tempo:
+    image: grafana/tempo:2.10.8
+    command: ["-config.file=/etc/tempo/config.yaml"]
+    volumes:
+      - ./observability/tempo.yaml:/etc/tempo/config.yaml:ro
+      - tempo-data:/var/tempo
+    mem_limit: 256m
+    restart: unless-stopped
+    profiles: [observability]
+
+  grafana:
+    image: grafana/grafana:13.2.3
+    environment:
+      GF_SERVER_ROOT_URL: https://${PUBLIC_HOST:-localhost}/grafana/
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      GF_SECURITY_ADMIN_USER: admin
+      # scripts/up.sh --observability refuses to start without it (Grafana's default would be "admin").
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-}
+      GF_SECURITY_COOKIE_SECURE: "true"
+      GF_SECURITY_COOKIE_SAMESITE: strict
+      # Grafana sets its own CSP for /grafana/ (it needs inline scripts); no third-party origins.
+      GF_SECURITY_CONTENT_SECURITY_POLICY: "true"
+      GF_SECURITY_CONTENT_SECURITY_POLICY_TEMPLATE: >-
+        script-src 'self' 'unsafe-eval' 'unsafe-inline' 'strict-dynamic' $$NONCE;object-src 'none';font-src 'self';
+        style-src 'self' 'unsafe-inline' blob:;img-src 'self' data: blob:;base-uri 'self';
+        connect-src 'self' wss://$$ROOT_PATH;manifest-src 'self';media-src 'none';form-action 'self';frame-ancestors 'none'
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      # Internet-facing behind its own login only: lock accounts after failed logins, strong passwords for any user
+      # added later, sessions that expire, and no unauthenticated /metrics.
+      GF_SECURITY_DISABLE_BRUTE_FORCE_LOGIN_PROTECTION: "false"
+      GF_SECURITY_BRUTE_FORCE_LOGIN_PROTECTION_MAX_ATTEMPTS: "5"
+      GF_AUTH_BASIC_PASSWORD_POLICY: "true"
+      GF_AUTH_LOGIN_MAXIMUM_INACTIVE_LIFETIME_DURATION: 7d
+      GF_AUTH_LOGIN_MAXIMUM_LIFETIME_DURATION: 30d
+      GF_METRICS_ENABLED: "false"
+      # No phoning home: usage stats, update checks, news, external snapshots, plugin catalog.
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+      GF_SNAPSHOTS_EXTERNAL_ENABLED: "false"
+      GF_PLUGINS_PLUGIN_ADMIN_ENABLED: "false"
+      GF_LOG_LEVEL: warn
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    mem_limit: 256m
+    restart: unless-stopped
+    profiles: [observability]
+
+  # Host metrics. On Docker Desktop (macOS) this is the Linux VM running the containers, not macOS itself.
+  node-exporter:
+    image: prom/node-exporter:v1.12.1
+    command:
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --path.rootfs=/rootfs
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    pid: host
+    mem_limit: 64m
+    restart: unless-stopped
+    profiles: [observability]
+
+  # Per-container CPU, memory, network.
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.55.1
+    command:
+      - --docker_only=true
+      - --housekeeping_interval=30s
+      - --store_container_labels=false
+    volumes:
+      - /:/rootfs:ro
+      # Docker Desktop only maps the socket itself (not all of /var/run); works the same on Linux.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /run/containerd/containerd.sock:/run/containerd/containerd.sock:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    privileged: true
+    mem_limit: 192m
+    restart: unless-stopped
+    profiles: [observability]
+
+volumes:
+  prometheus-data:
+  loki-data:
+  tempo-data:
+  grafana-data:

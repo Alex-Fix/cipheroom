@@ -3,10 +3,13 @@ import { CryptoService } from '../crypto/crypto.service';
 import { MediaKind } from '../crypto/frame-codec';
 import { FrameCrypto } from '../crypto/frame-transforms';
 import { Camera, CameraFacing, cameraFacing, hasRearCamera } from './cameras';
-import { selectedIcePath } from './ice-path';
+import { StatsSnapshot, callStats, statsSnapshot } from './call-stats';
+import { StatsLike, selectedIcePath } from './ice-path';
+import { callPlatform } from './platform';
 import { loadVideoQuality, saveVideoQuality } from '../settings/video-quality';
 import { SignalingService } from '../signaling/signaling.service';
 import {
+  E2eeStatsDto,
   ParticipantDto,
   RtcConfig,
   TrackRefDto,
@@ -59,6 +62,8 @@ export class MediaService implements OnDestroy {
   private frames?: FrameCrypto;
   private statsTimer?: ReturnType<typeof setInterval>;
   private statsTicks = 0;
+  /** Baseline for the next call-quality report (ReportCallStats). */
+  private lastReport?: { snapshot: StatsSnapshot; e2ee: E2eeStatsDto };
   private recoveryTimer?: ReturnType<typeof setTimeout>;
   private restartAttempts = 0;
   private resyncTimer?: ReturnType<typeof setTimeout>;
@@ -280,6 +285,8 @@ export class MediaService implements OnDestroy {
 
   async disconnect(): Promise<void> {
     clearInterval(this.statsTimer);
+    this.lastReport = undefined;
+    this.statsTicks = 0;
     clearTimeout(this.recoveryTimer);
     clearTimeout(this.resyncTimer);
     this.resyncTimer = undefined;
@@ -659,11 +666,33 @@ export class MediaService implements OnDestroy {
       const path = selectedIcePath(report);
       this.diagnostics.update((d) => ({ ...d, publisher: path, subscriber: path }));
     }
+    // Baseline on the first tick, then one report per interval.
+    if (this.statsTicks % REPORT_EVERY_TICKS === 1) this.reportCallStats(report);
+  }
+
+  /**
+   * Call quality for telemetry: what changed since the last report (numbers only — see call-stats.ts), plus
+   * CryptoService's E2EE counters. Fire and forget: a failed report never affects the call.
+   */
+  private reportCallStats(report: StatsLike): void {
+    const snapshot = statsSnapshot(report, performance.now());
+    const e2ee = this.crypto.telemetry();
+    const previous = this.lastReport;
+    this.lastReport = { snapshot, e2ee };
+    if (!previous) return;
+    const platform = callPlatform(navigator.userAgent ?? '', navigator.maxTouchPoints ?? 0);
+    const stats = callStats(previous.snapshot, snapshot, platform, {
+      prev: previous.e2ee,
+      next: e2ee,
+    });
+    if (stats) void this.signaling.reportCallStats(stats).catch(() => undefined);
   }
 }
 
 const STATS_INTERVAL_MS = 250;
 const DIAGNOSTICS_EVERY_TICKS = 8;
+/** 60 × 250 ms = one call-quality report every 15 s. */
+const REPORT_EVERY_TICKS = 60;
 const LAYER_DEBOUNCE_MS = 500;
 const ICE_GRACE_MS = 2000;
 const ICE_RESTART_TIMEOUT_MS = 10_000;

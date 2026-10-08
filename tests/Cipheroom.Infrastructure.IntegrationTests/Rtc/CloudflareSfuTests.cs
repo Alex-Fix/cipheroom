@@ -1,11 +1,15 @@
+using System.Diagnostics.Metrics;
 using System.Net;
 using System.Text;
+using Cipheroom.Application;
 using Cipheroom.Application.Common.Exceptions;
 using Cipheroom.Application.Common.Interfaces;
+using Cipheroom.Application.Common.Telemetry;
 using Cipheroom.Infrastructure.Rtc;
 using Cipheroom.Infrastructure.Rtc.Cloudflare;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Diagnostics.Metrics.Testing;
 
 namespace Cipheroom.Infrastructure.IntegrationTests.Rtc;
 
@@ -26,6 +30,26 @@ public sealed class CloudflareSfuTests
         Assert.Equal((HttpMethod.Post, Base + "sessions/new"), (request.Method, request.Uri));
         Assert.Equal("Bearer app-secret", request.Authorization);
     }
+
+    [Fact]
+    public async Task Every_request_is_timed_by_operation_and_outcome()
+    {
+        var (sfu, provider) = SfuWithServices(new StubHandler(HttpStatusCode.Created, """{"sessionId":"s1"}"""));
+        using var durations = new MetricCollector<double>(
+            provider.GetRequiredService<IMeterFactory>(), CipheroomMetrics.MeterName, "cipheroom.sfu.request.duration");
+        await sfu.CreateSessionAsync(_ct);
+
+        var (failing, failingProvider) = SfuWithServices(new StubHandler(HttpStatusCode.BadRequest, """{"errorCode":"x"}"""));
+        using var failures = new MetricCollector<double>(
+            failingProvider.GetRequiredService<IMeterFactory>(), CipheroomMetrics.MeterName, "cipheroom.sfu.request.duration");
+        await Assert.ThrowsAsync<MediaServerException>(() => failing.CreateSessionAsync(_ct));
+
+        Assert.Equal(("create_session", "ok"), Labels(durations.LastMeasurement!));
+        Assert.Equal(("create_session", "failed"), Labels(failures.LastMeasurement!));
+    }
+
+    private static (string, string) Labels(CollectedMeasurement<double> m) =>
+        ((string)m.Tags["operation"]!, (string)m.Tags["outcome"]!);
 
     [Fact]
     public async Task Publish_sends_the_offer_with_local_tracks_and_returns_the_answer()
@@ -138,7 +162,9 @@ public sealed class CloudflareSfuTests
         Assert.Single(handler.Requests);
     }
 
-    private static ISfu Sfu(StubHandler handler)
+    private static ISfu Sfu(StubHandler handler) => SfuWithServices(handler).Sfu;
+
+    private static (ISfu Sfu, ServiceProvider Provider) SfuWithServices(StubHandler handler)
     {
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {
@@ -150,13 +176,15 @@ public sealed class CloudflareSfuTests
         var services = new ServiceCollection()
             .AddSingleton<IConfiguration>(configuration)
             .AddLogging()
+            .AddMetrics()
+            .AddApplication()
             .AddInfrastructure();
         services.AddHttpClient<CloudflareSfuClient>().ConfigurePrimaryHttpMessageHandler(() => handler);
         var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
 
         var sfu = provider.GetRequiredService<ISfu>();
         Assert.IsType<CloudflareSfu>(sfu);
-        return sfu;
+        return (sfu, provider);
     }
 
     private sealed record Recorded(HttpMethod Method, string Uri, string? Authorization, string? Body);
