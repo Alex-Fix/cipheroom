@@ -166,7 +166,7 @@ describe('CallControls', () => {
   it('offers the video codecs, checks the chosen one and emits a new choice', async () => {
     const { fixture, button } = render({
       ...allOn,
-      codecs: ['vp9', 'av1', 'vp8'],
+      codecs: ['vp9', 'vp8'],
       codec: 'vp9',
       sendingCodec: 'vp9',
     });
@@ -176,24 +176,24 @@ describe('CallControls', () => {
     await openMore(fixture, button('more')!);
     const items = [...document.body.querySelectorAll<HTMLElement>('.codec-item')];
 
-    expect(items.map((i) => i.textContent!.trim())).toEqual(['VP9', 'AV1 (experimental)', 'VP8']);
-    expect(items.map((i) => i.getAttribute('aria-checked'))).toEqual(['true', 'false', 'false']);
+    expect(items.map((i) => i.textContent!.trim())).toEqual(['VP9', 'VP8']);
+    expect(items.map((i) => i.getAttribute('aria-checked'))).toEqual(['true', 'false']);
     expect(document.body.querySelector('.codec-note')).toBeNull();
     items[1].click();
-    expect(select).toHaveBeenCalledWith('av1');
+    expect(select).toHaveBeenCalledWith('vp8');
   });
 
   it('says so when it sends a fallback codec', async () => {
     const { fixture, button } = render({
       ...allOn,
-      codecs: ['vp9', 'av1', 'vp8'],
-      codec: 'av1',
-      sendingCodec: 'vp9',
+      codecs: ['vp9', 'vp8'],
+      codec: 'vp9',
+      sendingCodec: 'vp8',
     });
 
     await openMore(fixture, button('more')!);
     expect(document.body.querySelector('.codec-note')?.textContent?.trim()).toBe(
-      'Sending VP9: not everyone here can play AV1',
+      'Sending VP8: not everyone here can play VP9',
     );
   });
 

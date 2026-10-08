@@ -22,12 +22,6 @@ function vp8Delta(): Uint8Array {
   return bytes;
 }
 
-/** A temporal delimiter OBU and a frame OBU with a random payload. */
-function av1Frame(): Uint8Array {
-  const payload = crypto.getRandomValues(new Uint8Array(50));
-  return new Uint8Array([0x12, 0x00, 0x32, payload.byteLength, ...payload]);
-}
-
 function receiver(kind: MediaKind, participantId?: string): ReceiverState {
   return {
     kind,
@@ -75,11 +69,10 @@ describe('FrameCryptor', () => {
 
   it.each([
     ['video/VP9', undefined],
-    ['video/AV1', undefined],
     [undefined, 'vp9'], // a browser that doesn't report codecs: the sender's negotiated codec decides
   ] as const)('delivers %s frames (negotiated %s)', async (mimeType, negotiated) => {
     await bobKeys.setReceiveKey('alice', 2, copy(key));
-    const original = mimeType === 'video/AV1' ? av1Frame() : vp8Delta();
+    const original = vp8Delta();
     const sent = (await alice.encrypt('video', frame(original, mimeType), negotiated))!;
 
     const received = await bob.decrypt(
@@ -108,12 +101,6 @@ describe('FrameCryptor', () => {
     ).toBeUndefined();
   });
 
-  it('drops AV1 frames it can’t parse instead of sending them', async () => {
-    const truncated = new Uint8Array([0x32, 0x40]); // frame OBU claiming 64 bytes, carrying none
-    expect(await alice.encrypt('video', frame(truncated, 'video/AV1'))).toBeUndefined();
-    expect(alice.stats.unsupportedCodec).toBe(1);
-  });
-
   it('drops outgoing frames until we have a send key — never sends plaintext', async () => {
     const noKey = new FrameCryptor(new Keyring());
     expect(await noKey.encrypt('audio', frame(new Uint8Array(40)))).toBeUndefined();
@@ -122,7 +109,8 @@ describe('FrameCryptor', () => {
 
   it('drops outgoing frames of codecs the frame layout doesn’t support', async () => {
     expect(await alice.encrypt('video', frame(vp8Delta(), 'video/H264'))).toBeUndefined();
-    expect(alice.stats.unsupportedCodec).toBe(1);
+    expect(await alice.encrypt('video', frame(vp8Delta(), 'video/AV1'))).toBeUndefined(); // removed
+    expect(alice.stats.unsupportedCodec).toBe(2);
     expect(alice.stats.codecs).toContain('send video/H264');
   });
 

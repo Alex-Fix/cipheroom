@@ -29,8 +29,8 @@ function fakeMedia() {
     availableQualities: signal(['auto', '720p']),
     videoQuality: signal('auto'),
     setVideoQuality: vi.fn().mockResolvedValue(undefined),
-    availableCodecs: ['vp9', 'av1', 'vp8'],
-    decodableCodecs: ['vp8', 'vp9', 'av1'],
+    availableCodecs: ['vp9', 'vp8'],
+    decodableCodecs: ['vp8', 'vp9'],
     videoCodec: signal('vp9'),
     sendingCodec: signal<string | undefined>('vp9'),
     codecUnsupported: signal(false),
@@ -147,11 +147,7 @@ describe('Room', () => {
   it('joins, connects and turns on mic and camera', async () => {
     const { signaling, media, el, crypto } = await setup();
     expect(crypto.identityBundle).toHaveBeenCalledWith('abc-123');
-    expect(signaling.joinRoom).toHaveBeenCalledWith('abc-123', 'Alex', identity, [
-      'vp8',
-      'vp9',
-      'av1',
-    ]);
+    expect(signaling.joinRoom).toHaveBeenCalledWith('abc-123', 'Alex', identity, ['vp8', 'vp9']);
     expect(crypto.start).toHaveBeenCalledWith('abc-123', 'me');
     expect(media.connect).toHaveBeenCalledWith(
       { iceServers: [], forceRelay: false },
@@ -354,7 +350,7 @@ describe('Room', () => {
       expect(signaling.joinRoom).toHaveBeenCalledTimes(1);
 
       media.setVideoCodec.mockReturnValueOnce(true);
-      controls.triggerEventHandler('selectCodec', 'av1');
+      controls.triggerEventHandler('selectCodec', 'vp8');
       await vi.advanceTimersByTimeAsync(1000);
       expect(media.disconnect).toHaveBeenCalled();
       expect(signaling.joinRoom).toHaveBeenCalledTimes(2);

@@ -8,8 +8,13 @@ describe('video codec setting', () => {
   });
 
   it('round-trips a choice', () => {
-    saveVideoCodec('av1');
-    expect(loadVideoCodec()).toBe('av1');
+    saveVideoCodec('vp8');
+    expect(loadVideoCodec()).toBe('vp8');
+  });
+
+  it('falls back to VP9 from a stored AV1 choice (AV1 was removed)', () => {
+    localStorage.setItem(VIDEO_CODEC_KEY, 'av1');
+    expect(loadVideoCodec()).toBe('vp9');
   });
 
   it('ignores unknown stored values', () => {

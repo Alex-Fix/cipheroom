@@ -84,13 +84,7 @@ export class FrameCryptor {
       return undefined;
     }
     const data = new Uint8Array(frame.data);
-    try {
-      frame.data = (await encryptFrame(codec, data, send.key, send.keyIndex, send.counter)).buffer;
-    } catch {
-      // A frame we can't parse (malformed AV1): dropped, never sent as it is.
-      this.stats.unsupportedCodec++;
-      return undefined;
-    }
+    frame.data = (await encryptFrame(codec, data, send.key, send.keyIndex, send.counter)).buffer;
     this.stats.encrypted++;
     return frame;
   }

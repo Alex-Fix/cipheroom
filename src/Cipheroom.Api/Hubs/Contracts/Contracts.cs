@@ -20,7 +20,7 @@ public sealed record IdentityDto(string? Ed25519Pub, string? X25519Pub, string? 
     public static IdentityDto From(IdentityKeys k) => new(k.Ed25519Pub, k.X25519Pub, k.Sig);
 }
 
-/// <param name="VideoCodecs">Video codecs the participant can decode (vp8, vp9, av1; vp8 always).</param>
+/// <param name="VideoCodecs">Video codecs the participant can decode (vp8, vp9; vp8 always).</param>
 public sealed record ParticipantDto(
     string Id,
     string DisplayName,

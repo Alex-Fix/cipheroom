@@ -25,36 +25,35 @@ const CHROME: CodecCapability[] = [
 ];
 
 describe('video codecs', () => {
-  it('names our codecs only', () => {
+  it('names our codecs only (AV1 was removed)', () => {
     expect(videoCodecOf('video/VP9')).toBe('vp9');
-    expect(videoCodecOf('video/av1')).toBe('av1');
+    expect(videoCodecOf('video/vp8')).toBe('vp8');
+    expect(videoCodecOf('video/AV1')).toBeUndefined();
     expect(videoCodecOf('video/H264')).toBeUndefined();
   });
 
-  it('lists codecs in wire order, always with VP8', () => {
-    expect(codecsIn(CHROME)).toEqual(['vp8', 'vp9', 'av1']);
-    expect(codecsIn([cap('video/VP9')])).toEqual(['vp8', 'vp9']);
+  it('lists codecs in wire order, always with VP8, ignoring AV1', () => {
+    expect(codecsIn(CHROME)).toEqual(['vp8', 'vp9']);
+    expect(codecsIn([cap('video/AV1')])).toEqual(['vp8']);
     expect(codecsIn(undefined)).toEqual(['vp8']);
   });
 
   describe('sendCodec', () => {
-    const all = ['vp8', 'vp9', 'av1'] as const;
+    const both = ['vp8', 'vp9'] as const;
 
     it('uses the chosen codec when we encode it and everyone decodes it', () => {
-      expect(sendCodec('av1', all, [all, all])).toBe('av1');
-      expect(sendCodec('vp8', all, [all])).toBe('vp8');
-      expect(sendCodec('av1', all, [])).toBe('av1'); // alone in the call
+      expect(sendCodec('vp9', both, [both, both])).toBe('vp9');
+      expect(sendCodec('vp8', both, [both])).toBe('vp8');
+      expect(sendCodec('vp9', both, [])).toBe('vp9'); // alone in the call
     });
 
-    it('falls back to VP9, then VP8, when someone can’t decode it', () => {
-      expect(sendCodec('av1', all, [all, ['vp8', 'vp9']])).toBe('vp9');
-      expect(sendCodec('av1', all, [['vp8']])).toBe('vp8');
-      expect(sendCodec('vp9', all, [['vp8', 'av1']])).toBe('vp8');
+    it('falls back to VP8 when someone can’t decode VP9', () => {
+      expect(sendCodec('vp9', both, [both, ['vp8']])).toBe('vp8');
+      expect(sendCodec('vp9', both, [['vp8', 'av1']])).toBe('vp8'); // an AV1 entry from anyone changes nothing
     });
 
     it('falls back when we can’t encode it', () => {
-      expect(sendCodec('av1', ['vp8', 'vp9'], [all])).toBe('vp9');
-      expect(sendCodec('vp9', ['vp8'], [all])).toBe('vp8');
+      expect(sendCodec('vp9', ['vp8'], [both])).toBe('vp8');
     });
   });
 
@@ -68,13 +67,12 @@ describe('video codecs', () => {
       'video/red',
       'video/ulpfec',
     ]);
-    expect(codecPreferences(CHROME, 'av1')[0].mimeType).toBe('video/AV1');
-    expect(codecPreferences([cap('video/VP8')], 'av1')).toEqual([]);
+    expect(codecPreferences(CHROME, 'vp8')[0].mimeType).toBe('video/VP8');
+    expect(codecPreferences([cap('video/VP8')], 'vp9')).toEqual([]);
   });
 
-  it('asks for L1T3 simulcast layers for VP9 and AV1, leaves VP8 alone', () => {
+  it('asks for L1T3 simulcast layers for VP9, leaves VP8 alone', () => {
     expect(simulcastScalabilityMode('vp9')).toBe('L1T3');
-    expect(simulcastScalabilityMode('av1')).toBe('L1T3');
     expect(simulcastScalabilityMode('vp8')).toBeUndefined();
   });
 });

@@ -832,8 +832,9 @@ describe('MediaService', () => {
       const { media } = setup();
       expect(media.videoCodec()).toBe('vp9');
       expect(media.sendingCodec()).toBe('vp9');
-      expect(media.availableCodecs).toEqual(['vp9', 'av1', 'vp8']);
-      expect(media.decodableCodecs).toEqual(['vp8', 'vp9', 'av1']);
+      // The browser can do AV1 too: it's ignored (removed).
+      expect(media.availableCodecs).toEqual(['vp9', 'vp8']);
+      expect(media.decodableCodecs).toEqual(['vp8', 'vp9']);
     });
 
     it('negotiates only the sending codec, with L1T3 simulcast layers and matching bitrates', async () => {
@@ -874,20 +875,18 @@ describe('MediaService', () => {
     });
 
     it('falls back to a codec everyone already in the call can decode', () => {
-      localStorage.setItem('cipheroom.videoCodec', 'av1');
-      const { media } = setup({ inCall: [decodes('vp8', 'vp9')] });
-      expect(media.videoCodec()).toBe('av1');
-      expect(media.sendingCodec()).toBe('vp9');
+      const { media } = setup({ inCall: [decodes('vp8')] });
+      expect(media.videoCodec()).toBe('vp9');
+      expect(media.sendingCodec()).toBe('vp8');
     });
 
     it('asks for a rejoin when someone joins who can’t decode what we send', () => {
-      localStorage.setItem('cipheroom.videoCodec', 'av1');
       const { media, participants } = setup();
       expect(media.codecUnsupported()).toBe(false);
 
-      participants.set([decodes('vp8', 'vp9', 'av1')]);
-      expect(media.codecUnsupported()).toBe(false);
       participants.set([decodes('vp8', 'vp9')]);
+      expect(media.codecUnsupported()).toBe(false);
+      participants.set([decodes('vp8')]);
       expect(media.codecUnsupported()).toBe(true);
     });
 
@@ -895,8 +894,14 @@ describe('MediaService', () => {
       const { media } = setup({ inCall: [decodes('vp8', 'vp9')] });
       expect(media.setVideoCodec('vp8')).toBe(true);
       expect(localStorage.getItem('cipheroom.videoCodec')).toBe('vp8');
-      expect(media.setVideoCodec('vp9')).toBe(false); // still what we send
-      expect(media.setVideoCodec('av1')).toBe(false); // Bob can't play it: we'd still send VP9
+      expect(media.setVideoCodec('vp8')).toBe(true); // still not what we send until we rejoin
+    });
+
+    it('needs no rejoin for a codec we couldn’t send anyway', () => {
+      const { media } = setup({ inCall: [decodes('vp8')] });
+      expect(media.sendingCodec()).toBe('vp8');
+      expect(media.setVideoCodec('vp9')).toBe(false); // Bob can't play VP9: we'd still send VP8
+      expect(media.setVideoCodec('vp8')).toBe(false);
     });
   });
 });

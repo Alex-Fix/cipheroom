@@ -34,7 +34,7 @@ export function supportedQualities(maxHeight: number | undefined): VideoQuality[
  * Bitrate ceiling relative to VP8 for about the same picture: starting points from published codec comparisons,
  * to be tuned with the call-quality numbers in Grafana.
  */
-const CODEC_BITRATE_FACTOR: Record<VideoCodec, number> = { vp8: 1, vp9: 0.65, av1: 0.5 };
+const CODEC_BITRATE_FACTOR: Record<VideoCodec, number> = { vp8: 1, vp9: 0.65 };
 
 /** Bitrate ceiling for a video of this height (30 fps, camera content). */
 export function bitrateFor(height: number, codec: VideoCodec = 'vp8'): number {

@@ -47,7 +47,8 @@ public sealed class JoinRoomCommandTests
     [InlineData("vp8,vp8")]
     [InlineData("vp8,h264")]
     [InlineData("vp8,VP9")]
-    [InlineData("vp8,vp9,av1,vp9")]
+    [InlineData("vp8,av1")] // AV1 was removed
+    [InlineData("vp8,vp9,vp8")]
     public void Missing_or_malformed_codecs_give_the_codecs_message(string? codecs) =>
         Assert.Equal(
             ["Invalid video codecs."],
@@ -87,7 +88,7 @@ public sealed class JoinRoomCommandTests
         var result = await new JoinRoomCommandHandler(store).Handle(new JoinRoomCommand("conn-a", "room-1", " Alice ", TestIdentity.Input, TestIdentity.Codecs), TestContext.Current.CancellationToken);
 
         Assert.Equal("Alice", result.Self.DisplayName.Value);
-        Assert.Equal(["vp8", "vp9", "av1"], result.Self.VideoCodecs.Values);
+        Assert.Equal(["vp8", "vp9"], result.Self.VideoCodecs.Values);
         Assert.Equal([bob], result.Others);
     }
 

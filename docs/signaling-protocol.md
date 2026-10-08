@@ -55,12 +55,12 @@ verifies, stores or logs them (clients verify everything — the server is untru
 
 ### Video codecs
 
-Design: `docs/plans/2026-10-08-video-compression-design.md`.
+Designs: `docs/plans/2026-10-08-video-compression-design.md`, `docs/plans/2026-10-08-remove-av1-design.md`.
 
-- `videoCodecs`: what the participant's browser can **decode**, among `vp8`, `vp9`, `av1`; 1–3 distinct values,
-  `vp8` required (the baseline everyone decodes). Sent with `JoinRoom`, stored on the participant, included in every
-  `ParticipantDto` in canonical order (`vp8`, `vp9`, `av1`). The server checks the values only.
-- Each sender picks its codec from these when it joins (its choice if everyone can decode it, else VP9, else VP8).
+- `videoCodecs`: what the participant's browser can **decode**, among `vp8`, `vp9`; 1–2 distinct values, `vp8`
+  required (the baseline everyone decodes). Sent with `JoinRoom`, stored on the participant, included in every
+  `ParticipantDto` in canonical order (`vp8`, `vp9`). The server checks the values only; `av1` (removed) is invalid.
+- Each sender picks its codec from these when it joins (its choice if everyone can decode it, else VP8).
   Cloudflare doesn't forward a codec change on a published track, so a sender that needs another codec (it changed
   its choice, or someone joined who can't decode it) leaves and joins again.
 - Unsigned on purpose: a server that edits them can only make senders use a bigger codec, or send a viewer video it
