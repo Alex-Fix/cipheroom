@@ -83,6 +83,7 @@ class FakeTransceiver {
   mid: string | null = null;
   stopped = false;
   readonly sender = { replaceTrack: vi.fn().mockResolvedValue(undefined) };
+  readonly setCodecPreferences = vi.fn();
 
   constructor(
     readonly track: MediaStreamTrack,
@@ -139,12 +140,13 @@ function bobWithCamera(): ParticipantDto {
     id: 'bob',
     displayName: 'Bob',
     identity,
+    videoCodecs: ['vp8'],
     tracks: [{ source: 'camera', kind: 'video', muted: false }],
   };
 }
 
-function setup() {
-  const participants = signal<ParticipantDto[]>([]);
+function setup({ inCall = [] as ParticipantDto[] } = {}) {
+  const participants = signal<ParticipantDto[]>(inCall);
   const signaling = {
     participants,
     publishTracks: vi.fn().mockResolvedValue('v=0 sfu answer'),
@@ -279,6 +281,7 @@ describe('MediaService', () => {
         id: 'bob',
         displayName: 'Bob',
         identity,
+        videoCodecs: ['vp8'],
         tracks: [
           { source: 'microphone', kind: 'audio', muted: false },
           { source: 'camera', kind: 'video', muted: false },
@@ -313,6 +316,7 @@ describe('MediaService', () => {
         id: 'bob',
         displayName: 'Bob',
         identity,
+        videoCodecs: ['vp8'],
         tracks: [{ source: 'camera', kind: 'video', muted: false }],
       },
     ]);
@@ -352,6 +356,7 @@ describe('MediaService', () => {
           id: 'bob',
           displayName: 'Bob',
           identity,
+          videoCodecs: ['vp8'],
           tracks: [{ source: 'camera', kind: 'video', muted: false }],
         },
       ]);
@@ -399,6 +404,7 @@ describe('MediaService', () => {
           id: 'bob',
           displayName: 'Bob',
           identity,
+          videoCodecs: ['vp8'],
           tracks: [{ source: 'microphone', kind: 'audio', muted: false }],
         },
       ]);
@@ -548,6 +554,7 @@ describe('MediaService', () => {
       id: 'bob',
       displayName: 'Bob',
       identity,
+      videoCodecs: ['vp8'],
       tracks: [
         { source: 'microphone', kind: 'audio', muted: false },
         { source: 'camera', kind: 'video', muted: false },
@@ -609,6 +616,7 @@ describe('MediaService', () => {
           id: 'bob',
           displayName: 'Bob',
           identity,
+          videoCodecs: ['vp8'],
           tracks: [{ source: 'camera', kind: 'video', muted: false }],
         },
       ]);
@@ -750,9 +758,10 @@ describe('MediaService', () => {
       await media.setMicrophone(true);
       await media.setCamera(true);
 
+      // No codec capabilities in this test environment: VP8, the baseline.
       expect(frames.attachSender.mock.calls).toEqual([
-        [pc.transceivers[0].sender, 'audio'],
-        [pc.transceivers[1].sender, 'video'],
+        [pc.transceivers[0].sender, 'audio', undefined],
+        [pc.transceivers[1].sender, 'video', 'vp8'],
       ]);
     });
 
@@ -796,6 +805,98 @@ describe('MediaService', () => {
       const { media, frames } = setup();
       await media.disconnect();
       expect(frames.terminate).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('video codec', () => {
+    const capabilities = {
+      codecs: [
+        { mimeType: 'video/VP8', clockRate: 90000 },
+        { mimeType: 'video/VP9', clockRate: 90000, sdpFmtpLine: 'profile-id=0' },
+        { mimeType: 'video/AV1', clockRate: 90000 },
+        { mimeType: 'video/rtx', clockRate: 90000 },
+      ],
+    };
+    const decodes = (...videoCodecs: string[]): ParticipantDto => ({
+      ...bobWithCamera(),
+      videoCodecs,
+    });
+
+    beforeEach(() => {
+      localStorage.removeItem('cipheroom.videoCodec');
+      vi.stubGlobal('RTCRtpSender', { getCapabilities: () => capabilities });
+      vi.stubGlobal('RTCRtpReceiver', { getCapabilities: () => capabilities });
+    });
+
+    it('sends VP9 by default, offering every codec this browser can send', () => {
+      const { media } = setup();
+      expect(media.videoCodec()).toBe('vp9');
+      expect(media.sendingCodec()).toBe('vp9');
+      expect(media.availableCodecs).toEqual(['vp9', 'av1', 'vp8']);
+      expect(media.decodableCodecs).toEqual(['vp8', 'vp9', 'av1']);
+    });
+
+    it('negotiates only the sending codec, with L1T3 simulcast layers and matching bitrates', async () => {
+      const { media, pc, frames } = setup();
+      await media.setCamera(true);
+
+      const camera = pc.transceivers[0];
+      expect(camera.setCodecPreferences).toHaveBeenCalledWith([
+        capabilities.codecs[1],
+        capabilities.codecs[3],
+      ]);
+      expect(
+        camera.init.sendEncodings!.map((e) => [
+          e.rid,
+          e.maxBitrate,
+          (e as { scalabilityMode?: string }).scalabilityMode,
+        ]),
+      ).toEqual([
+        ['f', 975_000, 'L1T3'],
+        ['h', 325_000, 'L1T3'],
+        ['q', 130_000, 'L1T3'],
+      ]);
+      expect(frames.attachSender).toHaveBeenCalledWith(camera.sender, 'video', 'vp9');
+    });
+
+    it('sends the simulcast layers without a scalability mode where the browser rejects it', async () => {
+      const { media, pc } = setup();
+      const add = pc.addTransceiver.bind(pc);
+      vi.spyOn(pc, 'addTransceiver').mockImplementation((track, init) => {
+        if (init.sendEncodings?.some((e) => 'scalabilityMode' in e))
+          throw new DOMException('unsupported', 'OperationError');
+        return add(track, init);
+      });
+      await media.setCamera(true);
+
+      expect(pc.transceivers).toHaveLength(1);
+      expect(pc.transceivers[0].init.sendEncodings!.map((e) => e.rid)).toEqual(['f', 'h', 'q']);
+    });
+
+    it('falls back to a codec everyone already in the call can decode', () => {
+      localStorage.setItem('cipheroom.videoCodec', 'av1');
+      const { media } = setup({ inCall: [decodes('vp8', 'vp9')] });
+      expect(media.videoCodec()).toBe('av1');
+      expect(media.sendingCodec()).toBe('vp9');
+    });
+
+    it('asks for a rejoin when someone joins who can’t decode what we send', () => {
+      localStorage.setItem('cipheroom.videoCodec', 'av1');
+      const { media, participants } = setup();
+      expect(media.codecUnsupported()).toBe(false);
+
+      participants.set([decodes('vp8', 'vp9', 'av1')]);
+      expect(media.codecUnsupported()).toBe(false);
+      participants.set([decodes('vp8', 'vp9')]);
+      expect(media.codecUnsupported()).toBe(true);
+    });
+
+    it('remembers a new codec and says whether it needs a rejoin', () => {
+      const { media } = setup({ inCall: [decodes('vp8', 'vp9')] });
+      expect(media.setVideoCodec('vp8')).toBe(true);
+      expect(localStorage.getItem('cipheroom.videoCodec')).toBe('vp8');
+      expect(media.setVideoCodec('vp9')).toBe(false); // still what we send
+      expect(media.setVideoCodec('av1')).toBe(false); // Bob can't play it: we'd still send VP9
     });
   });
 });

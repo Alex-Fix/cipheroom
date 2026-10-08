@@ -1,3 +1,5 @@
+import { VideoCodec } from './codecs';
+
 /** Camera send quality. 'auto' = the best the camera supports, up to 4K. */
 export type VideoQuality = 'auto' | '2160p' | '1080p' | '720p';
 
@@ -28,8 +30,18 @@ export function supportedQualities(maxHeight: number | undefined): VideoQuality[
   );
 }
 
-/** VP8 bitrate ceiling for a video of this height (30 fps, camera content). */
-export function bitrateFor(height: number): number {
+/**
+ * Bitrate ceiling relative to VP8 for about the same picture: starting points from published codec comparisons,
+ * to be tuned with the call-quality numbers in Grafana.
+ */
+const CODEC_BITRATE_FACTOR: Record<VideoCodec, number> = { vp8: 1, vp9: 0.65, av1: 0.5 };
+
+/** Bitrate ceiling for a video of this height (30 fps, camera content). */
+export function bitrateFor(height: number, codec: VideoCodec = 'vp8'): number {
+  return Math.round(vp8BitrateFor(height) * CODEC_BITRATE_FACTOR[codec]);
+}
+
+function vp8BitrateFor(height: number): number {
   if (height >= 2160) return 8_000_000;
   if (height >= 1440) return 5_000_000;
   if (height >= 1080) return 3_000_000;
@@ -39,11 +51,19 @@ export function bitrateFor(height: number): number {
   return 200_000;
 }
 
-/** Simulcast layers for a camera captured at `height`: full (f), half (h) and quarter (q) resolution. */
-export function cameraEncodings(height: number): RTCRtpEncodingParameters[] {
+/**
+ * Simulcast layers for a camera captured at `height`: full (f), half (h) and quarter (q) resolution.
+ * `scalabilityMode`: set on every layer when given (see `simulcastScalabilityMode`).
+ */
+export function cameraEncodings(
+  height: number,
+  codec: VideoCodec = 'vp8',
+  scalabilityMode?: string,
+): RTCRtpEncodingParameters[] {
+  const mode = scalabilityMode ? { scalabilityMode } : {};
   return [
-    { rid: 'f', maxBitrate: bitrateFor(height) },
-    { rid: 'h', scaleResolutionDownBy: 2, maxBitrate: bitrateFor(height / 2) },
-    { rid: 'q', scaleResolutionDownBy: 4, maxBitrate: bitrateFor(height / 4) },
+    { rid: 'f', maxBitrate: bitrateFor(height, codec), ...mode },
+    { rid: 'h', scaleResolutionDownBy: 2, maxBitrate: bitrateFor(height / 2, codec), ...mode },
+    { rid: 'q', scaleResolutionDownBy: 4, maxBitrate: bitrateFor(height / 4, codec), ...mode },
   ];
 }

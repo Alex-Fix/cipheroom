@@ -20,13 +20,16 @@ public sealed class Room(RoomId id)
     public bool IsEmpty => _participants.Count == 0;
 
     /// <summary>Adds a participant with a fresh random id. Returns the new participant.</summary>
-    public Participant Join(string connectionId, DisplayName displayName, IdentityKeys identity)
+    public Participant Join(string connectionId, DisplayName displayName, IdentityKeys identity, VideoCodecs? videoCodecs = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionId);
         if (_participants.Exists(p => p.ConnectionId == connectionId))
             throw new InvalidOperationException("Connection is already in this room.");
 
-        var participant = new Participant(ParticipantId.New(), Id, connectionId, displayName, identity);
+        var participant = new Participant(ParticipantId.New(), Id, connectionId, displayName, identity)
+        {
+            VideoCodecs = videoCodecs ?? VideoCodecs.Baseline,
+        };
         _participants.Add(participant);
         return participant;
     }

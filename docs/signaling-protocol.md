@@ -13,7 +13,7 @@ Payloads never contain plaintext keys: only public keys and opaque signed envelo
 
 | Direction | Method | Args | Returns |
 |---|---|---|---|
-| C→S | `JoinRoom` | `roomId` (`^[a-z0-9-]{3,64}$`), `displayName` (1–64 chars), `identity: IdentityDto` (required) | `JoinResult { selfId, participants[] }` |
+| C→S | `JoinRoom` | `roomId` (`^[a-z0-9-]{3,64}$`), `displayName` (1–64 chars), `identity: IdentityDto` (required), `videoCodecs: string[]` (required) | `JoinResult { selfId, participants[] }` |
 | C→S | `GetRtcConfig` | — | `RtcConfig { iceServers[], forceRelay }` (Cloudflare STUN/TURN; `forceRelay` only when `Turn:ForceRelay` is set) |
 | C→S | `LeaveRoom` | — | — (also on disconnect) |
 | C→S | `PublishTracks` | `offerSdp`, `tracks[{ mid, source }]` (1–3, distinct mids and sources) | `AnswerDto { answerSdp }` |
@@ -26,7 +26,7 @@ Payloads never contain plaintext keys: only public keys and opaque signed envelo
 | C→S | `SelectVideoLayer` | `mid` (received camera track), `rid` (`f` / `h` / `q`) | — |
 | C→S | `SendKeyEnvelopes` | `envelopes[{ toId, blob }]` (1–64, distinct `toId`s, each another participant of the caller's room; `blob` base64url, 1–1024 chars) | — (each relayed to its `toId` only) |
 | C→S | `ReportCallStats` | `CallStatsDto` (numbers only — see "Call-quality reports") | — |
-| S→C | `ParticipantJoined` | `ParticipantDto { id, displayName, tracks[], identity }` | |
+| S→C | `ParticipantJoined` | `ParticipantDto { id, displayName, tracks[], identity, videoCodecs[] }` | |
 | S→C | `ParticipantLeft` | `id` | |
 | S→C | `TracksPublished` | `participantId`, `TrackDto[] { source, kind, muted }` | |
 | S→C | `TracksUnpublished` | `participantId`, `sources[]` | |
@@ -52,6 +52,21 @@ verifies, stores or logs them (clients verify everything — the server is untru
   `fromId` matches the relayed `fromId`.
 - Clients that call `JoinRoom` without the `identity` argument (pre-E2EE) fail SignalR's argument binding and never
   join; `null` or a malformed identity gets `Invalid identity.`
+
+### Video codecs
+
+Design: `docs/plans/2026-10-08-video-compression-design.md`.
+
+- `videoCodecs`: what the participant's browser can **decode**, among `vp8`, `vp9`, `av1`; 1–3 distinct values,
+  `vp8` required (the baseline everyone decodes). Sent with `JoinRoom`, stored on the participant, included in every
+  `ParticipantDto` in canonical order (`vp8`, `vp9`, `av1`). The server checks the values only.
+- Each sender picks its codec from these when it joins (its choice if everyone can decode it, else VP9, else VP8).
+  Cloudflare doesn't forward a codec change on a published track, so a sender that needs another codec (it changed
+  its choice, or someone joined who can't decode it) leaves and joins again.
+- Unsigned on purpose: a server that edits them can only make senders use a bigger codec, or send a viewer video it
+  can't play — never read anything (frames are end-to-end encrypted whatever the codec).
+- Clients that call `JoinRoom` without the `videoCodecs` argument fail SignalR's argument binding and never join;
+  `null` or a malformed list gets `Invalid video codecs.`
 
 ### Call-quality reports
 
@@ -83,6 +98,7 @@ echo input. Mapped centrally by `HubExceptionFilter`; pinned by `Cipheroom.Api.F
 | `Invalid room id.` | `JoinRoom` with a room id not matching `^[a-z0-9-]{3,64}$` |
 | `Display name must be 1-64 characters.` | `JoinRoom` with a blank or too-long name (checked after the room id) |
 | `Invalid identity.` | `JoinRoom` with a missing or malformed identity (checked after the name) |
+| `Invalid video codecs.` | `JoinRoom` with missing or malformed `videoCodecs` (checked after the identity) |
 | `Invalid key envelope.` | `SendKeyEnvelopes` with no / over 64 envelopes, a malformed or over-long blob, a duplicate `toId`, or a `toId` that isn't another participant of the caller's room |
 | `Already in a room.` | `JoinRoom` on a connection that has already joined |
 | `Join a room first.` | `GetRtcConfig`, any media method, `SendKeyEnvelopes` or `ReportCallStats` before joining |

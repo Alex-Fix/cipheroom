@@ -13,7 +13,7 @@ internal sealed class FakeRoomStore : IRoomStore
     /// <summary>Joins and (optionally) attaches a media session, like a client that already published.</summary>
     public Participant Join(string connectionId, string roomId = "room-1", string? sfuSessionId = null)
     {
-        Assert.True(TryJoin(new RoomId(roomId), connectionId, new DisplayName(connectionId), TestIdentity.Keys, out var self, out _));
+        Assert.True(TryJoin(new RoomId(roomId), connectionId, new DisplayName(connectionId), TestIdentity.Keys, VideoCodecs.Baseline, out var self, out _));
         return sfuSessionId is null ? self : InRoom(connectionId, (room, p) => room.AttachSfuSession(p.Id, sfuSessionId))!;
     }
 
@@ -24,6 +24,7 @@ internal sealed class FakeRoomStore : IRoomStore
         string connectionId,
         DisplayName displayName,
         IdentityKeys identity,
+        VideoCodecs videoCodecs,
         [NotNullWhen(true)] out Participant? self,
         [NotNullWhen(true)] out IReadOnlyList<Participant>? others)
     {
@@ -31,7 +32,7 @@ internal sealed class FakeRoomStore : IRoomStore
             _rooms[roomId] = room = new Room(roomId);
 
         others = [.. room.Participants];
-        self = room.Join(connectionId, displayName, identity);
+        self = room.Join(connectionId, displayName, identity, videoCodecs);
         _byConnection[connectionId] = (roomId, self.Id);
         return true;
     }

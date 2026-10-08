@@ -1,9 +1,11 @@
 import {
+  FrameCodec,
   MediaKind,
+  VideoFrameCodec,
   decryptFrame,
   encryptFrame,
+  frameCodecOf,
   frameKeyIndex,
-  isSupportedCodec,
 } from './frame-codec';
 import { Keyring } from './keyring';
 
@@ -61,12 +63,18 @@ export class FrameCryptor {
     private readonly now: () => number = Date.now,
   ) {}
 
-  async encrypt<F extends Frame>(kind: MediaKind, frame: F): Promise<F | undefined> {
+  /** `videoCodec`: what the sender was negotiated with, for browsers that don't report a frame's codec. */
+  async encrypt<F extends Frame>(
+    kind: MediaKind,
+    frame: F,
+    videoCodec?: VideoFrameCodec,
+  ): Promise<F | undefined> {
     if (frame.data.byteLength === 0) return frame;
-    const codec = frame.getMetadata().mimeType;
-    if (codec) this.stats.codecs.add(`send ${codec}`);
+    const mimeType = frame.getMetadata().mimeType;
+    if (mimeType) this.stats.codecs.add(`send ${mimeType}`);
     // Never send what we can't encrypt.
-    if (!isSupportedCodec(kind, codec)) {
+    const codec = frameCodecOf(kind, mimeType, videoCodec);
+    if (!codec) {
       this.stats.unsupportedCodec++;
       return undefined;
     }
@@ -76,17 +84,23 @@ export class FrameCryptor {
       return undefined;
     }
     const data = new Uint8Array(frame.data);
-    frame.data = (await encryptFrame(kind, data, send.key, send.keyIndex, send.counter)).buffer;
+    try {
+      frame.data = (await encryptFrame(codec, data, send.key, send.keyIndex, send.counter)).buffer;
+    } catch {
+      // A frame we can't parse (malformed AV1): dropped, never sent as it is.
+      this.stats.unsupportedCodec++;
+      return undefined;
+    }
     this.stats.encrypted++;
     return frame;
   }
 
   async decrypt<F extends Frame>(receiver: ReceiverState, frame: F): Promise<F | undefined> {
     if (frame.data.byteLength === 0 || receiver.passThrough) return frame;
-    const codec = frame.getMetadata().mimeType;
-    if (codec) this.stats.codecs.add(`receive ${codec}`);
+    const mimeType = frame.getMetadata().mimeType;
+    if (mimeType) this.stats.codecs.add(`receive ${mimeType}`);
     const data = new Uint8Array(frame.data);
-    const keyIndex = frameKeyIndex(receiver.kind, data);
+    const keyIndex = frameKeyIndex(data);
     const key =
       receiver.participantId !== undefined && keyIndex !== undefined
         ? this.keyring.receiveKey(receiver.participantId, keyIndex)
@@ -97,7 +111,9 @@ export class FrameCryptor {
       return undefined;
     }
     try {
-      frame.data = (await decryptFrame(receiver.kind, data, key)).buffer;
+      frame.data = (
+        await decryptFrame(data, key, (c) => expectedCodec(receiver.kind, mimeType, c))
+      ).buffer;
     } catch {
       this.stats.failed++;
       if (++receiver.failures >= FAILURES_BEFORE_KEYFRAME_REQUEST) this.requestKeyFrame(receiver);
@@ -128,4 +144,13 @@ export class FrameCryptor {
     receiver.failures = 0;
     receiver.requestKeyFrame();
   }
+}
+
+/**
+ * A frame's codec byte must match the receiver's kind and, when the browser reports it, the codec the frame
+ * arrived as: the SFU can't make us parse one codec's frame as another's.
+ */
+function expectedCodec(kind: MediaKind, mimeType: string | undefined, codec: FrameCodec): boolean {
+  if ((codec === 'audio') !== (kind === 'audio')) return false;
+  return !mimeType || frameCodecOf(kind, mimeType, codec === 'audio' ? undefined : codec) === codec;
 }

@@ -27,4 +27,21 @@ describe('video quality', () => {
     ]);
     expect(bitrateFor(1440)).toBe(5_000_000);
   });
+
+  it('needs fewer bits with more efficient codecs', () => {
+    expect(bitrateFor(1080, 'vp9')).toBe(1_950_000);
+    expect(bitrateFor(1080, 'av1')).toBe(1_500_000);
+    expect(cameraEncodings(720, 'av1').map((e) => e.maxBitrate)).toEqual([
+      750_000, 250_000, 100_000,
+    ]);
+  });
+
+  it('sets the scalability mode on every layer only when given', () => {
+    expect(
+      cameraEncodings(720, 'vp9', 'L1T3').map(
+        (e) => (e as { scalabilityMode?: string }).scalabilityMode,
+      ),
+    ).toEqual(['L1T3', 'L1T3', 'L1T3']);
+    expect(cameraEncodings(720).some((e) => 'scalabilityMode' in e)).toBe(false);
+  });
 });

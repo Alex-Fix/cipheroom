@@ -8,12 +8,19 @@ const alice: ParticipantDto = {
   id: 'a',
   displayName: 'Alice',
   identity,
+  videoCodecs: ['vp8'],
   tracks: [
     { source: 'microphone', kind: 'audio', muted: false },
     { source: 'camera', kind: 'video', muted: true },
   ],
 };
-const bob: ParticipantDto = { id: 'b', displayName: 'Bob', identity, tracks: [] };
+const bob: ParticipantDto = {
+  id: 'b',
+  displayName: 'Bob',
+  identity,
+  videoCodecs: ['vp8'],
+  tracks: [],
+};
 
 describe('subscriptionDiff', () => {
   it('subscribes to every published track not yet known, muted or not', () => {

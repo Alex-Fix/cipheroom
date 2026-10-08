@@ -13,6 +13,9 @@ interface State {
   activeCameraId?: string;
   qualities?: string[];
   quality?: string;
+  codecs?: string[];
+  codec?: string;
+  sendingCodec?: string;
 }
 
 function render(state: State) {
@@ -158,5 +161,45 @@ describe('CallControls', () => {
     ]);
     items[2].click();
     expect(select).toHaveBeenCalledWith('1080p');
+  });
+
+  it('offers the video codecs, checks the chosen one and emits a new choice', async () => {
+    const { fixture, button } = render({
+      ...allOn,
+      codecs: ['vp9', 'av1', 'vp8'],
+      codec: 'vp9',
+      sendingCodec: 'vp9',
+    });
+    const select = vi.fn();
+    fixture.componentInstance.selectCodec.subscribe(select);
+
+    await openMore(fixture, button('more')!);
+    const items = [...document.body.querySelectorAll<HTMLElement>('.codec-item')];
+
+    expect(items.map((i) => i.textContent!.trim())).toEqual(['VP9', 'AV1 (experimental)', 'VP8']);
+    expect(items.map((i) => i.getAttribute('aria-checked'))).toEqual(['true', 'false', 'false']);
+    expect(document.body.querySelector('.codec-note')).toBeNull();
+    items[1].click();
+    expect(select).toHaveBeenCalledWith('av1');
+  });
+
+  it('says so when it sends a fallback codec', async () => {
+    const { fixture, button } = render({
+      ...allOn,
+      codecs: ['vp9', 'av1', 'vp8'],
+      codec: 'av1',
+      sendingCodec: 'vp9',
+    });
+
+    await openMore(fixture, button('more')!);
+    expect(document.body.querySelector('.codec-note')?.textContent?.trim()).toBe(
+      'Sending VP9: not everyone here can play AV1',
+    );
+  });
+
+  it('hides the codec picker when there’s nothing to choose', async () => {
+    const { fixture, button } = render({ ...allOn, codecs: ['vp8'] });
+    await openMore(fixture, button('more')!);
+    expect(document.body.querySelector('.codec-item')).toBeNull();
   });
 });

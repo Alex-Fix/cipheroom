@@ -86,10 +86,17 @@
   }
 }
 
-// ⋯ menu camera and quality pickers (rendered in an overlay, so styles must reach outside the host).
+// ⋯ menu camera, quality and codec pickers (rendered in an overlay, so styles must reach outside the host).
 ::ng-deep .camera-item .check,
-::ng-deep .quality-item .check {
+::ng-deep .quality-item .check,
+::ng-deep .codec-item .check {
   display: inline-block;
   width: 18px;
   color: var(--accent);
+}
+
+::ng-deep .codec-note {
+  max-width: 240px;
+  white-space: normal;
+  font-size: 12px;
 }

@@ -25,14 +25,15 @@ namespace Cipheroom.Api.Hubs;
 /// </summary>
 public sealed partial class RoomHub(IMediator mediator, TelemetryIds ids, ILogger<RoomHub> logger) : Hub<IRoomClient>
 {
-    public async Task<JoinResult> JoinRoom(string? roomId, string? displayName, IdentityDto? identity)
+    public async Task<JoinResult> JoinRoom(string? roomId, string? displayName, IdentityDto? identity, string?[]? videoCodecs)
     {
         var result = await mediator.Send(
             new JoinRoomCommand(
                 Context.ConnectionId,
                 roomId,
                 displayName,
-                identity is null ? null : new IdentityInput(identity.Ed25519Pub, identity.X25519Pub, identity.Sig)),
+                identity is null ? null : new IdentityInput(identity.Ed25519Pub, identity.X25519Pub, identity.Sig),
+                videoCodecs),
             Context.ConnectionAborted);
         var self = result.Self;
 

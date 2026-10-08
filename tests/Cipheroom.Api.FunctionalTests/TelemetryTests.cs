@@ -46,7 +46,7 @@ public sealed class TelemetryTests(WebApplicationFactory<Program> factory) : ICl
         var host = Host();
         await using var connection = await ConnectAsync(host);
 
-        var join = await connection.InvokeAsync<JoinResult>("JoinRoom", Room, "Alice", TestIdentity.Dto, Ct);
+        var join = await connection.InvokeAsync<JoinResult>("JoinRoom", Room, "Alice", TestIdentity.Dto, TestIdentity.Codecs, Ct);
         await connection.InvokeAsync<RtcConfig>("GetRtcConfig", Ct);
 
         var joinSpan = Span("RoomHub/JoinRoom");
@@ -68,7 +68,7 @@ public sealed class TelemetryTests(WebApplicationFactory<Program> factory) : ICl
         using var turn = new FakeTurnServer();
         var host = Host(turn);
         await using var connection = await ConnectAsync(host);
-        await connection.InvokeAsync<JoinResult>("JoinRoom", Room, "Alice", TestIdentity.Dto, Ct);
+        await connection.InvokeAsync<JoinResult>("JoinRoom", Room, "Alice", TestIdentity.Dto, TestIdentity.Codecs, Ct);
 
         await connection.InvokeAsync<RtcConfig>("GetRtcConfig", Ct);
 
@@ -86,7 +86,7 @@ public sealed class TelemetryTests(WebApplicationFactory<Program> factory) : ICl
         await using var connection = await ConnectAsync(host);
 
         await Assert.ThrowsAsync<HubException>(() =>
-            connection.InvokeAsync<JoinResult>("JoinRoom", "BAD ROOM <script>", "Alice", TestIdentity.Dto, Ct));
+            connection.InvokeAsync<JoinResult>("JoinRoom", "BAD ROOM <script>", "Alice", TestIdentity.Dto, TestIdentity.Codecs, Ct));
 
         var span = Span("RoomHub/JoinRoom");
         Assert.Equal("rejected", span.GetTagItem(HubTelemetryFilter.Tags.Outcome));
@@ -100,7 +100,7 @@ public sealed class TelemetryTests(WebApplicationFactory<Program> factory) : ICl
         using var turn = new FakeTurnServer();
         var host = Host(turn);
         await using var connection = await ConnectAsync(host);
-        await connection.InvokeAsync<JoinResult>("JoinRoom", Room, "Very Private Name", TestIdentity.Dto, Ct);
+        await connection.InvokeAsync<JoinResult>("JoinRoom", Room, "Very Private Name", TestIdentity.Dto, TestIdentity.Codecs, Ct);
         await connection.InvokeAsync<RtcConfig>("GetRtcConfig", Ct);
         await connection.InvokeAsync("LeaveRoom", Ct);
 
@@ -126,8 +126,8 @@ public sealed class TelemetryTests(WebApplicationFactory<Program> factory) : ICl
         using var calls = new MetricCollector<long>(
             host.Services.GetRequiredService<IMeterFactory>(), CipheroomMetrics.MeterName, "cipheroom.hub.calls");
 
-        await connection.InvokeAsync<JoinResult>("JoinRoom", Room, "Alice", TestIdentity.Dto, Ct);
-        await Assert.ThrowsAsync<HubException>(() => connection.InvokeAsync<JoinResult>("JoinRoom", Room, "Alice", TestIdentity.Dto, Ct));
+        await connection.InvokeAsync<JoinResult>("JoinRoom", Room, "Alice", TestIdentity.Dto, TestIdentity.Codecs, Ct);
+        await Assert.ThrowsAsync<HubException>(() => connection.InvokeAsync<JoinResult>("JoinRoom", Room, "Alice", TestIdentity.Dto, TestIdentity.Codecs, Ct));
 
         var counted = calls.GetMeasurementSnapshot().Select(m => ((string)m.Tags["method"]!, (string)m.Tags["outcome"]!));
         Assert.Equal([("JoinRoom", "ok"), ("JoinRoom", "rejected")], counted);

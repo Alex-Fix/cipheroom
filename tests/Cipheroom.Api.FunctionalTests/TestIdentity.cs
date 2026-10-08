@@ -12,4 +12,7 @@ internal static class TestIdentity
     public static IdentityKeys Keys => new(Ed25519Pub, X25519Pub, Sig);
 
     public static Hubs.Contracts.IdentityDto Dto => new(Ed25519Pub, X25519Pub, Sig);
+
+    /// <summary>What a current browser sends with JoinRoom.</summary>
+    public static string[] Codecs => ["vp8", "vp9", "av1"];
 }

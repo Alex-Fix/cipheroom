@@ -1,6 +1,6 @@
 import { InjectionToken } from '@angular/core';
 import { passThroughRequested } from './e2ee-debug';
-import { MediaKind } from './frame-codec';
+import { MediaKind, VideoFrameCodec } from './frame-codec';
 import { FrameStats, TransformOptions, WorkerRequest } from './frame-crypto.types';
 
 /** Chrome before RTCRtpScriptTransform: encoded streams, enabled per peer connection. */
@@ -56,10 +56,13 @@ export class FrameCrypto {
     return this.api === 'encoded-streams' ? { encodedInsertableStreams: true } : {};
   }
 
-  /** Call right after addTransceiver, before the first frame is sent. Frames are dropped until a send key is set. */
-  attachSender(sender: RTCRtpSender, kind: MediaKind): void {
+  /**
+   * Call right after addTransceiver, before the first frame is sent. Frames are dropped until a send key is set.
+   * `videoCodec`: the codec the sender is negotiated with (used when the browser doesn't report it per frame).
+   */
+  attachSender(sender: RTCRtpSender, kind: MediaKind, videoCodec?: VideoFrameCodec): void {
     if (this.attached.has(sender)) return;
-    this.attach(sender, { id: this.nextId++, side: 'send', kind });
+    this.attach(sender, { id: this.nextId++, side: 'send', kind, videoCodec });
   }
 
   /**

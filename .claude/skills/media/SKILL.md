@@ -45,14 +45,19 @@ Design: `docs/plans/2026-10-07-cloudflare-sfu-design.md`. Protocol: `docs/signal
 - **Keep published tracks alive:** Cloudflare garbage-collects tracks after 30 s without packets. Muted mic =
   `track.enabled = false` (silence keeps flowing); camera/screen off = 1 fps black canvas placeholder.
 - **SFU mutations aren't idempotent:** the SFU HTTP client never retries POST/PUT.
-- **Codec:** all video (camera and screen) in VP8 — frame encryption keeps its fixed-size header clear, and
-  simulcast works everywhere. H.264 was tried and reverted — it wasn't
-  the cause of the iOS issue.
+- **Codec:** chosen per sender at join (`codecs.ts`): the user's pick (VP9 default, AV1 experimental, VP8) if
+  everyone in the call can decode it, else VP9, else VP8. Each video transceiver negotiates only that codec.
+  Cloudflare does **not** forward a codec change on a published track (`encodings[].codec` switches the encoder but
+  viewers get nothing), so a different codec = rejoin. VP9/AV1 need `scalabilityMode: 'L1T3'` on every simulcast
+  layer — without it Chrome sends VP9 as SVC (`L3T3_KEY`) and AV1 as one layer, and rid-based layer selection
+  breaks; Chrome doesn't list scalability modes in `getCapabilities`, so don't gate on it. AV1 can't switch back
+  up a layer on Cloudflare (it drops the Dependency Descriptor; our encrypted payload hides the keyframes).
+  H.264 was tried and reverted — it wasn't the cause of the iOS issue.
 
 ## Quality
 - Send: user choice Auto (best the camera supports, up to 4K) / 4K / 1080p / 720p (`quality.ts`; 4K/1080p only when
-  the camera can). f/h/q simulcast with bitrates by captured height; `setParameters` re-targets them after a
-  resolution change.
+  the camera can). f/h/q simulcast with bitrates by captured height × a codec factor (VP9 0.65, AV1 0.5 of VP8's);
+  `setParameters` re-targets them after a resolution change.
 - Receive: always the full layer for cameras on screen (subscriptions start at `f`, Cloudflare steps down on
   congestion); `q` for off-screen tiles (`ElementSizeDirective` → `setTileSize`) and hidden tabs.
 - Speaking: `getStats` audio levels every 250 ms, 800 ms hold — client-side only.

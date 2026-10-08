@@ -6,6 +6,7 @@ import { Camera, CameraFacing, cameraFacing, hasRearCamera } from './cameras';
 import { StatsSnapshot, callStats, statsSnapshot } from './call-stats';
 import { StatsLike, selectedIcePath } from './ice-path';
 import { callPlatform } from './platform';
+import { loadVideoCodec, saveVideoCodec } from '../settings/video-codec';
 import { loadVideoQuality, saveVideoQuality } from '../settings/video-quality';
 import { SignalingService } from '../signaling/signaling.service';
 import {
@@ -17,6 +18,16 @@ import {
   VideoLayer,
 } from '../signaling/signaling.types';
 import { AudioPlayback } from './audio-playback';
+import {
+  CodecCapability,
+  VIDEO_CODECS,
+  VideoCodec,
+  codecPreferences,
+  decodableCodecs,
+  encodableCodecs,
+  sendCodec,
+  simulcastScalabilityMode,
+} from './codecs';
 import { receiveLayer } from './layers';
 import { CallParticipant, Diagnostics, MediaState, Tile } from './media.types';
 import { VideoQuality, cameraEncodings, captureConstraints, supportedQualities } from './quality';
@@ -43,6 +54,9 @@ export interface Self {
  *   always negotiated up front (`reserveCamera`), and later device changes only swap tracks.
  * - Quality: we send the camera at the chosen quality (`videoQuality`, default auto = best the camera has, up to
  *   4K) as f/h/q simulcast, and receive the highest layer of every camera on screen (`q` when hidden).
+ * - Codec: chosen when we connect (`sendingCodec`, from `videoCodec` and what everyone in the call can decode — see
+ *   codecs.ts). Cloudflare doesn't forward a codec change on a published track, so a different codec means
+ *   rejoining: `codecUnsupported` tells the room when someone who joined can't play ours.
  * - Recovery: ICE restart on connection loss; after two failed attempts `state` becomes 'disconnected' and the
  *   room rejoins.
  * - E2EE: every sender and receiver gets CryptoService's frame transform as it's created, before any frame flows
@@ -108,6 +122,21 @@ export class MediaService implements OnDestroy {
   readonly videoQuality = signal<VideoQuality>(loadVideoQuality());
   /** Qualities the current camera can actually capture (4K / 1080p only when supported). */
   readonly availableQualities = signal<VideoQuality[]>(supportedQualities(undefined));
+  /** Video codec the user chose; remembered in this browser. */
+  readonly videoCodec = signal<VideoCodec>(loadVideoCodec());
+  /** Codecs this browser can send (the picker offers only these). */
+  readonly availableCodecs: readonly VideoCodec[] = VIDEO_CODECS.filter((c) =>
+    encodableCodecs().includes(c),
+  );
+  /** Codecs this browser can decode (sent with JoinRoom). */
+  readonly decodableCodecs: readonly string[] = decodableCodecs();
+  /** Codec we send in this call (may be a fallback from `videoCodec`); unset while not connected. */
+  readonly sendingCodec = signal<VideoCodec | undefined>(undefined);
+  /** Someone in the call can't decode what we send (they joined after us): rejoin to pick another codec. */
+  readonly codecUnsupported = computed(() => {
+    const codec = this.sendingCodec();
+    return !!codec && this.signaling.participants().some((p) => !p.videoCodecs.includes(codec));
+  });
 
   readonly participants = computed<CallParticipant[]>(() => {
     const self = this.self();
@@ -185,6 +214,7 @@ export class MediaService implements OnDestroy {
 
     this.diagnostics.set({ forceRelay: config.forceRelay });
     this.state.set(mediaState(pc.connectionState));
+    this.sendingCodec.set(this.codecFor(this.videoCodec()));
     this.self.set(self);
     this.statsTimer = setInterval(() => void this.collectStats(), STATS_INTERVAL_MS);
   }
@@ -255,6 +285,17 @@ export class MediaService implements OnDestroy {
     await this.switchCamera({ deviceId: { exact: deviceId } });
   }
 
+  /**
+   * Remembers the video codec to send. Returns true when the call must be rejoined for it to take effect (the codec
+   * we'd now send differs from the one we're sending).
+   */
+  setVideoCodec(codec: VideoCodec): boolean {
+    this.videoCodec.set(codec);
+    saveVideoCodec(codec);
+    const sending = this.sendingCodec();
+    return !!sending && this.codecFor(codec) !== sending;
+  }
+
   /** Changes the camera send quality; a live camera is re-captured in place (others see a brief cut). */
   async setVideoQuality(quality: VideoQuality): Promise<void> {
     this.videoQuality.set(quality);
@@ -313,6 +354,7 @@ export class MediaService implements OnDestroy {
     this.remoteTracks.set(new Map());
     this.speaking.set(new Set());
     this.state.set('disconnected');
+    this.sendingCodec.set(undefined);
     this.micEnabled.set(false);
     this.cameraEnabled.set(false);
     this.screenShareEnabled.set(false);
@@ -335,7 +377,8 @@ export class MediaService implements OnDestroy {
     }
     const previous = this.localTracks()[source];
     await transceiver.sender.replaceTrack(track);
-    if (source === 'camera') await updateBitrates(transceiver.sender, captureHeight(track));
+    if (source === 'camera')
+      await updateBitrates(transceiver.sender, captureHeight(track), this.requireCodec());
     previous?.stop();
     this.placeholders.get(source)?.stop();
     this.placeholders.delete(source);
@@ -380,13 +423,17 @@ export class MediaService implements OnDestroy {
   ): Promise<void> {
     return this.queue.run(async () => {
       const pc = this.requirePc();
-      const transceiver = pc.addTransceiver(track, {
-        direction: 'sendonly',
-        ...(source === 'camera' ? { sendEncodings: cameraEncodings(captureHeight(track)) } : {}),
-      });
+      const codec = this.requireCodec();
+      const capabilities = sendCapabilities();
+      const transceiver = addSendTransceiver(pc, track, source, codec);
+      const kind = track.kind as MediaKind;
       // Before the first frame leaves: frames are only ever sent encrypted.
-      this.requireFrames().attachSender(transceiver.sender, track.kind as MediaKind);
-      if (track.kind === 'video') preferVp8(transceiver);
+      this.requireFrames().attachSender(
+        transceiver.sender,
+        kind,
+        kind === 'video' ? codec : undefined,
+      );
+      if (kind === 'video') preferCodec(transceiver, capabilities, codec);
       try {
         await pc.setLocalDescription(await pc.createOffer());
         const answer = await this.signaling.publishTracks(pc.localDescription!.sdp, [
@@ -607,6 +654,21 @@ export class MediaService implements OnDestroy {
     return this.frames;
   }
 
+  private requireCodec(): VideoCodec {
+    const codec = this.sendingCodec();
+    if (!codec) throw new Error('Not connected.');
+    return codec;
+  }
+
+  /** What we'd send with `chosen`, given what everyone in the call can decode. */
+  private codecFor(chosen: VideoCodec): VideoCodec {
+    return sendCodec(
+      chosen,
+      this.availableCodecs,
+      this.signaling.participants().map((p) => p.videoCodecs),
+    );
+  }
+
   private requirePc(): RTCPeerConnection {
     if (!this.pc) throw new Error('Not connected.');
     return this.pc;
@@ -789,24 +851,65 @@ function captureHeight(track: MediaStreamTrack): number {
 }
 
 /** Re-targets the camera's simulcast bitrates after a resolution change (no renegotiation needed). */
-async function updateBitrates(sender: RTCRtpSender, height: number): Promise<void> {
+async function updateBitrates(
+  sender: RTCRtpSender,
+  height: number,
+  codec: VideoCodec,
+): Promise<void> {
   if (typeof sender.getParameters !== 'function') return;
   const parameters = sender.getParameters();
-  const targets = new Map(cameraEncodings(height).map((e) => [e.rid, e.maxBitrate]));
+  const targets = new Map(cameraEncodings(height, codec).map((e) => [e.rid, e.maxBitrate]));
   parameters.encodings?.forEach((e) => (e.maxBitrate = targets.get(e.rid) ?? e.maxBitrate));
   await sender.setParameters(parameters);
 }
 
-/** VP8 first for every video (camera and screen): simulcast support everywhere, and frame encryption keeps its
- * fixed-size payload header in the clear (E2EE). */
-function preferVp8(transceiver: RTCRtpTransceiver): void {
-  const codecs =
-    typeof RTCRtpReceiver !== 'undefined'
-      ? RTCRtpReceiver.getCapabilities?.('video')?.codecs
-      : undefined;
-  if (!codecs || !transceiver.setCodecPreferences) return;
-  const isVp8 = (c: { mimeType: string }) => /vp8/i.test(c.mimeType);
-  transceiver.setCodecPreferences([...codecs.filter(isVp8), ...codecs.filter((c) => !isVp8(c))]);
+/**
+ * Camera: f/h/q simulcast with the codec's scalability mode. A browser that rejects the mode (it throws before
+ * creating anything) gets the layers without it.
+ */
+function addSendTransceiver(
+  pc: RTCPeerConnection,
+  track: MediaStreamTrack,
+  source: TrackSource,
+  codec: VideoCodec,
+): RTCRtpTransceiver {
+  if (source !== 'camera') return pc.addTransceiver(track, { direction: 'sendonly' });
+  const height = captureHeight(track);
+  const mode = simulcastScalabilityMode(codec);
+  try {
+    return pc.addTransceiver(track, {
+      direction: 'sendonly',
+      sendEncodings: cameraEncodings(height, codec, mode),
+    });
+  } catch (e) {
+    if (!mode) throw e;
+    return pc.addTransceiver(track, {
+      direction: 'sendonly',
+      sendEncodings: cameraEncodings(height, codec),
+    });
+  }
+}
+
+function sendCapabilities(): CodecCapability[] {
+  return (
+    (typeof RTCRtpSender !== 'undefined'
+      ? RTCRtpSender.getCapabilities?.('video')?.codecs
+      : undefined) ?? []
+  );
+}
+
+/**
+ * Every video transceiver (camera and screen) sends only the call's codec: frame encryption knows its layout, and
+ * we never switch codecs on a published track (see codecs.ts).
+ */
+function preferCodec(
+  transceiver: RTCRtpTransceiver,
+  capabilities: readonly CodecCapability[],
+  codec: VideoCodec,
+): void {
+  const preferences = codecPreferences(capabilities, codec);
+  if (!preferences.length || !transceiver.setCodecPreferences) return;
+  transceiver.setCodecPreferences(preferences as RTCRtpCodec[]);
 }
 
 /**

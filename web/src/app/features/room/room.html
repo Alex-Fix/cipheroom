@@ -74,12 +74,16 @@
       [canFlip]="media.canFlip()"
       [qualities]="media.availableQualities()"
       [quality]="media.videoQuality()"
+      [codecs]="media.availableCodecs"
+      [codec]="media.videoCodec()"
+      [sendingCodec]="media.sendingCodec()"
       (toggleMic)="setDevice('microphone', !media.micEnabled())"
       (toggleCamera)="setDevice('camera', !media.cameraEnabled())"
       (toggleScreenShare)="setDevice('screen', !media.screenShareEnabled())"
       (flipCamera)="switchCamera()"
       (selectCamera)="switchCamera($event)"
       (selectQuality)="setQuality($event)"
+      (selectCodec)="setCodec($event)"
       (leave)="leave()"
     />
   }

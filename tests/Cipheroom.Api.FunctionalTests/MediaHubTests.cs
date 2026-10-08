@@ -33,8 +33,8 @@ public sealed class MediaHubTests(WebApplicationFactory<Program> factory) : ICla
         await using var bob = await ConnectAsync();
         var published = Channel.CreateUnbounded<(string Id, IReadOnlyList<TrackDto> Tracks)>();
         bob.On<string, IReadOnlyList<TrackDto>>("TracksPublished", (id, tracks) => published.Writer.TryWrite((id, tracks)));
-        var aliceJoin = await alice.InvokeAsync<JoinResult>("JoinRoom", "media-1", "Alice", TestIdentity.Dto, Ct);
-        await bob.InvokeAsync<JoinResult>("JoinRoom", "media-1", "Bob", TestIdentity.Dto, Ct);
+        var aliceJoin = await alice.InvokeAsync<JoinResult>("JoinRoom", "media-1", "Alice", TestIdentity.Dto, TestIdentity.Codecs, Ct);
+        await bob.InvokeAsync<JoinResult>("JoinRoom", "media-1", "Bob", TestIdentity.Dto, TestIdentity.Codecs, Ct);
 
         var answer = await alice.InvokeAsync<AnswerDto>("PublishTracks", Offer,
             new[] { new PublishTrackDto("0", "microphone"), new PublishTrackDto("1", "camera") }, Ct);
@@ -45,7 +45,7 @@ public sealed class MediaHubTests(WebApplicationFactory<Program> factory) : ICla
         Assert.Equal([new TrackDto("microphone", "audio", false), new TrackDto("camera", "video", false)], announced.Tracks);
 
         await using var carol = await ConnectAsync();
-        var carolJoin = await carol.InvokeAsync<JoinResult>("JoinRoom", "media-1", "Carol", TestIdentity.Dto, Ct);
+        var carolJoin = await carol.InvokeAsync<JoinResult>("JoinRoom", "media-1", "Carol", TestIdentity.Dto, TestIdentity.Codecs, Ct);
         Assert.Equal(announced.Tracks, carolJoin.Participants.Single(p => p.Id == aliceJoin.SelfId).Tracks);
     }
 
@@ -54,8 +54,8 @@ public sealed class MediaHubTests(WebApplicationFactory<Program> factory) : ICla
     {
         await using var alice = await ConnectAsync();
         await using var bob = await ConnectAsync();
-        var aliceJoin = await alice.InvokeAsync<JoinResult>("JoinRoom", "media-2", "Alice", TestIdentity.Dto, Ct);
-        await bob.InvokeAsync<JoinResult>("JoinRoom", "media-2", "Bob", TestIdentity.Dto, Ct);
+        var aliceJoin = await alice.InvokeAsync<JoinResult>("JoinRoom", "media-2", "Alice", TestIdentity.Dto, TestIdentity.Codecs, Ct);
+        await bob.InvokeAsync<JoinResult>("JoinRoom", "media-2", "Bob", TestIdentity.Dto, TestIdentity.Codecs, Ct);
         await alice.InvokeAsync<AnswerDto>("PublishTracks", Offer, new[] { new PublishTrackDto("1", "camera") }, Ct);
 
         var result = await bob.InvokeAsync<SubscribeResult>("SubscribeTracks", new[] { new TrackRefDto(aliceJoin.SelfId, "camera") }, Ct);
@@ -72,9 +72,9 @@ public sealed class MediaHubTests(WebApplicationFactory<Program> factory) : ICla
     {
         await using var alice = await ConnectAsync();
         await using var mallory = await ConnectAsync();
-        var aliceJoin = await alice.InvokeAsync<JoinResult>("JoinRoom", "media-3", "Alice", TestIdentity.Dto, Ct);
+        var aliceJoin = await alice.InvokeAsync<JoinResult>("JoinRoom", "media-3", "Alice", TestIdentity.Dto, TestIdentity.Codecs, Ct);
         await alice.InvokeAsync<AnswerDto>("PublishTracks", Offer, new[] { new PublishTrackDto("1", "camera") }, Ct);
-        await mallory.InvokeAsync<JoinResult>("JoinRoom", "media-elsewhere", "Mallory", TestIdentity.Dto, Ct);
+        await mallory.InvokeAsync<JoinResult>("JoinRoom", "media-elsewhere", "Mallory", TestIdentity.Dto, TestIdentity.Codecs, Ct);
 
         await AssertHubErrorAsync("Unknown track.", () =>
             mallory.InvokeAsync<SubscribeResult>("SubscribeTracks", new[] { new TrackRefDto(aliceJoin.SelfId, "camera") }, Ct));
@@ -89,8 +89,8 @@ public sealed class MediaHubTests(WebApplicationFactory<Program> factory) : ICla
         var unpublished = Channel.CreateUnbounded<(string, IReadOnlyList<string>)>();
         bob.On<string, string, bool>("TrackMuted", (id, source, m) => muted.Writer.TryWrite((id, source, m)));
         bob.On<string, IReadOnlyList<string>>("TracksUnpublished", (id, sources) => unpublished.Writer.TryWrite((id, sources)));
-        var aliceJoin = await alice.InvokeAsync<JoinResult>("JoinRoom", "media-4", "Alice", TestIdentity.Dto, Ct);
-        await bob.InvokeAsync<JoinResult>("JoinRoom", "media-4", "Bob", TestIdentity.Dto, Ct);
+        var aliceJoin = await alice.InvokeAsync<JoinResult>("JoinRoom", "media-4", "Alice", TestIdentity.Dto, TestIdentity.Codecs, Ct);
+        await bob.InvokeAsync<JoinResult>("JoinRoom", "media-4", "Bob", TestIdentity.Dto, TestIdentity.Codecs, Ct);
         await alice.InvokeAsync<AnswerDto>("PublishTracks", Offer,
             new[] { new PublishTrackDto("0", "microphone"), new PublishTrackDto("2", "screen") }, Ct);
 
@@ -110,7 +110,7 @@ public sealed class MediaHubTests(WebApplicationFactory<Program> factory) : ICla
         await AssertHubErrorAsync("Join a room first.", () =>
             connection.InvokeAsync<AnswerDto>("PublishTracks", Offer, new[] { new PublishTrackDto("0", "camera") }, Ct));
 
-        await connection.InvokeAsync<JoinResult>("JoinRoom", "media-5", "Eve", TestIdentity.Dto, Ct);
+        await connection.InvokeAsync<JoinResult>("JoinRoom", "media-5", "Eve", TestIdentity.Dto, TestIdentity.Codecs, Ct);
         const string hostile = "<script>alert(1)</script>";
         await AssertHubErrorAsync("Invalid session description.", () =>
             connection.InvokeAsync<AnswerDto>("PublishTracks", hostile, new[] { new PublishTrackDto("0", "camera") }, Ct));
@@ -130,7 +130,7 @@ public sealed class MediaHubTests(WebApplicationFactory<Program> factory) : ICla
     {
         var failing = Configure(factory, new FakeSfu { Fail = true });
         await using var connection = await ConnectAsync(failing);
-        await connection.InvokeAsync<JoinResult>("JoinRoom", "media-6", "Alice", TestIdentity.Dto, Ct);
+        await connection.InvokeAsync<JoinResult>("JoinRoom", "media-6", "Alice", TestIdentity.Dto, TestIdentity.Codecs, Ct);
         var collector = failing.Services.GetFakeLogCollector();
         collector.Clear();
 

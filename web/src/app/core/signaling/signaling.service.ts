@@ -41,13 +41,20 @@ export class SignalingService {
   private readonly keyEnvelopeListeners = new Set<KeyEnvelopeListener>();
 
   /** `identity`: our public keys for this call (from CryptoService); required — there are no unencrypted joins. */
-  async joinRoom(roomId: string, displayName: string, identity: IdentityDto): Promise<JoinResult> {
+  /** `videoCodecs`: what this browser can decode (others pick a codec we can play). */
+  async joinRoom(
+    roomId: string,
+    displayName: string,
+    identity: IdentityDto,
+    videoCodecs: readonly string[],
+  ): Promise<JoinResult> {
     const connection = await this.ensureConnected();
     const result = await connection.invoke<JoinResult>(
       HubMethods.JoinRoom,
       roomId,
       displayName,
       identity,
+      videoCodecs,
     );
     this.participants.set(result.participants);
     return result;

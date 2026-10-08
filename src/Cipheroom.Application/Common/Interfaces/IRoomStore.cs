@@ -18,6 +18,7 @@ public interface IRoomStore
         string connectionId,
         DisplayName displayName,
         IdentityKeys identity,
+        VideoCodecs videoCodecs,
         [NotNullWhen(true)] out Participant? self,
         [NotNullWhen(true)] out IReadOnlyList<Participant>? others);
 

@@ -83,7 +83,13 @@ class FakeServer {
   /** Joins `client` to the room: others learn about it, it learns about them; then it starts encryption. */
   async join(client: Client): Promise<void> {
     const identity = await client.crypto.identityBundle(ROOM);
-    const me: ParticipantDto = { id: client.id, displayName: client.id, tracks: [], identity };
+    const me: ParticipantDto = {
+      id: client.id,
+      displayName: client.id,
+      tracks: [],
+      identity,
+      videoCodecs: ['vp8'],
+    };
     const others = [...this.clients.values()].filter((c) => c !== client && this.inRoom.has(c.id));
     client.participants.set(others.map((c) => this.dto(c)));
     this.inRoom.set(client.id, me);
@@ -266,6 +272,7 @@ describe('CryptoService', () => {
           displayName: `P${i}`,
           tracks: [],
           identity: await server.client(`p${i}`).crypto.identityBundle(ROOM),
+          videoCodecs: ['vp8'],
         })),
       );
       alice.participants.set(crowd);
@@ -303,7 +310,13 @@ describe('CryptoService', () => {
       };
       alice.participants.update((list) => [
         ...list,
-        { id: 'mallory', displayName: 'Mallory', tracks: [], identity: forged },
+        {
+          id: 'mallory',
+          displayName: 'Mallory',
+          tracks: [],
+          identity: forged,
+          videoCodecs: ['vp8'],
+        },
       ]);
       await afterRotation();
 
@@ -364,7 +377,7 @@ describe('CryptoService', () => {
       const ghost = await server.client('ghost').crypto.identityBundle(ROOM);
       bob.participants.update((list) => [
         ...list,
-        { id: 'ghost', displayName: 'Alice', tracks: [], identity: ghost },
+        { id: 'ghost', displayName: 'Alice', tracks: [], identity: ghost, videoCodecs: ['vp8'] },
       ]);
       await settle();
 
@@ -383,7 +396,7 @@ describe('CryptoService', () => {
     const carol = await server.client('carol').crypto.identityBundle(ROOM);
     alice.participants.update((list) => [
       ...list,
-      { id: 'carol', displayName: 'Carol', tracks: [], identity: carol },
+      { id: 'carol', displayName: 'Carol', tracks: [], identity: carol, videoCodecs: ['vp8'] },
     ]);
     await settle();
     now += 2_000;

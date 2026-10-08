@@ -24,6 +24,8 @@ export interface ParticipantDto {
   displayName: string;
   tracks: TrackDto[];
   identity: IdentityDto;
+  /** Video codecs this participant can decode, among `vp8` (always), `vp9`, `av1`. */
+  videoCodecs: string[];
 }
 
 /** A sender-key envelope for one recipient; `blob` is opaque to the server (signed, encrypted end to end). */
