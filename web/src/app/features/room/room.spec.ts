@@ -450,6 +450,23 @@ describe('Room', () => {
       expect(lobby.remove).toHaveBeenCalledWith('bob');
       expect(lobby.endCall).toHaveBeenCalled();
     });
+
+    it('doesn’t report ending the call as a failure when the connection closes under it', async () => {
+      const { fixture, lobby, message, modal } = await setup({
+        crypto: (c) => c.canAdmit.set(true),
+      });
+      // "Call ended" arrives before the server's reply; leaving closes the connection under the pending call.
+      lobby.endCall.mockImplementation(async () => {
+        lobby.state.set('ended');
+        throw new Error('Invocation canceled due to the underlying connection being closed.');
+      });
+      fixture.debugElement
+        .query((d) => d.name === 'app-call-header')
+        .triggerEventHandler('endCall');
+      await (modal.confirm.mock.calls[0][0]!.nzOnOk as () => Promise<void>)();
+
+      expect(message.error).not.toHaveBeenCalled();
+    });
   });
 
   describe('automatic rejoin', () => {

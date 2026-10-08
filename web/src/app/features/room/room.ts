@@ -321,6 +321,10 @@ export class Room implements OnInit, OnDestroy {
     try {
       await action();
     } catch (e) {
+      // Ending the call: "call ended" reaches us before the server's reply, and leaving closes the connection under
+      // the pending call. That's success, not an error.
+      const state = this.lobby.state();
+      if (state === 'ended' || state === 'removed') return;
       console.warn('[cipheroom] host action failed', e);
       this.message.error('That didn’t work. Try again.');
     }
