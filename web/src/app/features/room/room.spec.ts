@@ -475,9 +475,13 @@ describe('Room', () => {
 
     it('rejoins with the same devices when the media connection is lost', async () => {
       const { fixture, media, lobby } = await setup();
+      // The user mutes; the camera is on.
+      fixture.debugElement
+        .query((d) => d.name === 'app-call-controls')
+        .triggerEventHandler('toggleMic');
+      await fixture.whenStable();
       vi.useFakeTimers();
-      media.micEnabled.set(false);
-      media.cameraEnabled.set(true);
+      expect(media.micEnabled()).toBe(false);
       media.setMicrophone.mockClear();
       media.setCamera.mockClear();
 
@@ -490,6 +494,37 @@ describe('Room', () => {
       // The muted microphone is published again, then muted: unmuting later needs no new negotiation.
       expect(media.setMicrophone.mock.calls).toEqual([[true], [false]]);
       expect(media.setCamera).toHaveBeenCalledWith(true);
+    });
+
+    it('a rejoin while still starting up keeps the devices asked for, and the abandoned join stays quiet', async () => {
+      let finishCamera: () => void = () => undefined;
+      const { fixture, media, lobby, message } = await setup({
+        tweak: (lk) =>
+          // The first camera start is slow, then fails once the connection under it is gone.
+          lk.setCamera.mockImplementationOnce(
+            () =>
+              new Promise(
+                (_, reject) =>
+                  (finishCamera = () => reject(new Error('The peer connection is closed.'))),
+              ),
+          ),
+      });
+      vi.useFakeTimers();
+      media.setVideoCodec.mockReturnValueOnce(true);
+
+      fixture.debugElement
+        .query((d) => d.name === 'app-call-controls')
+        .triggerEventHandler('selectCodec', 'vp8');
+      await vi.advanceTimersByTimeAsync(0);
+      finishCamera();
+      await vi.advanceTimersByTimeAsync(1000);
+
+      expect(lobby.enter).toHaveBeenCalledTimes(2);
+      // The camera was still starting when the rejoin began: it's asked for again, not dropped.
+      expect(media.setCamera).toHaveBeenLastCalledWith(true);
+      expect(media.cameraEnabled()).toBe(true);
+      expect(message.error).not.toHaveBeenCalled();
+      expect(media.startReceiving).toHaveBeenCalledTimes(1);
     });
 
     it('rejoins to apply a codec change that needs it, and only then', async () => {

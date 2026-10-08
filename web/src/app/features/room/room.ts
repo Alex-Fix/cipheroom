@@ -106,6 +106,10 @@ export class Room implements OnInit, OnDestroy {
   /** Last safety code seen in this call (kept across rejoins: a code that differs afterwards did change). */
   private lastSafetyCode?: string;
   private seenMuteRequests = 0;
+  /** Microphone and camera as the user wants them (kept across rejoins). */
+  private wanted: Devices = { microphone: true, camera: true };
+  /** Bumped by every join and teardown: a join that isn't the current one stops. */
+  private joinRun = 0;
   private knownGuests = new Set<string>();
 
   constructor() {
@@ -154,7 +158,7 @@ export class Room implements OnInit, OnDestroy {
       this.seenMuteRequests = requests;
       untracked(() => {
         if (!this.media.micEnabled()) return;
-        void this.setDevice('microphone', false);
+        void this.toggleDevice('microphone', false);
         this.notify('The host muted you');
       });
     });
@@ -200,13 +204,23 @@ export class Room implements OnInit, OnDestroy {
     await this.join();
   }
 
-  /** Toggles a device; failures (permission denied, no device) become a toast instead of vanishing. */
-  protected async setDevice(device: Device, enabled: boolean): Promise<void> {
+  /** The user turns a device on or off: remembered, so a rejoin brings back what they chose. */
+  protected async toggleDevice(device: Device, enabled: boolean): Promise<void> {
+    if (device !== 'screen') this.wanted = { ...this.wanted, [device]: enabled };
+    await this.setDevice(device, enabled);
+  }
+
+  /**
+   * Turns a device on or off; failures (permission denied, no device) become a toast instead of vanishing — unless
+   * they belong to a join that was abandoned meanwhile (`run`): its connection is gone, so they mean nothing.
+   */
+  private async setDevice(device: Device, enabled: boolean, run?: number): Promise<void> {
     try {
       if (device === 'microphone') await this.media.setMicrophone(enabled);
       else if (device === 'camera') await this.media.setCamera(enabled);
       else await this.media.setScreenShare(enabled);
     } catch (e) {
+      if (run !== undefined && run !== this.joinRun) return;
       this.deviceFailed(device, e);
     }
   }
@@ -345,7 +359,14 @@ export class Room implements OnInit, OnDestroy {
     setTimeout(() => this.notices.update((list) => list.filter((n) => n.id !== id)), 4000);
   }
 
-  private async join(devices = { microphone: true, camera: true }): Promise<void> {
+  /**
+   * Lobby → keys → media → our tracks → others' tracks. A teardown (rejoin, leaving) abandons a join that is still
+   * running: every step checks it's still the current one, so a stale join never touches the next connection.
+   */
+  private async join(devices: Devices = this.wanted): Promise<void> {
+    const run = ++this.joinRun;
+    const stale = () => run !== this.joinRun;
+    this.wanted = { ...devices };
     this.error.set(undefined);
     try {
       const displayName = loadDisplayName();
@@ -353,12 +374,20 @@ export class Room implements OnInit, OnDestroy {
       // Host proof, ticket or the lobby. Fails before joining when this browser can't encrypt: nobody ever sees us
       // join unencrypted.
       const { selfId } = await this.lobby.enter(roomId, displayName, this.media.decodableCodecs);
+      if (stale()) return;
       const frames = await this.crypto.start(roomId, selfId, displayName);
-      this.media.connect(await this.signaling.getRtcConfig(), { id: selfId, displayName }, frames);
+      if (stale()) return;
+      const config = await this.signaling.getRtcConfig();
+      if (stale()) return;
+      this.media.connect(config, { id: selfId, displayName }, frames);
       this.joined.set(true);
-      await this.publishOwnTracks(devices);
+      await this.publishOwnTracks(devices, run);
+      if (stale()) return;
       this.media.startReceiving();
+      // What actually came on (a denied camera stays off on rejoin instead of failing again).
+      this.wanted = { microphone: this.media.micEnabled(), camera: this.media.cameraEnabled() };
     } catch (e) {
+      if (stale()) return;
       if (e instanceof LobbyClosedError) {
         // Turned away: stay connected, so asking again goes through the server's cooldown.
         if (e.reason === 'denied') return this.allowAskingAgainLater();
@@ -382,20 +411,25 @@ export class Room implements OnInit, OnDestroy {
    * connection began by answering the SFU. Devices that should be off are still published — the microphone muted,
    * the camera as muted placeholder frames — so turning them on later never needs a new negotiation.
    */
-  private async publishOwnTracks(devices: { microphone: boolean; camera: boolean }): Promise<void> {
+  private async publishOwnTracks(devices: Devices, run: number): Promise<void> {
     await Promise.all([
-      this.setDevice('microphone', true).then(() =>
-        devices.microphone || !this.media.micEnabled()
+      this.setDevice('microphone', true, run).then(() =>
+        devices.microphone || !this.media.micEnabled() || run !== this.joinRun
           ? undefined
-          : this.setDevice('microphone', false),
+          : this.setDevice('microphone', false, run),
       ),
-      devices.camera ? this.setDevice('camera', true) : undefined,
+      devices.camera ? this.setDevice('camera', true, run) : undefined,
     ]);
     // Camera off, denied or missing: reserve its slot anyway.
-    if (!this.media.cameraEnabled()) await this.media.reserveCamera().catch(() => undefined);
+    if (run === this.joinRun && !this.media.cameraEnabled()) {
+      await this.media.reserveCamera().catch(() => undefined);
+    }
   }
 
-  /** Same devices as before; gives up (Try Again screen) after a few attempts in a row. */
+  /**
+   * The devices the user wants (not what happens to be on: a camera still starting would otherwise come back off);
+   * gives up (Try Again screen) after a few attempts in a row.
+   */
   private async rejoin(): Promise<void> {
     if (this.rejoining()) return;
     if (++this.rejoinAttempts > MAX_REJOINS) {
@@ -404,7 +438,7 @@ export class Room implements OnInit, OnDestroy {
       return;
     }
     this.rejoining.set(true);
-    const devices = { microphone: this.media.micEnabled(), camera: this.media.cameraEnabled() };
+    const devices = { ...this.wanted };
     try {
       await this.teardown();
       await new Promise((resolve) => setTimeout(resolve, REJOIN_DELAY_MS));
@@ -415,12 +449,15 @@ export class Room implements OnInit, OnDestroy {
   }
 
   private async teardown(): Promise<void> {
+    this.joinRun++; // abandons a join still in progress
     this.joined.set(false);
     await this.media.disconnect();
     this.crypto.stop();
     await this.signaling.leave();
   }
 }
+
+type Devices = { microphone: boolean; camera: boolean };
 
 const MAX_REJOINS = 3;
 /** The server's cooldown after being turned away (Room.DenyCooldown) plus a little. */
