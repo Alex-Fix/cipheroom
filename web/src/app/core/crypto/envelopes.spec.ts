@@ -54,23 +54,36 @@ describe('envelopes', () => {
     alice = await participant();
     bob = await participant();
     senderKey = crypto.getRandomValues(new Uint8Array(32));
-    blob = await sealEnvelope(header(), senderKey, alice.identity, bob.verified);
+    blob = await sealEnvelope(header(), senderKey, 'Alice', alice.identity, bob.verified);
   });
 
   const open = (b: string, exp = expected, recipient = bob.identity, sender = alice.verified) =>
     openEnvelope(b, exp, recipient, sender);
 
-  it('delivers the sender key to its recipient', async () => {
+  it('delivers the sender key and name to its recipient', async () => {
     const opened = await open(blob);
     expect(new Uint8Array(opened.senderKey)).toEqual(senderKey);
-    expect(opened).toMatchObject({ epoch: 5, keyIndex: 5 });
+    expect(opened).toMatchObject({ epoch: 5, keyIndex: 5, name: 'Alice' });
+  });
+
+  it('pads names so their length doesn’t show', async () => {
+    const long = await sealEnvelope(
+      header(),
+      senderKey,
+      'Alexandra Konstantinopolska',
+      alice.identity,
+      bob.verified,
+    );
+    expect(long.length).toBe(blob.length);
   });
 
   it('is opaque and small enough for the server to relay', () => {
     expect(blob).toMatch(/^[A-Za-z0-9_-]+$/);
     expect(blob.length).toBeLessThanOrEqual(MAX_ENVELOPE_BLOB);
-    // The sender key never appears in the clear.
-    expect(new TextDecoder().decode(fromBase64Url(blob))).not.toContain(toBase64Url(senderKey));
+    // Neither the sender key nor the name appears in the clear.
+    const wire = new TextDecoder().decode(fromBase64Url(blob));
+    expect(wire).not.toContain(toBase64Url(senderKey));
+    expect(wire).not.toContain('Alice');
   });
 
   it('can’t be opened by anyone but the recipient', async () => {
@@ -82,6 +95,7 @@ describe('envelopes', () => {
     const relabelled = await sealEnvelope(
       { ...header(), toId: 'carol' },
       senderKey,
+      'Alice',
       alice.identity,
       bob.verified,
     );
@@ -114,7 +128,7 @@ describe('envelopes', () => {
 
   it('rejects an envelope signed by someone other than the participant it claims to be from', async () => {
     const mallory = await participant();
-    const forged = await sealEnvelope(header(), senderKey, mallory.identity, bob.verified);
+    const forged = await sealEnvelope(header(), senderKey, 'Alice', mallory.identity, bob.verified);
     expect(await rejection(open(forged))).toBe('bad-signature');
   });
 
@@ -136,7 +150,7 @@ describe('envelopes', () => {
     const malformed = [
       'not base64url!',
       toBase64Url(utf8('not json')),
-      tamper(blob, (w) => (w['v'] = 2)),
+      tamper(blob, (w) => (w['v'] = 1)), // v1 had no name: refused
       tamper(blob, (w) => (w['keyIndex'] = 6)), // must be epoch mod 16
       tamper(blob, (w) => delete w['sig']),
       'A'.repeat(MAX_ENVELOPE_BLOB + 1),
@@ -146,15 +160,15 @@ describe('envelopes', () => {
 
   it('refuses to seal bad keys or indexes', async () => {
     await expect(
-      sealEnvelope(header(), new Uint8Array(16), alice.identity, bob.verified),
+      sealEnvelope(header(), new Uint8Array(16), 'Alice', alice.identity, bob.verified),
     ).rejects.toThrow('Invalid sender key.');
     await expect(
-      sealEnvelope({ ...header(), keyIndex: 0 }, senderKey, alice.identity, bob.verified),
+      sealEnvelope({ ...header(), keyIndex: 0 }, senderKey, 'Alice', alice.identity, bob.verified),
     ).rejects.toThrow('Invalid key index.');
   });
 
   it('uses a fresh ephemeral key and IV for every envelope', async () => {
-    const again = await sealEnvelope(header(), senderKey, alice.identity, bob.verified);
+    const again = await sealEnvelope(header(), senderKey, 'Alice', alice.identity, bob.verified);
     const a = JSON.parse(new TextDecoder().decode(fromBase64Url(blob)));
     const b = JSON.parse(new TextDecoder().decode(fromBase64Url(again)));
     expect(b.eph).not.toBe(a.eph);

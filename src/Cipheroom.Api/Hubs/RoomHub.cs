@@ -52,16 +52,17 @@ public sealed partial class RoomHub(IMediator mediator, TelemetryIds ids, ILogge
 
         if (result.Self is { } self)
         {
-            await Groups.AddToGroupAsync(Context.ConnectionId, GroupName(room));
-            await Clients.OthersInGroup(GroupName(room)).ParticipantJoined(ParticipantDto.From(self));
+            // Authority first: clients verify the newcomer against it.
             if (result.AuthorityChanged)
                 await Clients.Groups(GroupName(room), LobbyGroupName(room)).AuthorityUpdated(authority);
+            await Groups.AddToGroupAsync(Context.ConnectionId, GroupName(room));
+            await Clients.OthersInGroup(GroupName(room)).ParticipantJoined(ParticipantDto.From(self));
             LogJoined(self.Id.Value, room);
-            return new LobbyResult(self.Id.Value, true, [.. result.Others.Select(ParticipantDto.From)], authority);
+            return LobbyResult.Member(self, result.Others, result.Authority);
         }
 
         await Groups.AddToGroupAsync(Context.ConnectionId, LobbyGroupName(room));
-        return new LobbyResult(result.Guest!.Id.Value, false, [], authority);
+        return new LobbyResult(result.Guest!.Id.Value, false, [], authority, null);
     }
 
     public async Task Knock(IReadOnlyList<KnockDto?>? knocks)
@@ -83,8 +84,7 @@ public sealed partial class RoomHub(IMediator mediator, TelemetryIds ids, ILogge
         await Groups.AddToGroupAsync(admitted.ConnectionId, GroupName(room));
         await Clients.GroupExcept(GroupName(room), admitted.ConnectionId).ParticipantJoined(ParticipantDto.From(admitted));
         await NotifyLobbyLeft(result.Authority.Admitters, admitted.Id);
-        await Clients.Client(admitted.ConnectionId).Admitted(
-            new LobbyResult(admitted.Id.Value, true, [.. result.Others.Select(ParticipantDto.From)], AuthorityDto.From(result.Authority)));
+        await Clients.Client(admitted.ConnectionId).Admitted(LobbyResult.Member(admitted, result.Others, result.Authority));
         LogJoined(admitted.Id.Value, room);
     }
 

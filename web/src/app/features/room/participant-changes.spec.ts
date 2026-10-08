@@ -4,6 +4,7 @@ import { participantChanges } from './participant-changes';
 const p = (identity: string, isLocal = false): CallParticipant => ({
   identity,
   name: identity,
+  role: 'guest',
   isLocal,
   isSpeaking: false,
   micMuted: false,

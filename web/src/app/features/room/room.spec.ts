@@ -3,7 +3,14 @@ import { TestBed } from '@angular/core/testing';
 import { provideRouter, Router } from '@angular/router';
 import { provideNzIcons } from 'ng-zorro-antd/icon';
 import { NzMessageService } from 'ng-zorro-antd/message';
+import { NzModalService } from 'ng-zorro-antd/modal';
 import { CryptoService } from '../../core/crypto/crypto.service';
+import {
+  LobbyClosedError,
+  LobbyService,
+  LobbyState,
+  PendingGuest,
+} from '../../core/lobby/lobby.service';
 import { SafetyCode } from '../../core/crypto/safety-code';
 import { MediaService } from '../../core/media/media.service';
 import { CallParticipant, MediaState } from '../../core/media/media.types';
@@ -55,19 +62,44 @@ function fakeMedia() {
   return media;
 }
 
-/** Our public keys for the call (CryptoService); the room only passes them on. */
-const identity = { ed25519Pub: 'ed', x25519Pub: 'x', sig: 'sig' };
 /** CryptoService's frame transforms, handed from CryptoService.start to MediaService.connect. */
 const frames = { peerConnectionConfig: {} };
 
 function fakeCrypto() {
   return {
-    identityBundle: vi.fn().mockResolvedValue(identity),
     start: vi.fn().mockResolvedValue(frames),
     stop: vi.fn(),
     safetyCode: signal<SafetyCode | undefined>(undefined),
     unverified: signal<ReadonlySet<string>>(new Set()),
+    canAdmit: signal(false),
+    isHost: signal(false),
+    authority: signal({ autoAdmit: false }),
   };
+}
+
+/** LobbyService: straight in (as host) unless a test says otherwise. */
+function fakeLobby() {
+  const lobby = {
+    state: signal<LobbyState>('idle'),
+    guests: signal<PendingGuest[]>([]),
+    muteRequests: signal(0),
+    enter: vi.fn(),
+    cancel: vi.fn(),
+    reset: vi.fn(),
+    admit: vi.fn().mockResolvedValue(undefined),
+    deny: vi.fn().mockResolvedValue(undefined),
+    admitAll: vi.fn().mockResolvedValue(undefined),
+    makeCoHost: vi.fn().mockResolvedValue(undefined),
+    remove: vi.fn().mockResolvedValue(undefined),
+    askToMute: vi.fn().mockResolvedValue(undefined),
+    setAutoAdmit: vi.fn().mockResolvedValue(undefined),
+    endCall: vi.fn().mockResolvedValue(undefined),
+  };
+  lobby.enter.mockImplementation(async () => {
+    lobby.state.set('admitted');
+    return { selfId: 'me', admitted: true, participants: [], authority: {}, ticket: null };
+  });
+  return lobby;
 }
 
 const safetyCode = (digits: string): SafetyCode => ({
@@ -83,7 +115,7 @@ const safetyCode = (digits: string): SafetyCode => ({
 function fakeSignaling() {
   return {
     connected: signal(true),
-    joinRoom: vi.fn().mockResolvedValue({ selfId: 'me', participants: [] }),
+    authority: signal<{ admitters: unknown[] } | undefined>(undefined),
     getRtcConfig: vi.fn().mockResolvedValue({ iceServers: [], forceRelay: false }),
     leave: vi.fn().mockResolvedValue(undefined),
   };
@@ -94,6 +126,7 @@ async function setup(
     name?: string;
     tweak?: (lk: ReturnType<typeof fakeMedia>, sig: ReturnType<typeof fakeSignaling>) => void;
     crypto?: (crypto: ReturnType<typeof fakeCrypto>) => void;
+    lobby?: (lobby: ReturnType<typeof fakeLobby>) => void;
   } = {},
 ) {
   if (opts.name === undefined) localStorage.setItem(DISPLAY_NAME_KEY, 'Alex');
@@ -105,6 +138,8 @@ async function setup(
   const message = { error: vi.fn(), success: vi.fn() };
   const crypto = fakeCrypto();
   opts.crypto?.(crypto);
+  const lobby = fakeLobby();
+  opts.lobby?.(lobby);
 
   TestBed.configureTestingModule({
     imports: [Room],
@@ -120,6 +155,7 @@ async function setup(
       providers: [
         { provide: MediaService, useValue: media },
         { provide: CryptoService, useValue: crypto },
+        { provide: LobbyService, useValue: lobby },
       ],
     },
   });
@@ -127,6 +163,12 @@ async function setup(
   const router = TestBed.inject(Router);
   const navigate = vi.spyOn(router, 'navigate').mockResolvedValue(true);
   const fixture = TestBed.createComponent(Room);
+  // The instance Room uses (NzModalModule provides it at component level). Confirmations aren't rendered here.
+  const modal = {
+    confirm: vi
+      .spyOn(fixture.debugElement.injector.get(NzModalService), 'confirm')
+      .mockReturnValue(undefined as never),
+  };
   fixture.componentRef.setInput('roomId', 'abc-123');
   await fixture.whenStable();
   // The join runs as a promise chain from ngOnInit: let it finish.
@@ -140,15 +182,16 @@ async function setup(
     message,
     navigate,
     crypto,
+    lobby,
+    modal,
   };
 }
 
 describe('Room', () => {
-  it('joins, connects and turns on mic and camera', async () => {
-    const { signaling, media, el, crypto } = await setup();
-    expect(crypto.identityBundle).toHaveBeenCalledWith('abc-123');
-    expect(signaling.joinRoom).toHaveBeenCalledWith('abc-123', 'Alex', identity, ['vp8', 'vp9']);
-    expect(crypto.start).toHaveBeenCalledWith('abc-123', 'me');
+  it('enters through the lobby, then connects and turns on mic and camera', async () => {
+    const { lobby, media, el, crypto } = await setup();
+    expect(lobby.enter).toHaveBeenCalledWith('abc-123', 'Alex', ['vp8', 'vp9']);
+    expect(crypto.start).toHaveBeenCalledWith('abc-123', 'me', 'Alex');
     expect(media.connect).toHaveBeenCalledWith(
       { iceServers: [], forceRelay: false },
       { id: 'me', displayName: 'Alex' },
@@ -161,11 +204,11 @@ describe('Room', () => {
   });
 
   it('never joins when this browser can’t encrypt', async () => {
-    const { signaling, media, el } = await setup({
-      crypto: (c) =>
-        c.identityBundle.mockRejectedValue(new Error("This browser can't join encrypted calls.")),
+    const { media, el, crypto } = await setup({
+      lobby: (l) =>
+        l.enter.mockRejectedValue(new Error("This browser can't join encrypted calls.")),
     });
-    expect(signaling.joinRoom).not.toHaveBeenCalled();
+    expect(crypto.start).not.toHaveBeenCalled();
     expect(media.connect).not.toHaveBeenCalled();
     expect(el.textContent).toContain("This browser can't join encrypted calls.");
   });
@@ -175,7 +218,6 @@ describe('Room', () => {
       crypto: (c) =>
         c.start.mockRejectedValue(new Error("This browser can't join encrypted calls.")),
     });
-    expect(signaling.joinRoom).toHaveBeenCalledOnce();
     expect(media.connect).not.toHaveBeenCalled();
     expect(crypto.stop).toHaveBeenCalled();
     expect(signaling.leave).toHaveBeenCalled();
@@ -203,9 +245,9 @@ describe('Room', () => {
   });
 
   it('sends people without a name to the home screen, keeping the room', async () => {
-    const { navigate, signaling } = await setup({ name: '' });
+    const { navigate, lobby } = await setup({ name: '' });
     expect(navigate).toHaveBeenCalledWith(['/'], { queryParams: { room: 'abc-123' } });
-    expect(signaling.joinRoom).not.toHaveBeenCalled();
+    expect(lobby.enter).not.toHaveBeenCalled();
   });
 
   it('turns a denied camera into a toast and stays in the call', async () => {
@@ -249,6 +291,7 @@ describe('Room', () => {
     const person = (identity: string, isLocal = false): CallParticipant => ({
       identity,
       name: identity,
+      role: 'guest',
       isLocal,
       isSpeaking: false,
       micMuted: false,
@@ -316,12 +359,105 @@ describe('Room', () => {
     expect(el.querySelector('app-call-controls')).not.toBeNull();
   });
 
+  describe('lobby', () => {
+    it('shows the lobby while waiting, and Cancel goes home', async () => {
+      const { el, fixture, lobby, navigate, media } = await setup({
+        lobby: (l) =>
+          l.enter.mockImplementation(() => {
+            l.state.set('waiting');
+            return new Promise(() => undefined);
+          }),
+      });
+      fixture.detectChanges();
+      expect(el.querySelector('app-lobby-screen')?.textContent).toContain(
+        'The host isn’t here yet',
+      );
+      expect(el.querySelector('app-call-controls')).toBeNull();
+      expect(media.connect).not.toHaveBeenCalled();
+
+      el.querySelector<HTMLButtonElement>('app-lobby-screen .cancel')!.click();
+      expect(lobby.cancel).toHaveBeenCalled();
+      expect(navigate).toHaveBeenCalledWith(['/']);
+    });
+
+    it('stays connected when turned away, and asks again on the same connection', async () => {
+      const { el, fixture, lobby, signaling } = await setup({
+        lobby: (l) =>
+          l.enter.mockImplementationOnce(async () => {
+            l.state.set('denied');
+            throw new LobbyClosedError('denied');
+          }),
+      });
+      fixture.detectChanges();
+      expect(el.querySelector('app-lobby-screen')?.textContent).toContain(
+        'The host didn’t let you in',
+      );
+      expect(signaling.leave).not.toHaveBeenCalled();
+      expect(el.querySelector('.join-error')).toBeNull();
+    });
+
+    it('leaves for good when removed — no automatic rejoin', async () => {
+      const { el, fixture, lobby, media, signaling } = await setup();
+      lobby.state.set('removed');
+      signaling.connected.set(false);
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(media.disconnect).toHaveBeenCalled();
+      expect(signaling.leave).toHaveBeenCalled();
+      expect(lobby.enter).toHaveBeenCalledOnce();
+      expect(el.querySelector('app-lobby-screen')?.textContent).toContain('You were removed');
+    });
+
+    it('mutes when a host asks, and says so', async () => {
+      const { el, fixture, lobby, media } = await setup();
+      media.micEnabled.set(true);
+      lobby.muteRequests.set(1);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(media.setMicrophone).toHaveBeenLastCalledWith(false);
+      expect(el.textContent).toContain('The host muted you');
+    });
+
+    it('announces knocks to admitters by name, as text', async () => {
+      const { el, fixture, lobby } = await setup({ crypto: (c) => c.canAdmit.set(true) });
+      lobby.guests.set([
+        { id: 'g', name: '<b>Gina</b>', identity: { ed25519Pub: 'a', x25519Pub: 'b', sig: 'c' } },
+      ]);
+      fixture.detectChanges();
+
+      expect([...el.querySelectorAll('.notice')].map((n) => n.textContent!.trim())).toContain(
+        '<b>Gina</b> wants to join',
+      );
+      expect(el.querySelector('.notice b')).toBeNull();
+    });
+
+    it('asks before removing someone or ending the call', async () => {
+      const { fixture, modal, lobby } = await setup({ crypto: (c) => c.canAdmit.set(true) });
+      fixture.debugElement
+        .query((d) => d.name === 'app-participants-panel')
+        .triggerEventHandler('act', { action: 'remove', participantId: 'bob' });
+      fixture.debugElement
+        .query((d) => d.name === 'app-call-header')
+        .triggerEventHandler('endCall');
+
+      expect(modal.confirm).toHaveBeenCalledTimes(2);
+      expect(lobby.remove).not.toHaveBeenCalled();
+      await (modal.confirm.mock.calls[0][0]!.nzOnOk as () => Promise<void>)();
+      await (modal.confirm.mock.calls[1][0]!.nzOnOk as () => Promise<void>)();
+      expect(lobby.remove).toHaveBeenCalledWith('bob');
+      expect(lobby.endCall).toHaveBeenCalled();
+    });
+  });
+
   describe('automatic rejoin', () => {
     // Fake timers only after setup(): whenStable() needs real ones.
     afterEach(() => vi.useRealTimers());
 
     it('rejoins with the same devices when the media connection is lost', async () => {
-      const { fixture, media, signaling } = await setup();
+      const { fixture, media, lobby } = await setup();
       vi.useFakeTimers();
       media.micEnabled.set(false);
       media.cameraEnabled.set(true);
@@ -333,31 +469,31 @@ describe('Room', () => {
       await vi.advanceTimersByTimeAsync(1000);
 
       expect(media.disconnect).toHaveBeenCalled();
-      expect(signaling.joinRoom).toHaveBeenCalledTimes(2);
+      expect(lobby.enter).toHaveBeenCalledTimes(2);
       // The muted microphone is published again, then muted: unmuting later needs no new negotiation.
       expect(media.setMicrophone.mock.calls).toEqual([[true], [false]]);
       expect(media.setCamera).toHaveBeenCalledWith(true);
     });
 
     it('rejoins to apply a codec change that needs it, and only then', async () => {
-      const { fixture, media, signaling } = await setup();
+      const { fixture, media, lobby } = await setup();
       vi.useFakeTimers();
       const controls = fixture.debugElement.query((d) => d.name === 'app-call-controls');
 
       controls.triggerEventHandler('selectCodec', 'vp9');
       await vi.advanceTimersByTimeAsync(1000);
       expect(media.setVideoCodec).toHaveBeenCalledWith('vp9');
-      expect(signaling.joinRoom).toHaveBeenCalledTimes(1);
+      expect(lobby.enter).toHaveBeenCalledTimes(1);
 
       media.setVideoCodec.mockReturnValueOnce(true);
       controls.triggerEventHandler('selectCodec', 'vp8');
       await vi.advanceTimersByTimeAsync(1000);
       expect(media.disconnect).toHaveBeenCalled();
-      expect(signaling.joinRoom).toHaveBeenCalledTimes(2);
+      expect(lobby.enter).toHaveBeenCalledTimes(2);
     });
 
     it('rejoins when someone joined who can’t decode the codec we send', async () => {
-      const { fixture, media, signaling } = await setup();
+      const { fixture, media, lobby } = await setup();
       vi.useFakeTimers();
 
       media.codecUnsupported.set(true);
@@ -365,11 +501,11 @@ describe('Room', () => {
       media.codecUnsupported.set(false); // the new connection picked a codec everyone can play
       await vi.advanceTimersByTimeAsync(1000);
 
-      expect(signaling.joinRoom).toHaveBeenCalledTimes(2);
+      expect(lobby.enter).toHaveBeenCalledTimes(2);
     });
 
     it('rejoins when the signaling connection drops', async () => {
-      const { fixture, signaling } = await setup();
+      const { fixture, signaling, lobby } = await setup();
       vi.useFakeTimers();
 
       signaling.connected.set(false);
@@ -377,11 +513,11 @@ describe('Room', () => {
       signaling.connected.set(true);
       await vi.advanceTimersByTimeAsync(1000);
 
-      expect(signaling.joinRoom).toHaveBeenCalledTimes(2);
+      expect(lobby.enter).toHaveBeenCalledTimes(2);
     });
 
     it('gives up after repeated losses and offers Try Again', async () => {
-      const { el, fixture, media, signaling } = await setup();
+      const { el, fixture, media, lobby } = await setup();
       vi.useFakeTimers();
 
       for (let i = 0; i < 4; i++) {
@@ -393,7 +529,7 @@ describe('Room', () => {
       }
       fixture.detectChanges();
 
-      expect(signaling.joinRoom).toHaveBeenCalledTimes(4);
+      expect(lobby.enter).toHaveBeenCalledTimes(4);
       expect(el.querySelector('.join-error')?.textContent).toContain('Connection lost.');
     });
   });

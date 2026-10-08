@@ -15,6 +15,17 @@ import {
   CloseOutline,
   CheckOutline,
   SyncOutline,
+  CrownOutline,
+  UserAddOutline,
+  UserDeleteOutline,
+  PoweroffOutline,
+  KeyOutline,
+  DownloadOutline,
+  UploadOutline,
+  DeleteOutline,
+  PlusOutline,
+  LoginOutline,
+  HourglassOutline,
 } from '@ant-design/icons-angular/icons';
 import { IconDefinition } from '@ant-design/icons-angular';
 
@@ -40,4 +51,15 @@ export const APP_ICONS: IconDefinition[] = [
   CloseOutline,
   CheckOutline,
   SyncOutline,
+  CrownOutline,
+  UserAddOutline,
+  UserDeleteOutline,
+  PoweroffOutline,
+  KeyOutline,
+  DownloadOutline,
+  UploadOutline,
+  DeleteOutline,
+  PlusOutline,
+  LoginOutline,
+  HourglassOutline,
 ];

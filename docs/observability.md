@@ -54,6 +54,7 @@ Metrics, as Prometheus names them:
 | `cipheroom_rooms_active`, `cipheroom_participants_active`, `signalr_server_active_connections` | api |
 | `cipheroom_hub_calls_total{method,outcome}`, `cipheroom_hub_rate_limited_total{method}` | api |
 | `cipheroom_sfu_request_duration_seconds{operation,outcome}`, `cipheroom_key_envelopes_relayed_total` | api |
+| `cipheroom_admissions_total{outcome}` — joined (host / ticket), waiting, admitted, denied, removed, ended | api |
 | `cipheroom_call_*` — bytes, packets, packets lost, jitter, RTT, freeze time, video height and fps | browser reports |
 | `cipheroom_e2ee_*` — frames by result, envelopes dropped, time spent "Securing…" | browser reports |
 | `cipheroom_realtime_egress_bytes{service}`, `…_free_tier_bytes`, `…_polled_seconds`, `…_polls_total` | Cloudflare analytics |

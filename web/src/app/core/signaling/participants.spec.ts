@@ -9,8 +9,8 @@ const cam: TrackDto = { source: 'camera', kind: 'video', muted: false };
 const screen: TrackDto = { source: 'screen', kind: 'video', muted: false };
 
 const room = (): ParticipantDto[] => [
-  { id: 'a', displayName: 'Alice', identity, videoCodecs: ['vp8'], tracks: [mic] },
-  { id: 'b', displayName: 'Bob', identity, videoCodecs: ['vp8'], tracks: [] },
+  { id: 'a', ticket: null, identity, videoCodecs: ['vp8'], tracks: [mic] },
+  { id: 'b', ticket: null, identity, videoCodecs: ['vp8'], tracks: [] },
 ];
 
 describe('participant track updates', () => {

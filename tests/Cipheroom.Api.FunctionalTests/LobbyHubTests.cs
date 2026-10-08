@@ -141,7 +141,8 @@ public sealed class LobbyHubTests(WebApplicationFactory<Program> factory) : ICla
         var guest = await _room.AdmitAsync(host, bob);
         await bob.InvokeAsync("LeaveRoom", Ct);
 
-        var ticket = new TicketDto(host.Identity.Pub, _room.TicketFor(host, guest.Identity));
+        var ticket = guest.Join.Ticket;
+        Assert.Equal(new TicketDto(host.Identity.Pub, _room.TicketFor(host, guest.Identity)), ticket);
         var back = await bob.InvokeAsync<LobbyResult>("JoinLobby", _room.Id, guest.Identity.Identity, TestIdentity.Codecs, null, ticket, Ct);
 
         Assert.True(back.Admitted);

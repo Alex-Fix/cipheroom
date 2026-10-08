@@ -1,7 +1,13 @@
 import { EnvironmentInjector, createEnvironmentInjector, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { SignalingService } from '../signaling/signaling.service';
-import { KeyEnvelopeDto, ParticipantDto } from '../signaling/signaling.types';
+import {
+  AuthorityDto,
+  IdentityDto,
+  KeyEnvelopeDto,
+  ParticipantDto,
+  TicketDto,
+} from '../signaling/signaling.types';
 import {
   CryptoService,
   MAX_ENVELOPES_PER_CALL,
@@ -10,9 +16,9 @@ import {
 } from './crypto.service';
 import { fromBase64Url, toBase64Url, utf8 } from './encoding';
 import { FRAME_CRYPTO_FACTORY } from './frame-transforms';
+import { HostKey, createHostKey } from './host-key';
+import { HOST_KEY_STORE, MemoryHostKeyStore } from './host-key-store';
 import { verifyIdentity } from './identity';
-
-const ROOM = 'team-sync';
 
 /** Records what the service hands the frame worker. */
 class FakeFrames {
@@ -39,22 +45,51 @@ interface Client {
   id: string;
   crypto: CryptoService;
   frames: FakeFrames;
+  hostKeys: MemoryHostKeyStore;
   participants: ReturnType<typeof signal<ParticipantDto[]>>;
+  authority: ReturnType<typeof signal<AuthorityDto | undefined>>;
   sent: KeyEnvelopeDto[][];
   inbox: (fromId: string, blob: string) => void;
   failSends: boolean;
 }
 
-/** The api, as far as keys go: relays envelopes to their recipient, with the sender's id. */
+/**
+ * The api, as far as keys and admission go: the first one in hosts (with the meeting's host key), everyone after is
+ * admitted with the host's ticket; envelopes are relayed to their recipient, with the sender's id.
+ */
 class FakeServer {
   readonly clients = new Map<string, Client>();
+  private host?: Client;
+  private authorityDto?: AuthorityDto;
+
+  private constructor(private readonly hostKey: HostKey) {}
+
+  static async create(): Promise<FakeServer> {
+    return new FakeServer((await createHostKey()).hostKey);
+  }
+
+  /** The meeting's id: derived from its host key. */
+  get room(): string {
+    return this.hostKey.roomId;
+  }
 
   client(id: string): Client {
     const frames = new FakeFrames();
+    const hostKeys = new MemoryHostKeyStore();
     const participants = signal<ParticipantDto[]>([]);
-    const client = { id, frames, participants, sent: [], failSends: false } as unknown as Client;
+    const authority = signal<AuthorityDto | undefined>(this.authorityDto);
+    const client = {
+      id,
+      frames,
+      hostKeys,
+      participants,
+      authority,
+      sent: [],
+      failSends: false,
+    } as unknown as Client;
     const signaling = {
       participants,
+      authority,
       sendKeyEnvelopes: vi.fn(async (envelopes: KeyEnvelopeDto[]) => {
         if (client.failSends) throw new Error('Media server unavailable.');
         client.sent.push(envelopes);
@@ -71,6 +106,7 @@ class FakeServer {
         CryptoService,
         { provide: SignalingService, useValue: signaling },
         { provide: FRAME_CRYPTO_FACTORY, useValue: () => frames },
+        { provide: HOST_KEY_STORE, useValue: hostKeys },
       ],
       TestBed.inject(EnvironmentInjector),
     );
@@ -80,12 +116,32 @@ class FakeServer {
     return client;
   }
 
-  /** Joins `client` to the room: others learn about it, it learns about them; then it starts encryption. */
+  /**
+   * Joins `client` to the room (as host if it's the first, else with the host's ticket): others learn about it, it
+   * learns about them; then it starts encryption.
+   */
   async join(client: Client): Promise<void> {
-    const identity = await client.crypto.identityBundle(ROOM);
+    const identity = await client.crypto.identityBundle(this.room);
+    let ticket: TicketDto | null = null;
+    if (!this.host) {
+      await client.hostKeys.put(this.hostKey);
+      const proof = (await client.crypto.hostProof(this.room))!;
+      this.host = client;
+      this.setAuthority({
+        hostEd25519Pub: proof.hostEd25519Pub,
+        hostX25519Pub: proof.hostX25519Pub,
+        hosts: [{ identity: identity.ed25519Pub, sig: proof.attestation }],
+        coHosts: [],
+        revoked: [],
+        settings: null,
+        admitters: [{ id: client.id, identity }],
+      });
+    } else {
+      ticket = await this.ticketFor(identity);
+    }
     const me: ParticipantDto = {
       id: client.id,
-      displayName: client.id,
+      ticket,
       tracks: [],
       identity,
       videoCodecs: ['vp8'],
@@ -94,7 +150,21 @@ class FakeServer {
     client.participants.set(others.map((c) => this.dto(c)));
     this.inRoom.set(client.id, me);
     others.forEach((c) => c.participants.update((list) => [...list, me]));
-    await client.crypto.start(ROOM, client.id);
+    await client.crypto.start(this.room, client.id, client.id.toUpperCase());
+  }
+
+  /** What the host signs to let `identity` in. */
+  async ticketFor(identity: IdentityDto): Promise<TicketDto> {
+    const issuer = this.inRoom.get(this.host!.id)!.identity.ed25519Pub;
+    return { issuer, sig: await this.host!.crypto.signTicket(identity.ed25519Pub) };
+  }
+
+  /** The host removes `client`: a signed revocation everyone gets — but the server "forgets" to drop them. */
+  async revokeButKeep(client: Client): Promise<void> {
+    const pub = this.inRoom.get(client.id)!.identity.ed25519Pub;
+    const issuer = this.inRoom.get(this.host!.id)!.identity.ed25519Pub;
+    const sig = await this.host!.crypto.signRemoval(pub);
+    this.setAuthority({ ...this.authorityDto!, revoked: [{ subject: pub, issuer, sig }] });
   }
 
   leave(client: Client): void {
@@ -106,6 +176,11 @@ class FakeServer {
   }
 
   private readonly inRoom = new Map<string, ParticipantDto>();
+
+  private setAuthority(dto: AuthorityDto): void {
+    this.authorityDto = dto;
+    for (const c of this.clients.values()) c.authority.set(dto);
+  }
 
   private dto(client: Client): ParticipantDto {
     return this.inRoom.get(client.id)!;
@@ -143,10 +218,10 @@ const receiveKeys = (c: Client, from: string) =>
 describe('CryptoService', () => {
   let server: FakeServer;
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    server = await FakeServer.create();
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     vi.stubGlobal('RTCRtpScriptTransform', class {});
-    server = new FakeServer();
   });
 
   afterEach(() => {
@@ -158,9 +233,9 @@ describe('CryptoService', () => {
   describe('identity', () => {
     it('creates a verifiable identity and keeps it for the call (rejoins keep the safety code)', async () => {
       const { crypto } = server.client('alice');
-      const bundle = await crypto.identityBundle(ROOM);
-      expect(await verifyIdentity(bundle, ROOM)).toBeDefined();
-      expect(await crypto.identityBundle(ROOM)).toBe(bundle);
+      const bundle = await crypto.identityBundle(server.room);
+      expect(await verifyIdentity(bundle, server.room)).toBeDefined();
+      expect(await crypto.identityBundle(server.room)).toBe(bundle);
       expect((await crypto.identityBundle('other-room')).ed25519Pub).not.toBe(bundle.ed25519Pub);
     });
 
@@ -169,7 +244,7 @@ describe('CryptoService', () => {
       vi.spyOn(globalThis.crypto.subtle, 'generateKey').mockRejectedValue(
         new DOMException('', 'NotSupportedError'),
       );
-      await expect(crypto.identityBundle(ROOM)).rejects.toThrow(
+      await expect(crypto.identityBundle(server.room)).rejects.toThrow(
         "This browser can't join encrypted calls.",
       );
     });
@@ -207,6 +282,14 @@ describe('CryptoService', () => {
       ]);
       expect(alice.crypto.secured()).toEqual(new Set(['bob']));
       expect(bob.crypto.secured()).toEqual(new Set(['alice']));
+      // Names arrive inside the envelopes, signed by whoever chose them.
+      expect(alice.crypto.names()).toEqual(
+        new Map([
+          ['alice', 'ALICE'],
+          ['bob', 'BOB'],
+        ]),
+      );
+      expect(bob.crypto.names().get('alice')).toBe('ALICE');
     });
 
     it('never gives a newcomer a key used before they joined', async () => {
@@ -267,13 +350,16 @@ describe('CryptoService', () => {
       const alice = server.client('alice');
       await server.join(alice);
       const crowd = await Promise.all(
-        Array.from({ length: MAX_ENVELOPES_PER_CALL + 6 }, async (_, i) => ({
-          id: `p${i}`,
-          displayName: `P${i}`,
-          tracks: [],
-          identity: await server.client(`p${i}`).crypto.identityBundle(ROOM),
-          videoCodecs: ['vp8'],
-        })),
+        Array.from({ length: MAX_ENVELOPES_PER_CALL + 6 }, async (_, i) => {
+          const identity = await server.client(`p${i}`).crypto.identityBundle(server.room);
+          return {
+            id: `p${i}`,
+            ticket: await server.ticketFor(identity),
+            tracks: [],
+            identity,
+            videoCodecs: ['vp8'],
+          };
+        }),
       );
       alice.participants.set(crowd);
       await afterRotation();
@@ -302,17 +388,17 @@ describe('CryptoService', () => {
     it('exchanges no keys with a participant whose identity doesn’t verify', async () => {
       const alice = server.client('alice');
       await server.join(alice);
-      const realMallory = await server.client('mallory').crypto.identityBundle(ROOM);
+      const realMallory = await server.client('mallory').crypto.identityBundle(server.room);
       // The server swaps Mallory's agreement key: the self-signature no longer matches.
       const forged = {
         ...realMallory,
-        x25519Pub: (await alice.crypto.identityBundle(ROOM)).x25519Pub,
+        x25519Pub: (await alice.crypto.identityBundle(server.room)).x25519Pub,
       };
       alice.participants.update((list) => [
         ...list,
         {
           id: 'mallory',
-          displayName: 'Mallory',
+          ticket: null,
           tracks: [],
           identity: forged,
           videoCodecs: ['vp8'],
@@ -327,6 +413,44 @@ describe('CryptoService', () => {
       await settle();
       expect(alice.crypto.droppedEnvelopes()).toEqual({ 'unknown-sender': 1 });
       expect(receiveKeys(alice, 'mallory')).toEqual([]);
+    });
+
+    it('exchanges no keys with someone the server slips in without a valid ticket', async () => {
+      const alice = server.client('alice');
+      await server.join(alice);
+      const mallory = await server.client('mallory').crypto.identityBundle(server.room);
+      const forgedTicket = {
+        issuer: mallory.ed25519Pub,
+        sig: (await server.ticketFor(mallory)).sig,
+      };
+      for (const ticket of [null, forgedTicket]) {
+        alice.participants.set([
+          { id: 'mallory', ticket, tracks: [], identity: mallory, videoCodecs: ['vp8'] },
+        ]);
+        await afterRotation();
+        expect(alice.crypto.unverified()).toEqual(new Set(['mallory']));
+        alice.participants.set([]);
+        await settle();
+      }
+      expect(alice.sent.flat().map((e) => e.toId)).not.toContain('mallory');
+    });
+
+    it('cuts a removed participant off even if the server keeps them in the call', async () => {
+      const [alice, bob, carol] = ['alice', 'bob', 'carol'].map((id) => server.client(id));
+      for (const c of [alice, bob, carol]) await server.join(c);
+      await afterRotation();
+
+      await server.revokeButKeep(carol);
+      await afterRotation();
+      // The revocation is verified before the rotation is scheduled: let the switch-over happen too.
+      await settle(SWITCH_DELAY_MS + 10);
+
+      expect(alice.frames.removed).toContain('carol');
+      expect(alice.crypto.unverified()).toEqual(new Set(['carol']));
+      expect(alice.sent.at(-1)!.map((e) => e.toId)).toEqual(['bob']);
+      expect(receiveKeys(carol, 'alice').map((k) => k.key)).not.toContainEqual(
+        lastSendKey(alice).key,
+      );
     });
 
     it('rejects replayed and tampered envelopes', async () => {
@@ -374,10 +498,10 @@ describe('CryptoService', () => {
       const bob = server.client('bob');
       await server.join(alice);
       await server.join(bob);
-      const ghost = await server.client('ghost').crypto.identityBundle(ROOM);
+      const ghost = await server.client('ghost').crypto.identityBundle(server.room);
       bob.participants.update((list) => [
         ...list,
-        { id: 'ghost', displayName: 'Alice', tracks: [], identity: ghost, videoCodecs: ['vp8'] },
+        { id: 'ghost', ticket: null, tracks: [], identity: ghost, videoCodecs: ['vp8'] },
       ]);
       await settle();
 
@@ -393,10 +517,11 @@ describe('CryptoService', () => {
     expect(alice.crypto.telemetry(now).securingSeconds).toBe(0);
 
     // Carol is listed but never sends her key: Alice keeps waiting ("Securing…").
-    const carol = await server.client('carol').crypto.identityBundle(ROOM);
+    const carol = await server.client('carol').crypto.identityBundle(server.room);
+    const ticket = await server.ticketFor(carol);
     alice.participants.update((list) => [
       ...list,
-      { id: 'carol', displayName: 'Carol', tracks: [], identity: carol, videoCodecs: ['vp8'] },
+      { id: 'carol', ticket, tracks: [], identity: carol, videoCodecs: ['vp8'] },
     ]);
     await settle();
     now += 2_000;

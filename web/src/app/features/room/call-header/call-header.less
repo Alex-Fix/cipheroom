@@ -133,7 +133,8 @@ button.e2ee {
   letter-spacing: 0.04em;
 }
 
-.count {
+.count,
+.host-menu {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -149,6 +150,19 @@ button.e2ee {
   &:hover {
     background: var(--fill);
   }
+}
+
+.host-menu {
+  margin: 0 -8px 0 0;
+}
+
+.waiting {
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--orange);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .manual-copy {

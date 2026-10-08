@@ -124,6 +124,10 @@ function fakeFrames() {
 function fakeCrypto() {
   return {
     secured: signal<ReadonlySet<string>>(new Set(['bob'])),
+    names: signal<ReadonlyMap<string, string>>(new Map([['bob', 'Bob']])),
+    isHost: signal(false),
+    canAdmit: signal(false),
+    roleOf: () => 'guest' as const,
     telemetry: vi.fn(() => ({
       framesEncrypted: 0,
       framesDecrypted: 0,
@@ -138,7 +142,7 @@ function fakeCrypto() {
 function bobWithCamera(): ParticipantDto {
   return {
     id: 'bob',
-    displayName: 'Bob',
+    ticket: null,
     identity,
     videoCodecs: ['vp8'],
     tracks: [{ source: 'camera', kind: 'video', muted: false }],
@@ -279,7 +283,7 @@ describe('MediaService', () => {
     participants.set([
       {
         id: 'bob',
-        displayName: 'Bob',
+        ticket: null,
         identity,
         videoCodecs: ['vp8'],
         tracks: [
@@ -314,7 +318,7 @@ describe('MediaService', () => {
     participants.set([
       {
         id: 'bob',
-        displayName: 'Bob',
+        ticket: null,
         identity,
         videoCodecs: ['vp8'],
         tracks: [{ source: 'camera', kind: 'video', muted: false }],
@@ -354,7 +358,7 @@ describe('MediaService', () => {
       ctx.participants.set([
         {
           id: 'bob',
-          displayName: 'Bob',
+          ticket: null,
           identity,
           videoCodecs: ['vp8'],
           tracks: [{ source: 'camera', kind: 'video', muted: false }],
@@ -402,7 +406,7 @@ describe('MediaService', () => {
       participants.set([
         {
           id: 'bob',
-          displayName: 'Bob',
+          ticket: null,
           identity,
           videoCodecs: ['vp8'],
           tracks: [{ source: 'microphone', kind: 'audio', muted: false }],
@@ -552,7 +556,7 @@ describe('MediaService', () => {
 
     const bob: ParticipantDto = {
       id: 'bob',
-      displayName: 'Bob',
+      ticket: null,
       identity,
       videoCodecs: ['vp8'],
       tracks: [
@@ -614,7 +618,7 @@ describe('MediaService', () => {
       const participants = signal<ParticipantDto[]>([
         {
           id: 'bob',
-          displayName: 'Bob',
+          ticket: null,
           identity,
           videoCodecs: ['vp8'],
           tracks: [{ source: 'camera', kind: 'video', muted: false }],

@@ -1,0 +1,46 @@
+// Rendered inside nz-modal's overlay; these classes are the dialog body.
+.lead {
+  margin: 0 0 16px;
+}
+
+.ok {
+  color: var(--green);
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+
+  label {
+    color: var(--label-secondary);
+    font-size: 13px;
+  }
+}
+
+.strength {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: var(--label-secondary);
+
+  &[data-strength='weak'] {
+    color: var(--orange);
+  }
+
+  &[data-strength='good'],
+  &[data-strength='strong'] {
+    color: var(--green);
+  }
+}
+
+.error {
+  margin: 0;
+  color: var(--red);
+  font-size: 13px;
+}
+
+.footnote {
+  margin: 8px 0 0;
+  color: var(--label-secondary);
+  font-size: 13px;
+}

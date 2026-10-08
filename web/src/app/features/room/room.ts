@@ -14,7 +14,9 @@ import { Router } from '@angular/router';
 import { NzButtonModule } from 'ng-zorro-antd/button';
 import { NzIconModule } from 'ng-zorro-antd/icon';
 import { NzMessageService } from 'ng-zorro-antd/message';
+import { NzModalModule, NzModalService } from 'ng-zorro-antd/modal';
 import { CryptoService } from '../../core/crypto/crypto.service';
+import { LobbyClosedError, LobbyService } from '../../core/lobby/lobby.service';
 import { MediaService } from '../../core/media/media.service';
 import { VideoCodec } from '../../core/media/codecs';
 import { CallParticipant } from '../../core/media/media.types';
@@ -28,10 +30,14 @@ import { callStatus } from './call-status';
 import { CallTile } from './call-tile/call-tile';
 import { Device, deviceErrorMessage } from './device-error';
 import { ElementSizeDirective } from '../../shared/element-size.directive';
+import { LobbyScreen, LobbyScreenState } from './lobby-screen/lobby-screen';
 import { participantChanges } from './participant-changes';
-import { ParticipantsPanel } from './participants-panel/participants-panel';
+import { ParticipantAction, ParticipantsPanel } from './participants-panel/participants-panel';
 
-/** Call screen container: owns the join/leave lifecycle and is the only place that talks to MediaService. */
+/**
+ * Call screen container: owns the lobby → join → leave lifecycle and is the only place that talks to MediaService
+ * and LobbyService.
+ */
 @Component({
   selector: 'app-room',
   imports: [
@@ -39,11 +45,13 @@ import { ParticipantsPanel } from './participants-panel/participants-panel';
     CallHeader,
     CallTile,
     ElementSizeDirective,
+    LobbyScreen,
     NzButtonModule,
     NzIconModule,
+    NzModalModule,
     ParticipantsPanel,
   ],
-  providers: [MediaService, CryptoService],
+  providers: [MediaService, CryptoService, LobbyService],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './room.html',
   styleUrl: './room.less',
@@ -56,8 +64,10 @@ export class Room implements OnInit, OnDestroy {
   private readonly signaling = inject(SignalingService);
   private readonly message = inject(NzMessageService);
   private readonly theme = inject(ThemeService);
+  private readonly modal = inject(NzModalService);
   protected readonly media = inject(MediaService);
   protected readonly crypto = inject(CryptoService);
+  protected readonly lobby = inject(LobbyService);
 
   protected readonly error = signal<string | undefined>(undefined);
   protected readonly showParticipants = signal(false);
@@ -77,11 +87,26 @@ export class Room implements OnInit, OnDestroy {
       : callStatus(this.media.state(), this.joined(), !!this.error()),
   );
   protected readonly participantCount = computed(() => this.media.participants().length);
+  /** Instead of the call: waiting in the lobby, or turned away / removed / call ended. */
+  protected readonly lobbyScreen = computed<LobbyScreenState | undefined>(() => {
+    const state = this.lobby.state();
+    return state === 'waiting' || state === 'denied' || state === 'removed' || state === 'ended'
+      ? state
+      : undefined;
+  });
+  /** Someone who can let us in is in the call (as the server says — only used for the waiting text). */
+  protected readonly hostHere = computed(
+    () => (this.signaling.authority()?.admitters.length ?? 0) > 0,
+  );
+  /** After being turned away the server makes us wait before asking again. */
+  protected readonly canAskAgain = signal(true);
 
   private baseline?: readonly CallParticipant[];
   private noticeId = 0;
   /** Last safety code seen in this call (kept across rejoins: a code that differs afterwards did change). */
   private lastSafetyCode?: string;
+  private seenMuteRequests = 0;
+  private knownGuests = new Set<string>();
 
   constructor() {
     // Every join and leave is announced (ghost-participant defence, docs/architecture.md). The first snapshot after
@@ -116,9 +141,38 @@ export class Room implements OnInit, OnDestroy {
       if (this.joined() && this.media.codecUnsupported()) untracked(() => void this.rejoin());
     });
 
+    // Removed, or the host ended the call: leave for good (no automatic rejoin).
+    effect(() => {
+      const state = this.lobby.state();
+      if (state === 'removed' || state === 'ended') untracked(() => void this.teardown());
+    });
+
+    // A host or co-host asked us to mute (verified by LobbyService): mute, and say so. We may unmute.
+    effect(() => {
+      const requests = this.lobby.muteRequests();
+      if (requests <= this.seenMuteRequests) return;
+      this.seenMuteRequests = requests;
+      untracked(() => {
+        if (!this.media.micEnabled()) return;
+        void this.setDevice('microphone', false);
+        this.notify('The host muted you');
+      });
+    });
+
+    // Someone knocked (admitters only): say who. Names go through interpolation only.
+    effect(() => {
+      const guests = this.lobby.guests();
+      untracked(() => {
+        guests
+          .filter((g) => !this.knownGuests.has(g.id))
+          .forEach((g) => this.notify(`${g.name} wants to join`));
+        this.knownGuests = new Set(guests.map((g) => g.id));
+      });
+    });
+
     // Lost the media connection (ICE restarts gave up) or the signaling connection: rejoin from scratch.
     effect(() => {
-      if (!this.joined()) return;
+      if (!this.joined() || this.lobby.state() !== 'admitted') return;
       if (this.media.state() === 'connected') this.rejoinAttempts = 0;
       const lost = this.media.state() === 'disconnected' || !this.signaling.connected();
       if (lost) untracked(() => void this.rejoin());
@@ -196,6 +250,82 @@ export class Room implements OnInit, OnDestroy {
     void this.router.navigate(['/']);
   }
 
+  /** Stop waiting in the lobby. */
+  protected cancelWaiting(): void {
+    this.lobby.cancel();
+    this.leave();
+  }
+
+  /** Knock again after being turned away (same connection: the server's cooldown applies). */
+  protected async askAgain(): Promise<void> {
+    this.lobby.reset();
+    await this.join();
+  }
+
+  protected async admit(guestId: string): Promise<void> {
+    await this.hostAction(() => this.lobby.admit(guestId));
+  }
+
+  protected async deny(guestId: string): Promise<void> {
+    await this.hostAction(() => this.lobby.deny(guestId));
+  }
+
+  protected async admitAll(): Promise<void> {
+    await this.hostAction(() => this.lobby.admitAll());
+  }
+
+  protected async setAutoAdmit(autoAdmit: boolean): Promise<void> {
+    await this.hostAction(() => this.lobby.setAutoAdmit(autoAdmit));
+  }
+
+  protected act({
+    action,
+    participantId,
+  }: {
+    action: ParticipantAction;
+    participantId: string;
+  }): void {
+    if (action === 'make-cohost') void this.hostAction(() => this.lobby.makeCoHost(participantId));
+    else if (action === 'ask-to-mute')
+      void this.hostAction(() => this.lobby.askToMute(participantId));
+    else
+      this.confirm(
+        'Remove this person from the call?',
+        'They won’t be able to rejoin this call.',
+        'Remove',
+        () => this.hostAction(() => this.lobby.remove(participantId)),
+      );
+  }
+
+  protected endCall(): void {
+    this.confirm(
+      'End the call for everyone?',
+      'Everyone in the call and the lobby will be sent away.',
+      'End Call',
+      () => this.hostAction(() => this.lobby.endCall()),
+    );
+  }
+
+  /** Constant text only: nz-modal renders content as HTML. */
+  private confirm(title: string, content: string, ok: string, onOk: () => Promise<void>): void {
+    this.modal.confirm({
+      nzTitle: title,
+      nzContent: content,
+      nzOkText: ok,
+      nzOkDanger: true,
+      nzOnOk: onOk,
+    });
+  }
+
+  private async hostAction(action: () => Promise<void>): Promise<void> {
+    try {
+      await action();
+    } catch (e) {
+      console.warn('[cipheroom] host action failed', e);
+      this.message.error('That didn’t work. Try again.');
+    }
+  }
+
   /**
    * Constant toast for the user; the browser's actual error goes to this device's console only (Safari Web
    * Inspector / devtools) — it can contain SDP and never leaves the browser.
@@ -216,25 +346,31 @@ export class Room implements OnInit, OnDestroy {
     try {
       const displayName = loadDisplayName();
       const roomId = this.roomId();
-      // Fails before joining when this browser can't encrypt: nobody ever sees us join unencrypted.
-      const identity = await this.crypto.identityBundle(roomId);
-      const { selfId } = await this.signaling.joinRoom(
-        roomId,
-        displayName,
-        identity,
-        this.media.decodableCodecs,
-      );
-      const frames = await this.crypto.start(roomId, selfId);
+      // Host proof, ticket or the lobby. Fails before joining when this browser can't encrypt: nobody ever sees us
+      // join unencrypted.
+      const { selfId } = await this.lobby.enter(roomId, displayName, this.media.decodableCodecs);
+      const frames = await this.crypto.start(roomId, selfId, displayName);
       this.media.connect(await this.signaling.getRtcConfig(), { id: selfId, displayName }, frames);
       this.joined.set(true);
       await this.publishOwnTracks(devices);
       this.media.startReceiving();
     } catch (e) {
+      if (e instanceof LobbyClosedError) {
+        // Turned away: stay connected, so asking again goes through the server's cooldown.
+        if (e.reason === 'denied') return this.allowAskingAgainLater();
+        if (e.reason === 'cancelled') return;
+        return this.teardown();
+      }
       // Leave at once (e.g. encryption couldn't start): others must not see us half-joined.
       await this.teardown();
       // Shown via interpolation only — never through nz-message (renders HTML).
       this.error.set(e instanceof Error ? e.message : String(e));
     }
+  }
+
+  private allowAskingAgainLater(): void {
+    this.canAskAgain.set(false);
+    setTimeout(() => this.canAskAgain.set(true), ASK_AGAIN_DELAY_MS);
   }
 
   /**
@@ -283,4 +419,6 @@ export class Room implements OnInit, OnDestroy {
 }
 
 const MAX_REJOINS = 3;
+/** The server's cooldown after being turned away (Room.DenyCooldown) plus a little. */
+const ASK_AGAIN_DELAY_MS = 31_000;
 const REJOIN_DELAY_MS = 1000;

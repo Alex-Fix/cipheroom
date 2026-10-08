@@ -53,7 +53,13 @@ public sealed record LobbyGuestDto(string Id, IdentityDto Identity)
 
 /// <param name="SelfId">Our participant id (also while waiting in the lobby).</param>
 /// <param name="Admitted">False while waiting in the lobby: then <paramref name="Participants"/> is empty.</param>
-public sealed record LobbyResult(string SelfId, bool Admitted, IReadOnlyList<ParticipantDto> Participants, AuthorityDto Authority);
+/// <param name="Ticket">The ticket that admitted us (kept by the browser to rejoin this call without knocking); null for hosts and while waiting.</param>
+public sealed record LobbyResult(string SelfId, bool Admitted, IReadOnlyList<ParticipantDto> Participants, AuthorityDto Authority, TicketDto? Ticket)
+{
+    public static LobbyResult Member(Participant self, IEnumerable<Participant> others, RoomAuthority authority) =>
+        new(self.Id.Value, true, [.. others.Select(ParticipantDto.From)], AuthorityDto.From(authority),
+            self.Ticket is { } t ? new TicketDto(t.Issuer, t.Sig) : null);
+}
 
 public sealed record HostAttestationDto(string Identity, string Sig);
 

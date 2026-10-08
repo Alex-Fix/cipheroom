@@ -248,9 +248,22 @@ Updated in the same change: `IRoomClient` + hub, `signaling.types.ts` + `Signali
 
 ## Open questions
 
-- Knock cooldown after `Deny` (proposed 30 s) and lobby cap (proposed 20) — tune during manual testing.
-- NSec ships native libsodium: confirm it runs on the chiseled api image (linux-x64/arm64); fallback is BouncyCastle
-  (MIT, managed).
+- Knock cooldown after `Deny` (30 s) and lobby cap (20) — tune during manual testing.
+
+## As built (deviations from the sections above)
+
+- **BouncyCastle instead of NSec** for server-side Ed25519: fully managed (MIT), so nothing native has to work on
+  the chiseled image. The open question about NSec is gone.
+- Co-host grants, removals and settings reach clients as one **`AuthorityUpdated(AuthorityDto)`** event (the whole
+  verified-by-clients log plus the admitters online) instead of separate `CoHostGranted` / `SettingsChanged` /
+  `ParticipantRemoved` events; a removal is `AuthorityUpdated` + `ParticipantLeft`, and the removed person gets
+  `Removed`. Hub method `Remove` is called `RemoveParticipant`.
+- `LobbyResult` also returns the caller's own **ticket**, which the browser presents on `JoinLobby` to rejoin the
+  same call without knocking. A ticket that doesn't check out puts the caller in the lobby instead of failing.
+- The host's **X25519 key** is part of the room id and the backup but not otherwise used yet (knocks go to admitters'
+  per-call identities).
+- A co-host's tickets stay valid after that co-host is removed (documented in `docs/architecture.md` → Known limits).
+- New metric `cipheroom_admissions_total{outcome}`.
 
 ## Implementation steps
 

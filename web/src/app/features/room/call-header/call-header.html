@@ -95,5 +95,38 @@
     (click)="showParticipants.emit()"
   >
     <nz-icon nzType="team" /> {{ participants() }}
+    @if (waiting() > 0) {
+      <span class="waiting" [attr.aria-label]="waiting() + ' waiting to join'"
+        >+{{ waiting() }}</span
+      >
+    }
   </button>
+
+  @if (canAdmit()) {
+    <span class="divider" aria-hidden="true"></span>
+    <button
+      type="button"
+      class="host-menu"
+      aria-label="Host controls"
+      nz-dropdown
+      nzTrigger="click"
+      nzPlacement="bottomRight"
+      [nzDropdownMenu]="hostMenu"
+    >
+      <nz-icon nzType="crown" />
+    </button>
+    <nz-dropdown-menu #hostMenu="nzDropdownMenu">
+      <ul nz-menu>
+        @if (isHost()) {
+          <li nz-menu-item class="auto-admit" (click)="setAutoAdmit.emit(!autoAdmit())">
+            <nz-icon [nzType]="autoAdmit() ? 'lock' : 'login'" />
+            {{ autoAdmit() ? 'Turn off auto-admit' : 'Auto-admit everyone' }}
+          </li>
+        }
+        <li nz-menu-item nzDanger class="end-call" (click)="endCall.emit()">
+          <nz-icon nzType="poweroff" /> End call for everyone
+        </li>
+      </ul>
+    </nz-dropdown-menu>
+  }
 </div>

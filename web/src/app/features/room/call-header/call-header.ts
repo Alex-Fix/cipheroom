@@ -1,7 +1,9 @@
 import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
 import { NzButtonModule } from 'ng-zorro-antd/button';
+import { NzDropdownModule } from 'ng-zorro-antd/dropdown';
 import { NzIconModule } from 'ng-zorro-antd/icon';
 import { NzInputModule } from 'ng-zorro-antd/input';
+import { NzMenuModule } from 'ng-zorro-antd/menu';
 import { NzPopoverModule } from 'ng-zorro-antd/popover';
 import { NzTooltipModule } from 'ng-zorro-antd/tooltip';
 import { SafetyCode } from '../../../core/crypto/safety-code';
@@ -17,15 +19,17 @@ const STATUS_TEXT: Record<CallStatus, string> = {
 };
 
 /**
- * Call header: room id + copy, connection state, encryption state (opens the safety code), participant count.
- * Presentational.
+ * Call header: room id + copy, connection state, encryption state (opens the safety code), participant count (with
+ * how many wait in the lobby), and the host menu (auto-admit, end the call) for hosts and co-hosts. Presentational.
  */
 @Component({
   selector: 'app-call-header',
   imports: [
     NzButtonModule,
+    NzDropdownModule,
     NzIconModule,
     NzInputModule,
+    NzMenuModule,
     NzPopoverModule,
     NzTooltipModule,
     SafetyCodePanel,
@@ -45,11 +49,20 @@ export class CallHeader {
   readonly participants = input.required<number>();
   /** Clipboard API unavailable (insecure context): show the link for manual copying. */
   readonly manualCopy = input(false);
+  /** People knocking (shown to admitters). */
+  readonly waiting = input(0);
+  /** We're a host or co-host: show the host menu. */
+  readonly canAdmit = input(false);
+  /** Only the host changes settings. */
+  readonly isHost = input(false);
+  readonly autoAdmit = input(false);
 
   readonly copyLink = output();
   readonly manualCopyClosed = output();
   readonly rejoin = output();
   readonly showParticipants = output();
+  readonly setAutoAdmit = output<boolean>();
+  readonly endCall = output();
 
   protected readonly statusText = computed(() => STATUS_TEXT[this.status()]);
   /** What screen readers announce for the badge: the code in words. */

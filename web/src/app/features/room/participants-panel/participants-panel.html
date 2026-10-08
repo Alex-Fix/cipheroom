@@ -6,6 +6,45 @@
   (nzOnClose)="closed.emit()"
 >
   <ng-container *nzDrawerContent>
+    @if (canAdmit() && guests().length) {
+      <div class="section-header">
+        <h3>Waiting to join ({{ guests().length }})</h3>
+        @if (guests().length > 1) {
+          <button
+            nz-button
+            nzType="link"
+            nzSize="small"
+            class="admit-all"
+            (click)="admitAll.emit()"
+          >
+            Admit all
+          </button>
+        }
+      </div>
+      <ul class="list lobby" aria-label="Waiting to join">
+        @for (g of guests(); track g.id) {
+          <li class="person guest">
+            <span class="monogram" aria-hidden="true">{{ monogram(g.name) }}</span>
+            <span class="name">{{ g.name }}</span>
+            <button nz-button nzSize="small" nzShape="round" class="deny" (click)="deny.emit(g.id)">
+              Deny
+            </button>
+            <button
+              nz-button
+              nzType="primary"
+              nzSize="small"
+              nzShape="round"
+              class="admit"
+              (click)="admit.emit(g.id)"
+            >
+              Admit
+            </button>
+          </li>
+        }
+      </ul>
+      <h3 class="section-header">In the call</h3>
+    }
+
     <ul class="list" aria-label="Participants">
       @for (p of sorted(); track p.identity) {
         <li class="person" [class.speaking]="p.isSpeaking">
@@ -14,6 +53,9 @@
             {{ p.name }}
             @if (p.isLocal) {
               <span class="you">(You)</span>
+            }
+            @if (roleLabel[p.role]; as role) {
+              <span class="role">{{ role }}</span>
             }
           </span>
           <span class="status">
@@ -37,12 +79,56 @@
               <nz-icon nzType="video-camera" [class.slashed]="!p.cameraOn" aria-hidden="true" />
             </span>
           </span>
+          @if (canManage(p)) {
+            <button
+              type="button"
+              class="more"
+              nz-dropdown
+              nzTrigger="click"
+              nzPlacement="bottomRight"
+              [nzDropdownMenu]="menu"
+              [attr.aria-label]="'Manage ' + p.name"
+            >
+              <nz-icon nzType="more" />
+            </button>
+            <nz-dropdown-menu #menu="nzDropdownMenu">
+              <ul nz-menu>
+                @if (isHost() && p.role === 'guest') {
+                  <li
+                    nz-menu-item
+                    class="make-cohost"
+                    (click)="act.emit({ action: 'make-cohost', participantId: p.identity })"
+                  >
+                    <nz-icon nzType="crown" /> Make co-host
+                  </li>
+                }
+                @if (!p.micMuted) {
+                  <li
+                    nz-menu-item
+                    class="ask-to-mute"
+                    (click)="act.emit({ action: 'ask-to-mute', participantId: p.identity })"
+                  >
+                    <nz-icon nzType="audio-muted" /> Ask to mute
+                  </li>
+                }
+                <li
+                  nz-menu-item
+                  nzDanger
+                  class="remove"
+                  (click)="act.emit({ action: 'remove', participantId: p.identity })"
+                >
+                  <nz-icon nzType="user-delete" /> Remove from call
+                </li>
+              </ul>
+            </nz-dropdown-menu>
+          }
         </li>
       }
     </ul>
     <p class="footnote">
-      Everyone listed can see and hear this call. Names aren't verified yet — until end-to-end
-      encryption and safety codes arrive, this list is only as trustworthy as your server.
+      Everyone listed can see and hear this call. Each person was let in by the host or a co-host,
+      and every browser checks that itself; names are signed by the person who chose them. Compare
+      the safety code out loud to be sure nobody else is listening.
     </p>
   </ng-container>
 </nz-drawer>
