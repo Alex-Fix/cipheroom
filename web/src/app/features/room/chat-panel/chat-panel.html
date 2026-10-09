@@ -1,0 +1,132 @@
+<nz-drawer
+  [nzVisible]="open()"
+  nzTitle="Chat"
+  nzPlacement="right"
+  [nzWidth]="360"
+  nzWrapClassName="chat-drawer"
+  [nzMask]="false"
+  [nzBodyStyle]="{ padding: '0', display: 'flex', flexDirection: 'column', overflow: 'hidden' }"
+  (nzOnClose)="closed.emit()"
+>
+  <ng-container *nzDrawerContent>
+    <div class="messages" #messages (scroll)="onScroll(messages)" aria-live="polite">
+      <p class="intro">
+        <nz-icon nzType="lock" />
+        Messages are end-to-end encrypted and disappear when you leave.
+      </p>
+
+      @for (row of rows(); track row.item.id) {
+        @let item = row.item;
+        @if (item.kind === 'notice') {
+          <p class="system">{{ item.text }}</p>
+        } @else {
+          <article class="message" [class.own]="item.own" [class.grouped]="!row.header">
+            @if (row.header) {
+              <header>
+                <span class="author">{{ item.authorName }}</span>
+                <time>{{ item.at | date: 'shortTime' }}</time>
+              </header>
+            }
+            <div class="bubble-row">
+              <p class="bubble">
+                @for (segment of item.segments; track $index) {
+                  @if (segment.href; as href) {
+                    <a [href]="href" target="_blank" rel="noopener noreferrer">{{
+                      segment.text
+                    }}</a>
+                  } @else {
+                    <span>{{ segment.text }}</span>
+                  }
+                }
+              </p>
+              @if (item.status === 'sent') {
+                <button
+                  type="button"
+                  class="react"
+                  aria-label="React"
+                  nz-popover
+                  nzPopoverTrigger="click"
+                  [nzPopoverContent]="reactTpl"
+                  [nzPopoverVisible]="reactingTo() === item.id"
+                  (nzPopoverVisibleChange)="reactingTo.set($event ? item.id : undefined)"
+                >
+                  <nz-icon nzType="smile" />
+                </button>
+                <ng-template #reactTpl>
+                  <app-emoji-picker
+                    [quick]="quickReactions"
+                    (picked)="reactWith(item.id, $event)"
+                  />
+                </ng-template>
+              }
+            </div>
+            @if (item.status === 'sending') {
+              <span class="status">Sending…</span>
+            } @else if (item.status === 'failed') {
+              <span class="status failed">
+                Not sent ·
+                <button type="button" class="retry" (click)="retry.emit(item.id)">Retry</button>
+              </span>
+            }
+            @if (item.reactions.length) {
+              <div class="reactions">
+                @for (r of item.reactions; track r.emoji) {
+                  <button
+                    type="button"
+                    class="chip"
+                    [class.mine]="r.mine"
+                    [attr.aria-pressed]="r.mine"
+                    nz-tooltip
+                    [nzTooltipTitle]="r.names.join(', ')"
+                    (click)="react.emit({ id: item.id, emoji: r.emoji })"
+                  >
+                    {{ r.emoji }} <span class="count">{{ r.count }}</span>
+                  </button>
+                }
+              </div>
+            }
+          </article>
+        }
+      }
+    </div>
+
+    <form class="composer" (submit)="$event.preventDefault(); submit(field)">
+      <button
+        type="button"
+        class="icon-button"
+        aria-label="Emoji"
+        nz-popover
+        nzPopoverTrigger="click"
+        nzPopoverPlacement="topLeft"
+        [nzPopoverContent]="pickerTpl"
+        [nzPopoverVisible]="pickerOpen()"
+        (nzPopoverVisibleChange)="pickerOpen.set($event)"
+        [disabled]="!ready()"
+      >
+        <nz-icon nzType="smile" />
+      </button>
+      <ng-template #pickerTpl>
+        <app-emoji-picker (picked)="insert($event, field)" />
+      </ng-template>
+      <textarea
+        #field
+        rows="1"
+        [attr.maxlength]="maxLength"
+        [placeholder]="ready() ? 'Message' : 'Securing…'"
+        aria-label="Message"
+        [disabled]="!ready()"
+        [value]="draft()"
+        (input)="draft.set(field.value)"
+        (keydown.enter)="onEnter($event, field)"
+      ></textarea>
+      <button
+        type="submit"
+        class="icon-button send"
+        aria-label="Send"
+        [disabled]="!ready() || !draft().trim()"
+      >
+        <nz-icon nzType="send" />
+      </button>
+    </form>
+  </ng-container>
+</nz-drawer>

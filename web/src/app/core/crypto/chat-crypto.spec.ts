@@ -79,7 +79,9 @@ describe('chat crypto', () => {
 
   it('the largest message fits the largest bucket, under the server’s limit', async () => {
     // 2,000 emoji fit 8 KB; characters JSON escapes (6 bytes each) are the worst case.
-    expect((await sealChat(context(), message('😀'.repeat(MAX_CHAT_TEXT)), alice)).length).toBe(10963);
+    expect((await sealChat(context(), message('😀'.repeat(MAX_CHAT_TEXT)), alice)).length).toBe(
+      10963,
+    );
     const blob = await sealChat(context(), message('\uD800'.repeat(MAX_CHAT_TEXT)), alice);
     expect(blob.length).toBe(MAX_CHAT_BLOB);
     expect(MAX_CHAT_BLOB).toBeLessThanOrEqual(22528);
@@ -140,10 +142,10 @@ describe('chat crypto', () => {
 
   it('rejects signed events of the wrong shape', async () => {
     // A well-signed, well-encrypted payload whose JSON isn't one of our events.
-    const json = new TextEncoder().encode(JSON.stringify({ v: 1, seq: 1, type: 'message', id: 'x', text: 'hi' }));
-    const sig = fromBase64Url(
-      await sign(alice, fields('cipheroom/chat-sig/v1', ROOM, json)),
+    const json = new TextEncoder().encode(
+      JSON.stringify({ v: 1, seq: 1, type: 'message', id: 'x', text: 'hi' }),
     );
+    const sig = fromBase64Url(await sign(alice, fields('cipheroom/chat-sig/v1', ROOM, json)));
     const iv = crypto.getRandomValues(new Uint8Array(12));
     const ct = new Uint8Array(
       await crypto.subtle.encrypt(
@@ -161,7 +163,9 @@ describe('chat crypto', () => {
 
     it('accepts exactly our shapes', () => {
       expect(isChatEvent({ v: 1, seq: 1, type: 'message', id, text: 'hi' })).toBe(true);
-      expect(isChatEvent({ v: 1, seq: 9, type: 'reaction', target: id, emoji: '❤️', on: false })).toBe(true);
+      expect(
+        isChatEvent({ v: 1, seq: 9, type: 'reaction', target: id, emoji: '❤️', on: false }),
+      ).toBe(true);
     });
 
     it.each([

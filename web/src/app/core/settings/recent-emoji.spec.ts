@@ -13,7 +13,25 @@ describe('recent emoji', () => {
   });
 
   it('keeps at most MAX_RECENT_EMOJI', () => {
-    const many = ['😀', '😃', '😄', '😁', '😆', '😅', '🤣', '😂', '🙂', '🙃', '😉', '😊', '😇', '🥰', '😍', '🤩', '😘'];
+    const many = [
+      '😀',
+      '😃',
+      '😄',
+      '😁',
+      '😆',
+      '😅',
+      '🤣',
+      '😂',
+      '🙂',
+      '🙃',
+      '😉',
+      '😊',
+      '😇',
+      '🥰',
+      '😍',
+      '🤩',
+      '😘',
+    ];
     many.forEach(rememberEmoji);
     expect(loadRecentEmoji()).toHaveLength(MAX_RECENT_EMOJI);
     expect(loadRecentEmoji()[0]).toBe('😘');

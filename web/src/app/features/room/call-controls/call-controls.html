@@ -60,6 +60,20 @@
 
 <button
   type="button"
+  class="control chat"
+  nz-tooltip
+  nzTooltipTitle="Chat"
+  [attr.aria-label]="unreadChats() ? 'Chat, ' + unreadChats() + ' unread' : 'Chat'"
+  (click)="openChat.emit()"
+>
+  <nz-icon nzType="message" />
+  @if (unreadChats()) {
+    <span class="badge" aria-hidden="true">{{ unreadChats() > 99 ? '99+' : unreadChats() }}</span>
+  }
+</button>
+
+<button
+  type="button"
   class="control more"
   nz-dropdown
   [nzDropdownMenu]="moreMenu"

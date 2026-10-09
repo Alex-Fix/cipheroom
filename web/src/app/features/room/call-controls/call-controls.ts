@@ -46,6 +46,8 @@ export class CallControls {
   readonly sendingCodec = input<VideoCodec | undefined>(undefined);
   /** Set while the usage guard allows no video: camera and screen share are disabled with this explanation. */
   readonly videoBlockedReason = input<string | undefined>(undefined);
+  /** Chat messages that arrived while the chat panel was closed. */
+  readonly unreadChats = input(0);
 
   readonly toggleMic = output();
   readonly toggleCamera = output();
@@ -54,6 +56,7 @@ export class CallControls {
   readonly selectCamera = output<string>();
   readonly selectQuality = output<VideoQuality>();
   readonly selectCodec = output<VideoCodec>();
+  readonly openChat = output();
   readonly leave = output();
 
   protected readonly qualityLabels = QUALITY_LABELS;

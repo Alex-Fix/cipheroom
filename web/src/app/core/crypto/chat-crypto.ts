@@ -44,12 +44,7 @@ export interface ReceivedChatEvent {
 
 /** Why a chat blob was dropped: counted locally, never sent anywhere. */
 export type ChatRejection =
-  | 'malformed'
-  | 'undecryptable'
-  | 'bad-signature'
-  | 'replayed'
-  | 'unknown-sender'
-  | 'no-key';
+  'malformed' | 'undecryptable' | 'bad-signature' | 'replayed' | 'unknown-sender' | 'no-key';
 
 export class ChatError extends Error {
   constructor(readonly reason: ChatRejection) {
@@ -58,7 +53,9 @@ export class ChatError extends Error {
 }
 
 /** The AES-GCM key for chat under one sender key (derive before the sender key goes to the worker, which detaches it). */
-export async function chatKey(senderKey: ArrayBuffer | Uint8Array<ArrayBuffer>): Promise<CryptoKey> {
+export async function chatKey(
+  senderKey: ArrayBuffer | Uint8Array<ArrayBuffer>,
+): Promise<CryptoKey> {
   if (senderKey.byteLength !== SENDER_KEY_BYTES) throw new Error('Invalid sender key.');
   const material = await crypto.subtle.importKey('raw', senderKey, 'HKDF', false, ['deriveKey']);
   return crypto.subtle.deriveKey(
@@ -71,7 +68,8 @@ export async function chatKey(senderKey: ArrayBuffer | Uint8Array<ArrayBuffer>):
 }
 
 /** A new message id: 16 random bytes (base64url). */
-export const newChatId = (): string => toBase64Url(crypto.getRandomValues(new Uint8Array(ID_BYTES)));
+export const newChatId = (): string =>
+  toBase64Url(crypto.getRandomValues(new Uint8Array(ID_BYTES)));
 
 /**
  * Chat text as it may be sent: trimmed, no control characters but newline and tab, no bidirectional overrides (they
@@ -98,7 +96,11 @@ export async function sealChat(
   const iv = crypto.getRandomValues(new Uint8Array(IV_BYTES));
   const ct = new Uint8Array(
     await crypto.subtle.encrypt(
-      { name: 'AES-GCM', iv, additionalData: aad(context.roomId, context.fromId, context.keyIndex) },
+      {
+        name: 'AES-GCM',
+        iv,
+        additionalData: aad(context.roomId, context.fromId, context.keyIndex),
+      },
       context.key,
       padded,
     ),

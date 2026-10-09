@@ -1,5 +1,9 @@
 /** A piece of a chat message: plain text, or an http(s) link. Rendered by template interpolation and [href] only. */
-export type TextSegment = { text: string } | { text: string; href: string };
+export interface TextSegment {
+  text: string;
+  /** Set for links only: the parsed http(s) URL. */
+  href?: string;
+}
 
 // Up to whitespace or an angle bracket / quote; trailing punctuation is left out below.
 const URL_PATTERN = /\bhttps?:\/\/[^\s<>"']+/gi;

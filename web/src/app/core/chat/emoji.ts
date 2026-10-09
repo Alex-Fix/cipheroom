@@ -10,6 +10,7 @@ export interface EmojiCategory {
 /** One tap under a message. */
 export const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🎉'] as const;
 
+// prettier-ignore
 export const EMOJI_CATEGORIES: readonly EmojiCategory[] = [
   {
     name: 'Smileys',

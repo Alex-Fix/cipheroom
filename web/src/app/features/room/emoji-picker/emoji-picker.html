@@ -1,0 +1,31 @@
+@if (quick().length) {
+  <div class="quick" role="group" aria-label="Quick reactions">
+    @for (emoji of quick(); track emoji) {
+      <button type="button" class="emoji large" [attr.aria-label]="emoji" (click)="pick(emoji)">
+        {{ emoji }}
+      </button>
+    }
+  </div>
+}
+<div class="scroll">
+  @if (recent().length) {
+    <h4>Recently used</h4>
+    <div class="grid recent" role="group" aria-label="Recently used">
+      @for (emoji of recent(); track emoji) {
+        <button type="button" class="emoji" [attr.aria-label]="emoji" (click)="pick(emoji)">
+          {{ emoji }}
+        </button>
+      }
+    </div>
+  }
+  @for (category of categories; track category.name) {
+    <h4>{{ category.name }}</h4>
+    <div class="grid" role="group" [attr.aria-label]="category.name">
+      @for (emoji of category.emoji; track emoji) {
+        <button type="button" class="emoji" [attr.aria-label]="emoji" (click)="pick(emoji)">
+          {{ emoji }}
+        </button>
+      }
+    </div>
+  }
+</div>

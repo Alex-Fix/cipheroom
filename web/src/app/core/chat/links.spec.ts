@@ -23,13 +23,21 @@ describe('linkify', () => {
   it('keeps a closing parenthesis that is part of the URL', () => {
     expect(linkify('(https://en.wikipedia.org/wiki/Foo_(bar))')).toEqual([
       { text: '(' },
-      { text: 'https://en.wikipedia.org/wiki/Foo_(bar)', href: 'https://en.wikipedia.org/wiki/Foo_(bar)' },
+      {
+        text: 'https://en.wikipedia.org/wiki/Foo_(bar)',
+        href: 'https://en.wikipedia.org/wiki/Foo_(bar)',
+      },
       { text: ')' },
     ]);
   });
 
   it('never links other schemes', () => {
-    for (const text of ['javascript:alert(1)', 'data:text/html,hi', 'ftp://x.test', 'www.example.org']) {
+    for (const text of [
+      'javascript:alert(1)',
+      'data:text/html,hi',
+      'ftp://x.test',
+      'www.example.org',
+    ]) {
       expect(linkify(text)).toEqual([{ text }]);
     }
   });

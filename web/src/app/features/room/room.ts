@@ -15,9 +15,10 @@ import { NzButtonModule } from 'ng-zorro-antd/button';
 import { NzIconModule } from 'ng-zorro-antd/icon';
 import { NzMessageService } from 'ng-zorro-antd/message';
 import { NzModalModule, NzModalService } from 'ng-zorro-antd/modal';
+import { ChatService } from '../../core/chat/chat.service';
 import { CryptoService } from '../../core/crypto/crypto.service';
 import { LobbyClosedError, LobbyService } from '../../core/lobby/lobby.service';
-import { MediaService } from '../../core/media/media.service';
+import { MediaService, UNNAMED } from '../../core/media/media.service';
 import { VideoCodec } from '../../core/media/codecs';
 import { CallParticipant } from '../../core/media/media.types';
 import { VideoQuality } from '../../core/media/quality';
@@ -25,6 +26,8 @@ import { SignalingService } from '../../core/signaling/signaling.service';
 import { ThemeService } from '../../core/ui/theme.service';
 import { loadDisplayName } from '../../core/settings/display-name';
 import { CallControls } from './call-controls/call-controls';
+import { ChatPanel } from './chat-panel/chat-panel';
+import { chatPreview } from './chat-preview';
 import { CallHeader } from './call-header/call-header';
 import { callStatus } from './call-status';
 import { CallTile } from './call-tile/call-tile';
@@ -46,6 +49,7 @@ import { ParticipantAction, ParticipantsPanel } from './participants-panel/parti
     CallControls,
     CallHeader,
     CallTile,
+    ChatPanel,
     ElementSizeDirective,
     LobbyScreen,
     NzButtonModule,
@@ -54,7 +58,7 @@ import { ParticipantAction, ParticipantsPanel } from './participants-panel/parti
     ParticipantsPanel,
     UsageBanner,
   ],
-  providers: [MediaService, CryptoService, LobbyService],
+  providers: [MediaService, CryptoService, LobbyService, ChatService],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './room.html',
   styleUrl: './room.less',
@@ -71,9 +75,11 @@ export class Room implements OnInit, OnDestroy {
   protected readonly media = inject(MediaService);
   protected readonly crypto = inject(CryptoService);
   protected readonly lobby = inject(LobbyService);
+  protected readonly chat = inject(ChatService);
 
   protected readonly error = signal<string | undefined>(undefined);
   protected readonly showParticipants = signal(false);
+  protected readonly showChat = signal(false);
   /** "Bob joined" / "Bob left". Rendered by interpolation only — names never go through nz-message (HTML). */
   protected readonly notices = signal<{ id: number; text: string }[]>([]);
   protected readonly manualCopy = signal(false);
@@ -122,22 +128,51 @@ export class Room implements OnInit, OnDestroy {
   /** Bumped by every join and teardown: a join that isn't the current one stops. */
   private joinRun = 0;
   private knownGuests = new Set<string>();
+  /** People who joined before their name arrived: announced when it does (or after NAME_WAIT_MS). */
+  private readonly unnamedJoins = new Map<string, ReturnType<typeof setTimeout>>();
 
   constructor() {
     // Every join and leave is announced (ghost-participant defence, docs/architecture.md). The first snapshot after
-    // joining is the baseline — people already in the room aren't "joining".
+    // joining is the baseline — people already in the room aren't "joining". A newcomer's name comes with their key
+    // envelope, a moment after they appear: the join is announced once it's there (or as "Guest" after
+    // NAME_WAIT_MS — someone who never sends us a key is announced all the same).
     effect(() => {
       const participants = this.media.participants();
       if (!this.joined()) {
         this.baseline = undefined;
+        untracked(() => this.flushJoins());
         return;
       }
       if (this.baseline) {
         const { joined, left } = participantChanges(this.baseline, participants);
-        joined.forEach((p) => this.notify(`${p.name} joined`));
-        left.forEach((p) => this.notify(`${p.name} left`));
+        untracked(() => {
+          joined.forEach((p) => {
+            const timer = setTimeout(() => this.announceJoin(p.identity, UNNAMED), NAME_WAIT_MS);
+            this.unnamedJoins.set(p.identity, timer);
+          });
+          for (const p of participants) {
+            if (this.unnamedJoins.has(p.identity) && p.name !== UNNAMED) {
+              this.announceJoin(p.identity, p.name);
+            }
+          }
+          left.forEach((p) => {
+            this.announceJoin(p.identity, p.name);
+            this.announce(`${p.name} left`);
+          });
+        });
       }
       this.baseline = participants;
+    });
+
+    // Chat: opening it reads everything; a message while it's closed shows as a notice (interpolation only).
+    effect(() => {
+      const open = this.showChat();
+      untracked(() => this.chat.setOpen(open));
+    });
+    effect(() => {
+      const message = this.chat.latest();
+      if (!message || untracked(() => this.showChat())) return;
+      untracked(() => this.notify(`${message.authorName}: ${chatPreview(message.text)}`));
     });
 
     // A new safety code means the set of keys in the call changed: invite everyone to compare again.
@@ -223,6 +258,7 @@ export class Room implements OnInit, OnDestroy {
 
   async ngOnDestroy(): Promise<void> {
     this.theme.setForcedDark(false);
+    this.flushJoins();
     await this.teardown();
   }
 
@@ -389,6 +425,26 @@ export class Room implements OnInit, OnDestroy {
     this.message.error(deviceErrorMessage(device, error));
   }
 
+  private announceJoin(identity: string, name: string): void {
+    const timer = this.unnamedJoins.get(identity);
+    if (timer === undefined) return;
+    clearTimeout(timer);
+    this.unnamedJoins.delete(identity);
+    this.announce(`${name} joined`);
+  }
+
+  /** Leaving the call: joins still waiting for a name are dropped (nobody is told about a call we left). */
+  private flushJoins(): void {
+    this.unnamedJoins.forEach((timer) => clearTimeout(timer));
+    this.unnamedJoins.clear();
+  }
+
+  /** Joins and leaves: a notice, and a line in chat (where a newcomer's history starts). */
+  private announce(text: string): void {
+    this.notify(text);
+    this.chat.notice(text);
+  }
+
   private notify(text: string): void {
     const id = ++this.noticeId;
     this.notices.update((list) => [...list, { id, text }].slice(-3));
@@ -508,3 +564,5 @@ const MAX_REJOINS = 3;
 /** The server's cooldown after being turned away (Room.DenyCooldown) plus a little. */
 const ASK_AGAIN_DELAY_MS = 31_000;
 const REJOIN_DELAY_MS = 1000;
+/** How long a join announcement waits for the newcomer's name. */
+const NAME_WAIT_MS = 5000;

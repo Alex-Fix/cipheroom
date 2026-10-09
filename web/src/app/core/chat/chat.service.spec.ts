@@ -117,7 +117,12 @@ describe('ChatService', () => {
     fromBob({ type: 'message', id, text: 'hey' });
 
     expect(messages()).toHaveLength(1);
-    expect(messages()[0]).toMatchObject({ own: false, authorName: 'Bob', authorPub: 'bob', text: 'hey' });
+    expect(messages()[0]).toMatchObject({
+      own: false,
+      authorName: 'Bob',
+      authorPub: 'bob',
+      text: 'hey',
+    });
     expect(chat.latest()?.text).toBe('hey');
   });
 

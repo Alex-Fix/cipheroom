@@ -730,7 +730,11 @@ export class CryptoService implements OnDestroy {
     }
   }
 
-  private chatReceiveKey(session: Session, fromId: string, keyIndex: number): CryptoKey | undefined {
+  private chatReceiveKey(
+    session: Session,
+    fromId: string,
+    keyIndex: number,
+  ): CryptoKey | undefined {
     const keys = session.chatReceive.get(fromId);
     const entry = keys?.get(keyIndex);
     if (!entry) return undefined;
@@ -805,7 +809,11 @@ export class CryptoService implements OnDestroy {
     if (!key || !peer || !author) return;
     let event: ChatEvent;
     try {
-      event = await openChat(blob, { roomId: session.roomId, fromId, key }, author.bundle.ed25519Pub);
+      event = await openChat(
+        blob,
+        { roomId: session.roomId, fromId, key },
+        author.bundle.ed25519Pub,
+      );
     } catch (e) {
       if (e instanceof ChatError) return;
       throw e;

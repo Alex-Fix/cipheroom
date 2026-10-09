@@ -18,7 +18,10 @@ export function loadRecentEmoji(): string[] {
 
 /** Moves `emoji` to the front; returns the new list. */
 export function rememberEmoji(emoji: string): string[] {
-  const recent = [emoji, ...loadRecentEmoji().filter((e) => e !== emoji)].slice(0, MAX_RECENT_EMOJI);
+  const recent = [emoji, ...loadRecentEmoji().filter((e) => e !== emoji)].slice(
+    0,
+    MAX_RECENT_EMOJI,
+  );
   try {
     localStorage.setItem(RECENT_EMOJI_KEY, JSON.stringify(recent));
   } catch {
