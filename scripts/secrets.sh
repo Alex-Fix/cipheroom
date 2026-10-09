@@ -56,4 +56,10 @@ for entry in "${optional[@]}"; do
   name="${entry%%|*}"
   [[ -z "$(value_of "$name")" ]] && warn "$name is empty (optional) — ${entry#*|}"
 done
+if [[ "$(value_of REALTIME_GUARD_ENABLED)" == "false" ]]; then
+  warn "REALTIME_GUARD_ENABLED=false — calls are never limited; keep a Cloudflare billing notification on"
+fi
+if grep -qE '^REALTIME_MONTHLY_(SOFT|HARD)_LIMIT_GB=' "$env_file"; then
+  warn "REALTIME_MONTHLY_SOFT/HARD_LIMIT_GB are no longer used — see REALTIME_*_PERCENT in deploy/.env.example"
+fi
 exit 0

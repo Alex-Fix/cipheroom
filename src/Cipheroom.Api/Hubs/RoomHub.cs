@@ -10,6 +10,7 @@ using Cipheroom.Application.Admission.Commands.Knock;
 using Cipheroom.Application.Admission.Commands.RemoveParticipant;
 using Cipheroom.Application.Admission.Commands.UpdateSettings;
 using Cipheroom.Application.CallStats.Commands.ReportCallStats;
+using Cipheroom.Application.Common.Interfaces;
 using Cipheroom.Application.Keys.Commands.SendKeyEnvelopes;
 using Cipheroom.Application.Media.Commands.PublishTracks;
 using Cipheroom.Application.Media.Commands.Renegotiate;
@@ -31,8 +32,15 @@ namespace Cipheroom.Api.Hubs;
 /// Thin SignalR adapter: each method sends one Mediator request, then does the SignalR-only work (groups, events).
 /// Validation and errors are handled by the pipeline and <see cref="Filters.HubExceptionFilter"/>.
 /// </summary>
-public sealed partial class RoomHub(IMediator mediator, TelemetryIds ids, ILogger<RoomHub> logger) : Hub<IRoomClient>
+public sealed partial class RoomHub(IMediator mediator, IUsageGuard usage, TelemetryIds ids, ILogger<RoomHub> logger) : Hub<IRoomClient>
 {
+    /// <summary>Everyone learns the usage guard's level as they connect (before joining anything).</summary>
+    public override async Task OnConnectedAsync()
+    {
+        await Clients.Caller.UsageChanged(UsageDto.From(usage.Current));
+        await base.OnConnectedAsync();
+    }
+
     // Lobby and admission. Hosts (host-key proof) and returning members (ticket) join straight in; everyone else
     // waits in the lobby group until an admitter signs a ticket. Names never reach the server (knocks are encrypted).
 
@@ -273,12 +281,12 @@ public sealed partial class RoomHub(IMediator mediator, TelemetryIds ids, ILogge
     private static StreamStatsInput? ToInput(StreamStatsDto? s) =>
         s is null ? null : new StreamStatsInput(s.Bytes, s.Packets, s.PacketsLost, s.JitterMs, s.FreezeSeconds, s.Height, s.Fps);
 
-    private static string GroupName(string roomId) => $"room:{roomId}";
+    internal static string GroupName(string roomId) => $"room:{roomId}";
 
     private static string GroupName(Participant participant) => GroupName(participant.RoomId.Value);
 
     /// <summary>People waiting to be let in: they hear about admitters and the call ending, nothing else.</summary>
-    private static string LobbyGroupName(string roomId) => $"lobby:{roomId}";
+    internal static string LobbyGroupName(string roomId) => $"lobby:{roomId}";
 
     // Room ids are logged pseudonymously (TelemetryIds): logs end up in Loki.
     [LoggerMessage(Level = LogLevel.Information, Message = "Participant {ParticipantId} joined room {Room}")]

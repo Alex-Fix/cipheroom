@@ -23,6 +23,15 @@ services:
       # Free-tier usage from Cloudflare's analytics (read-only token); without them dashboards estimate it.
       RealtimeUsage__Cloudflare__AccountId: ${CF_ACCOUNT_ID:-}
       RealtimeUsage__Cloudflare__ApiToken: ${CF_ANALYTICS_API_TOKEN:-}
+      # Usage guard (docs/plans/2026-10-09-usage-guard-design.md): keeps Cloudflare Realtime inside the free tier.
+      RealtimeUsage__FreeTierGb: ${REALTIME_FREE_TIER_GB:-1000}
+      UsageGuard__Enabled: ${REALTIME_GUARD_ENABLED:-true}
+      UsageGuard__SavingPercent: ${REALTIME_SAVING_PERCENT:-80}
+      UsageGuard__AudioOnlyPercent: ${REALTIME_AUDIO_ONLY_PERCENT:-95}
+      UsageGuard__PausedPercent: ${REALTIME_PAUSED_PERCENT:-99}
+    volumes:
+      # The guard's month-to-date estimate survives restarts (numbers and timestamps only).
+      - api-data:/data
     restart: unless-stopped
 
   web:
@@ -172,6 +181,7 @@ services:
     profiles: [observability]
 
 volumes:
+  api-data:
   prometheus-data:
   loki-data:
   tempo-data:

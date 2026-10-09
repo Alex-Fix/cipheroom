@@ -1,3 +1,4 @@
+using Cipheroom.Application.Common.Interfaces;
 using Cipheroom.Application.Media.Commands.SubscribeTracks;
 using Cipheroom.Application.Rtc.Queries.GetRtcConfig;
 using Cipheroom.Domain.Rooms;
@@ -159,3 +160,21 @@ public sealed record E2eeStatsDto(
     double FramesMissingKey,
     double EnvelopesDropped,
     double SecuringSeconds);
+
+/// <summary>
+/// The usage guard's verdict on this month's Cloudflare traffic (server-wide). <c>Level</c>: normal / saving /
+/// audio-only / paused. <c>Percent</c> of the free tier, null at normal; <c>ResetsAt</c>: when the month resets (UTC).
+/// </summary>
+public sealed record UsageDto(string Level, int? Percent, DateTimeOffset ResetsAt)
+{
+    public static UsageDto From(UsageStatus s) => new(
+        s.Level switch
+        {
+            UsageLevel.Saving => "saving",
+            UsageLevel.AudioOnly => "audio-only",
+            UsageLevel.Paused => "paused",
+            _ => "normal",
+        },
+        s.Percent,
+        s.ResetsAt);
+}

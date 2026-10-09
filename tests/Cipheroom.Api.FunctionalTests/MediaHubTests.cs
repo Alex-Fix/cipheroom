@@ -180,7 +180,7 @@ public sealed class MediaHubTests(WebApplicationFactory<Program> factory) : ICla
         CancellationTokenSource.CreateLinkedTokenSource(Ct, new CancellationTokenSource(TimeSpan.FromSeconds(5)).Token).Token;
 
     /// <summary>Media server stand-in: sessions and mids are counters; <see cref="Fail"/> makes every call fail.</summary>
-    private sealed class FakeSfu : ISfu
+    internal sealed class FakeSfu : ISfu
     {
         public const string Answer = "v=0 fake answer";
         public const string SubscribeOffer = "v=0 fake offer";

@@ -15,6 +15,7 @@ namespace Cipheroom.Infrastructure.Usage;
 public sealed partial class RealtimeUsagePoller(
     IServiceScopeFactory scopes,
     CipheroomMetrics metrics,
+    UsageGuard guard,
     IOptions<RealtimeUsageOptions> options,
     TimeProvider time,
     ILogger<RealtimeUsagePoller> logger) : BackgroundService
@@ -52,7 +53,10 @@ public sealed partial class RealtimeUsagePoller(
             // A fresh scope per poll: a singleton must not hold a typed HttpClient (its handler would never rotate).
             await using var scope = scopes.CreateAsyncScope();
             var usage = scope.ServiceProvider.GetRequiredService<IRealtimeUsage>();
-            metrics.RealtimeUsagePolled(await usage.GetMonthToDateAsync(cancellationToken), time.GetUtcNow());
+            var monthToDate = await usage.GetMonthToDateAsync(cancellationToken);
+            var at = time.GetUtcNow();
+            metrics.RealtimeUsagePolled(monthToDate, at);
+            guard.CloudflarePolled(monthToDate, at);
             _failures = 0;
         }
         catch (Exception ex) when (ex is CloudflareAnalyticsException or HttpRequestException

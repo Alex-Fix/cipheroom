@@ -55,6 +55,10 @@ public sealed class CipheroomMetrics
     private long _usagePolledAt;
     private long _freeTierBytes;
 
+    // Usage guard (UsageGuard): its level and the api's own month-to-date estimate.
+    private int _usageLevel;
+    private double _usageEstimate;
+
     public CipheroomMetrics(IMeterFactory meterFactory, IRoomStore rooms, TimeProvider time)
     {
         _time = time;
@@ -111,6 +115,8 @@ public sealed class CipheroomMetrics
             "s",
             "When usage was last read from Cloudflare (Unix time).");
         _usagePolls = meter.CreateCounter<long>("cipheroom.realtime.polls", "{poll}", "Usage polls by outcome.");
+        meter.CreateObservableGauge("cipheroom.usage_guard.level", () => _usageLevel, "{level}", "Usage guard level: 0 normal, 1 saving, 2 audio-only, 3 paused.");
+        meter.CreateObservableGauge("cipheroom.usage.estimate", () => _usageEstimate, "By", "This month's Realtime egress as estimated from browser reports.");
     }
 
     public void SetRealtimeFreeTier(long bytes) => _freeTierBytes = bytes;
@@ -120,6 +126,12 @@ public sealed class CipheroomMetrics
         _usage = usage;
         _usagePolledAt = at.ToUnixTimeSeconds();
         _usagePolls.Add(1, new KeyValuePair<string, object?>("outcome", Ok));
+    }
+
+    public void UsageGuardUpdated(int level, double estimateBytes)
+    {
+        _usageLevel = level;
+        _usageEstimate = estimateBytes;
     }
 
     public void RealtimeUsagePollFailed() => _usagePolls.Add(1, new KeyValuePair<string, object?>("outcome", Failed));

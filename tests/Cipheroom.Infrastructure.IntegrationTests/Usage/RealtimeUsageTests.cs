@@ -145,6 +145,7 @@ public sealed class RealtimeUsageTests
             ["RealtimeUsage:Cloudflare:ApiBaseUrl"] = "https://api.test/client/v4/",
             ["RealtimeUsage:Cloudflare:AccountId"] = configured ? Account : "",
             ["RealtimeUsage:Cloudflare:ApiToken"] = configured ? "analytics-token" : "",
+            ["UsageGuard:DataPath"] = Path.Combine(Path.GetTempPath(), $"cipheroom-usage-{Guid.NewGuid():N}.json"),
         }).Build();
 
         var services = new ServiceCollection()
@@ -153,7 +154,8 @@ public sealed class RealtimeUsageTests
             .AddMetrics()
             .AddApplication()
             .AddInfrastructure()
-            .AddSingleton<TimeProvider>(_time);
+            .AddSingleton<TimeProvider>(_time)
+            .AddSingleton<IHostEnvironment>(new UsageGuardTests.TestEnvironment("Production"));
         services.AddHttpClient<CloudflareAnalyticsClient>().ConfigurePrimaryHttpMessageHandler(() => handler);
         return services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
     }

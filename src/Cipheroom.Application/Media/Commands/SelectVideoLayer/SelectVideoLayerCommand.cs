@@ -1,5 +1,6 @@
 using Cipheroom.Application.Common.Exceptions;
 using Cipheroom.Application.Common.Interfaces;
+using Cipheroom.Application.Usage;
 using Cipheroom.Domain.Common;
 using Cipheroom.Domain.Rooms;
 using FluentValidation;
@@ -22,7 +23,7 @@ public sealed class SelectVideoLayerCommandValidator : AbstractValidator<SelectV
     }
 }
 
-public sealed class SelectVideoLayerCommandHandler(IRoomStore rooms, ISfu sfu) : ICommandHandler<SelectVideoLayerCommand>
+public sealed class SelectVideoLayerCommandHandler(IRoomStore rooms, ISfu sfu, IUsageGuard usage) : ICommandHandler<SelectVideoLayerCommand>
 {
     public async ValueTask<Unit> Handle(SelectVideoLayerCommand command, CancellationToken cancellationToken)
     {
@@ -37,7 +38,8 @@ public sealed class SelectVideoLayerCommandHandler(IRoomStore rooms, ISfu sfu) :
             target.Session,
             command.Mid!,
             new SfuRemoteTrack(target.Remote.PublisherSfuSessionId, target.Remote.Track.Name, Simulcast: true),
-            command.Rid!,
+            // Usage guard: while saving (or later), never the full layer.
+            usage.Current.Level >= UsageLevel.Saving && command.Rid == "f" ? UsageLayers.Half : command.Rid!,
             cancellationToken);
         return Unit.Value;
     }

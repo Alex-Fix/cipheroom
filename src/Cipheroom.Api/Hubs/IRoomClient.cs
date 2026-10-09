@@ -44,4 +44,9 @@ public interface IRoomClient
 
     /// <summary>To everyone in the call and the lobby: an admitter ended the call (signed by <paramref name="issuer"/>).</summary>
     Task CallEnded(string issuer, string sig);
+
+    // Usage guard.
+
+    /// <summary>To each connection as it connects, and to everyone when the level changes (server-wide).</summary>
+    Task UsageChanged(UsageDto usage);
 }

@@ -53,6 +53,13 @@ public static class DependencyInjection
         services.AddTransient<IRealtimeUsage, CloudflareRealtimeUsage>();
         services.AddHostedService<RealtimeUsagePoller>();
 
+        // The usage guard: one instance is the guard, the ledger browser reports feed, and its background loop.
+        services.AddOptions<UsageGuardOptions>().BindConfiguration(UsageGuardOptions.Section).ValidateDataAnnotations().ValidateOnStart();
+        services.AddSingleton<UsageGuard>();
+        services.AddSingleton<IUsageGuard>(sp => sp.GetRequiredService<UsageGuard>());
+        services.AddSingleton<IUsageLedger>(sp => sp.GetRequiredService<UsageGuard>());
+        services.AddHostedService(sp => sp.GetRequiredService<UsageGuard>());
+
         // Resolved per use so configuration (and typed HttpClient lifetimes) are honoured.
         services.AddTransient<IIceServerProvider>(sp =>
             sp.GetRequiredService<IOptions<TurnOptions>>().Value.Cloudflare.IsConfigured

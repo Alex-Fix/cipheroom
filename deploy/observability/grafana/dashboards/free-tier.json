@@ -552,7 +552,7 @@
     },
     {
       "type": "row",
-      "title": "Without a Cloudflare analytics token",
+      "title": "Usage guard",
       "id": 10,
       "collapsed": false,
       "gridPos": {
@@ -560,6 +560,202 @@
         "w": 24,
         "x": 0,
         "y": 14
+      },
+      "panels": []
+    },
+    {
+      "type": "stat",
+      "title": "Guard level",
+      "description": "What the api enforces: saving at 80%, audio-only at 95%, paused at 99% of the free tier (configurable). Only rises within a month; resets on the 1st (UTC).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "max(cipheroom_usage_guard_level)",
+          "legendFormat": "",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "—",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "Normal",
+                  "color": "green"
+                },
+                "1": {
+                  "text": "Saving (video capped)",
+                  "color": "orange"
+                },
+                "2": {
+                  "text": "Audio only",
+                  "color": "red"
+                },
+                "3": {
+                  "text": "Paused",
+                  "color": "dark-red"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "id": 11,
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 0,
+        "y": 15
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Estimate this month",
+      "description": "The api's own count from browser reports (×1.1 for TURN overhead), kept across restarts. Used with Cloudflare's figure, or alone when Cloudflare's is missing or stale.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "max(cipheroom_usage_estimate_bytes)",
+          "legendFormat": "",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "decbytes",
+          "noValue": "—",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "decimals": 2
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "id": 12,
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 6,
+        "y": 15
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Guard level over time",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "max(cipheroom_usage_guard_level)",
+          "legendFormat": "level"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "fillOpacity": 8,
+            "lineWidth": 2,
+            "stacking": {
+              "mode": "none"
+            }
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "id": 13,
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 12,
+        "y": 15
+      }
+    },
+    {
+      "type": "row",
+      "title": "Without a Cloudflare analytics token",
+      "id": 14,
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 21
       },
       "panels": []
     },
@@ -611,12 +807,12 @@
           ]
         }
       },
-      "id": 11,
+      "id": 15,
       "gridPos": {
         "h": 6,
         "w": 8,
         "x": 0,
-        "y": 15
+        "y": 22
       }
     },
     {
@@ -661,12 +857,12 @@
           "mode": "multi"
         }
       },
-      "id": 12,
+      "id": 16,
       "gridPos": {
         "h": 6,
         "w": 16,
         "x": 8,
-        "y": 15
+        "y": 22
       }
     }
   ]

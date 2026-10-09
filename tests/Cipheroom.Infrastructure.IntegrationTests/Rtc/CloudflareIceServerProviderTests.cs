@@ -79,7 +79,8 @@ public sealed class CloudflareIceServerProviderTests
             .AddLogging()
             .AddMetrics()
             .AddApplication()
-            .AddInfrastructure();
+            .AddInfrastructure()
+            .AddSingleton<Microsoft.Extensions.Hosting.IHostEnvironment>(new Usage.UsageGuardTests.TestEnvironment("Production"));
         services.AddHttpClient<CloudflareTurnClient>().ConfigurePrimaryHttpMessageHandler(() => handler);
         return services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
     }

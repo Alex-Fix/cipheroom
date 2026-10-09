@@ -83,6 +83,26 @@ public sealed class InMemoryRoomStore : IRoomStore
         }
     }
 
+    public IReadOnlyList<T> AcrossRooms<T>(Func<Room, IEnumerable<T>> action)
+    {
+        lock (_gate)
+        {
+            var results = new List<T>();
+            foreach (var (room, connections) in _rooms.Values.ToArray())
+            {
+                try
+                {
+                    results.AddRange(action(room));
+                }
+                finally
+                {
+                    Reconcile(room, connections);
+                }
+            }
+            return results;
+        }
+    }
+
     /// <summary>Forgets connections the room no longer has, and the room once nobody is left.</summary>
     private void Reconcile(Room room, HashSet<string> connections)
     {

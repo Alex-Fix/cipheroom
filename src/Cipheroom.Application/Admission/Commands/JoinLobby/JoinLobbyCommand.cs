@@ -1,5 +1,6 @@
 using Cipheroom.Application.Common.Interfaces;
 using Cipheroom.Application.Common.Telemetry;
+using Cipheroom.Application.Usage;
 using Cipheroom.Domain.Common;
 using Cipheroom.Domain.Rooms;
 using FluentValidation;
@@ -71,7 +72,12 @@ public sealed class JoinLobbyCommandValidator : AbstractValidator<JoinLobbyComma
     }
 }
 
-public sealed class JoinLobbyCommandHandler(IRoomStore rooms, ISignatureVerifier verifier, TimeProvider time, CipheroomMetrics metrics)
+public sealed class JoinLobbyCommandHandler(
+    IRoomStore rooms,
+    ISignatureVerifier verifier,
+    TimeProvider time,
+    CipheroomMetrics metrics,
+    IUsageGuard usage)
     : ICommandHandler<JoinLobbyCommand, JoinLobbyResult>
 {
     public ValueTask<JoinLobbyResult> Handle(JoinLobbyCommand command, CancellationToken cancellationToken)
@@ -85,10 +91,15 @@ public sealed class JoinLobbyCommandHandler(IRoomStore rooms, ISignatureVerifier
             ? new Statement(identity.Ed25519Pub, t.Issuer!, t.Sig!)
             : null;
         var now = time.GetUtcNow();
+        var level = usage.Current.Level;
 
         var result = rooms.Enter(roomId, command.ConnectionId, room =>
         {
             Participant[] others = [.. room.Participants];
+            // Usage guard: at audio-only only reconnects into a call already running get in; when paused, nobody.
+            var callRunning = others.Length > 0;
+            if (level >= UsageLevel.Paused || (level == UsageLevel.AudioOnly && !callRunning))
+                throw new DomainException(UsageRules.CallsPaused);
             if (hostKeys is not null)
             {
                 var host = room.JoinAsHost(command.ConnectionId, identity, videoCodecs, hostKeys, command.HostProof!.Attestation!);
@@ -99,7 +110,9 @@ public sealed class JoinLobbyCommandHandler(IRoomStore rooms, ISignatureVerifier
                 var self = room.JoinWithTicket(command.ConnectionId, identity, videoCodecs, ticket);
                 return new JoinLobbyResult(self, null, others, room.Authority(), self.IsAdmitter);
             }
-            // A ticket that doesn't check out (e.g. the call restarted) just means asking again.
+            // A ticket that doesn't check out (e.g. the call restarted) just means asking again — not when it's audio-only.
+            if (level == UsageLevel.AudioOnly)
+                throw new DomainException(UsageRules.CallsPaused);
             var guest = room.EnterLobby(command.ConnectionId, identity, videoCodecs, now);
             return new JoinLobbyResult(null, guest, [], room.Authority(), AuthorityChanged: false);
         });
