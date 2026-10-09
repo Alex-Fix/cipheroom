@@ -30,7 +30,11 @@ Design: `docs/plans/2026-10-07-e2ee-media-design.md`. Everything lives in `web/s
 - `frame-codec.ts` (frame layout) · `keyring.ts` · `frame-cryptor.ts` (per-frame logic) · `frame-crypto.worker.ts`
   (thin wiring) · `frame-transforms.ts` (`FrameCrypto`: attaches the worker, transfers keys) · `support.ts`
   (`e2eeSupported`) · `e2ee-debug.ts` (`?e2ee=passthrough`).
-- Planned: `chat-crypto.ts` — AES-GCM chat with an HKDF-derived key (label `cipheroom/chat/v1`).
+- `chat-crypto.ts` — chat events: chat key = HKDF(sender key, `cipheroom/chat/v1`), Ed25519-signed by the author
+  (`cipheroom/chat-sig/v1`), padded to 512 B / 2 / 8 / 16 KB, AES-GCM with AAD = room, relayed sender, key index
+  (`cipheroom/chat-aad/v1`). `CryptoService` derives chat keys before a sender key goes to the worker (which detaches
+  it), switches them with the media key, holds events that beat their key (10 s), drops replays by per-author
+  `seq`. `core/chat/ChatService` holds chat state and never sees keys.
 
 ## Frame transform
 - One worker for all transforms (both APIs), so counters are per key, not per track. Keys per sender: ours (send)
@@ -82,4 +86,5 @@ sig  = Ed25519(sender identity, fields("cipheroom/env-sig/v1", aad, eph, iv, ct)
 - [ ] Every sender and receiver `MediaService` creates gets the transform before media flows (incl. placeholder and
       replaced tracks, and receivers the SFU reuses).
 - [ ] Only WebCrypto primitives; no `Math.random`, no custom ciphers.
-- [ ] Tests: envelope round trip, tampered envelope → reject, wrong recipient → reject, rotation on leave excludes leaver.
+- [ ] Tests: envelope round trip, tampered envelope → reject, wrong recipient → reject, rotation on leave excludes leaver;
+      chat: forged author / re-attributed sender / replay → dropped, newcomer can't read earlier events.

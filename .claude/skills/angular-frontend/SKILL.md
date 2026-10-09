@@ -24,14 +24,16 @@ web/
                          serial-queue, subscriptions, layers, quality, speaking, audio-playback, cameras, ice-path
       settings/          display-name.ts, video-quality.ts          (browser-local preferences)
       ui/                icons.ts (static ng-zorro icon registry), theme.service.ts (OS appearance / forced dark)
-      crypto/            (planned) identity, sender keys, frame-crypto worker, safety code, chat crypto (`e2ee-media`)
+      crypto/            identity, sender keys, frame-crypto worker, safety code, chat crypto (`e2ee-media`)
+      chat/              chat.service.ts (room-scoped chat state), emoji.ts (curated set), links.ts (http(s) links only)
     shared/              reusable directives/pipes and pure template helpers (track.directive.ts,
                          element-size.directive.ts, initials.ts)
     features/            routed screens; a feature never imports from another feature
       home/              home.ts .html .less .spec.ts, room-id.ts
       room/              room.ts .html .less .spec.ts (container), call-status.ts, participant-changes.ts,
                          device-error.ts, and one folder per child component:
-        call-header/  call-tile/  call-controls/  participants-panel/  diagnostics-drawer/ (hidden for now)
+        call-header/  call-tile/  call-controls/  participants-panel/  chat-panel/  emoji-picker/
+        diagnostics-drawer/ (hidden for now)
   src/styles.less        global tokens/styles;  src/theme/  ng-zorro light/dark themes
   design/                logo masters for scripts/icons.sh (not part of the build)
 ```

@@ -55,7 +55,7 @@ All scripts run from the repo root.
 
 1. **Keys never touch a server.** The api, Cloudflare's SFU and TURN only ever see public keys and signed, encrypted envelopes. No key material in SignalR plaintext fields, REST, logs, analytics, error reports or SFU requests.
 2. **All servers are untrusted for content.** Don't add features needing plaintext media/chat on a server (recording, transcription) without an explicit design change. Never fall back to unencrypted if E2EE setup fails.
-3. **Signaling contract is shared.** SignalR is the only signaling channel (rooms, media negotiation relayed to the SFU, later lobby, key envelopes, chat). Any hub method / client event change must update C# (`IRoomClient`, hub), TS (`signaling.types.ts`) and `docs/signaling-protocol.md` in the same change. See the `signaling-protocol` skill.
+3. **Signaling contract is shared.** SignalR is the only signaling channel (rooms, media negotiation relayed to the SFU, lobby, key envelopes, encrypted chat). Any hub method / client event change must update C# (`IRoomClient`, hub), TS (`signaling.types.ts`) and `docs/signaling-protocol.md` in the same change. See the `signaling-protocol` skill.
 4. **No secrets in git.** `.env`, TURN secrets, tunnel credentials, certs stay out of the repo (`.gitignore` covers them).
 5. **Stay free and open.** Only open-source components and free tiers; any paid dependency needs explicit approval.
 
