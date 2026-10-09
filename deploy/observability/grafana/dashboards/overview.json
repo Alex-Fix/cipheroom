@@ -622,8 +622,8 @@
     },
     {
       "type": "timeseries",
-      "title": "Key envelopes relayed",
-      "description": "E2EE key rotations: one envelope per recipient, on every join and leave.",
+      "title": "Key envelopes and chat relayed",
+      "description": "E2EE key rotations: one envelope per recipient, on every join and leave. Chat: encrypted messages and reactions (one per send).",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -637,6 +637,15 @@
           },
           "expr": "sum(rate(cipheroom_key_envelopes_relayed_total[$__rate_interval]))",
           "legendFormat": "envelopes/s"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(rate(cipheroom_chat_relayed_total[$__rate_interval]))",
+          "legendFormat": "chat events/s"
         }
       ],
       "fieldConfig": {
