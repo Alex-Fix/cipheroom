@@ -32,6 +32,8 @@ import {
 
 /** A key envelope for us; `fromId` is who the server says sent it (verified against the envelope's signature). */
 export type KeyEnvelopeListener = (fromId: string, blob: string) => void;
+/** An encrypted chat event from another member (fromId set by the server). */
+export type ChatListener = (fromId: string, blob: string) => void;
 
 /**
  * Lobby and host-control events (server → us). Signed ones (`muteRequested`, `callEnded`) must be verified by
@@ -64,6 +66,7 @@ export class SignalingService {
   /** The usage guard's latest verdict (kept across calls: it's server-wide). */
   readonly usage = signal<UsageDto | undefined>(undefined);
   private readonly keyEnvelopeListeners = new Set<KeyEnvelopeListener>();
+  private readonly chatListeners = new Set<ChatListener>();
   private readonly lobbyListeners = new Set<LobbyEventListener>();
 
   /**
@@ -171,6 +174,11 @@ export class SignalingService {
     await this.invoke(HubMethods.SendKeyEnvelopes, envelopes);
   }
 
+  /** One encrypted chat event (message or reaction) to everyone else in the room. */
+  async sendChat(blob: string): Promise<void> {
+    await this.invoke(HubMethods.SendChat, blob);
+  }
+
   /** Call-quality summary for telemetry (numbers only); recorded server-side as metrics. */
   async reportCallStats(stats: CallStatsDto): Promise<void> {
     await this.invoke(HubMethods.ReportCallStats, stats);
@@ -180,6 +188,12 @@ export class SignalingService {
   onKeyEnvelope(listener: KeyEnvelopeListener): () => void {
     this.keyEnvelopeListeners.add(listener);
     return () => this.keyEnvelopeListeners.delete(listener);
+  }
+
+  /** Encrypted chat events from others in the room. Returns a function that removes the listener. */
+  onChat(listener: ChatListener): () => void {
+    this.chatListeners.add(listener);
+    return () => this.chatListeners.delete(listener);
   }
 
   /** Lobby and host-control events. Returns a function that removes the listener. */
@@ -230,6 +244,9 @@ export class SignalingService {
     );
     connection.on(ClientEvents.KeyEnvelopeReceived, (fromId: string, blob: string) =>
       this.keyEnvelopeListeners.forEach((listener) => listener(fromId, blob)),
+    );
+    connection.on(ClientEvents.ChatReceived, (fromId: string, blob: string) =>
+      this.chatListeners.forEach((listener) => listener(fromId, blob)),
     );
     connection.on(ClientEvents.AuthorityUpdated, (authority: AuthorityDto) =>
       this.authority.set(authority),

@@ -14,6 +14,7 @@ import {
   ROTATION_DEBOUNCE_MS,
   SWITCH_DELAY_MS,
 } from './crypto.service';
+import { ReceivedChatEvent, chatKeyIndex, newChatId } from './chat-crypto';
 import { fromBase64Url, toBase64Url, utf8 } from './encoding';
 import { FRAME_CRYPTO_FACTORY } from './frame-transforms';
 import { HostKey, createHostKey } from './host-key';
@@ -50,6 +51,11 @@ interface Client {
   authority: ReturnType<typeof signal<AuthorityDto | undefined>>;
   sent: KeyEnvelopeDto[][];
   inbox: (fromId: string, blob: string) => void;
+  chatInbox: (fromId: string, blob: string) => void;
+  /** Chat blobs this client sent (the server relays them to everyone else in the room). */
+  chats: string[];
+  /** Envelopes to this client wait here while set (to make chat arrive before a key). */
+  heldEnvelopes?: [string, string][];
   failSends: boolean;
 }
 
@@ -85,6 +91,7 @@ class FakeServer {
       participants,
       authority,
       sent: [],
+      chats: [],
       failSends: false,
     } as unknown as Client;
     const signaling = {
@@ -94,11 +101,24 @@ class FakeServer {
         if (client.failSends) throw new Error('Media server unavailable.');
         client.sent.push(envelopes);
         for (const e of envelopes)
-          queueMicrotask(() => this.clients.get(e.toId)?.inbox(id, e.blob));
+          queueMicrotask(() => {
+            const to = this.clients.get(e.toId);
+            if (to?.heldEnvelopes) to.heldEnvelopes.push([id, e.blob]);
+            else to?.inbox(id, e.blob);
+          });
       }),
       onKeyEnvelope: (listener: (fromId: string, blob: string) => void) => {
         client.inbox = listener;
         return () => (client.inbox = () => undefined);
+      },
+      sendChat: vi.fn(async (blob: string) => {
+        client.chats.push(blob);
+        for (const c of this.clients.values())
+          if (c !== client && this.inRoom.has(c.id)) queueMicrotask(() => c.chatInbox(id, blob));
+      }),
+      onChat: (listener: (fromId: string, blob: string) => void) => {
+        client.chatInbox = listener;
+        return () => (client.chatInbox = () => undefined);
       },
     };
     const injector = createEnvironmentInjector(
@@ -112,6 +132,7 @@ class FakeServer {
     );
     client.crypto = injector.get(CryptoService);
     client.inbox = () => undefined;
+    client.chatInbox = () => undefined;
     this.clients.set(id, client);
     return client;
   }
@@ -212,6 +233,20 @@ const afterRotation = async () => {
 };
 
 const lastSendKey = (c: Client) => c.frames.sendKeys.at(-1)!;
+
+/** Everything `c` heard in chat, as CryptoService hands it on. */
+function chatLog(c: Client): ReceivedChatEvent[] {
+  const log: ReceivedChatEvent[] = [];
+  c.crypto.onChatEvent((e) => log.push(e));
+  return log;
+}
+
+/** Seals a message from `c` and has the server relay it. */
+async function say(c: Client, text: string): Promise<string> {
+  const blob = await c.crypto.sealChat({ type: 'message', id: newChatId(), text });
+  await c.crypto['signaling'].sendChat(blob);
+  return blob;
+}
 const receiveKeys = (c: Client, from: string) =>
   c.frames.receiveKeys.filter((k) => k.participantId === from);
 
@@ -536,6 +571,125 @@ describe('CryptoService', () => {
     alice.inbox('mallory', 'AAAA');
     await settle();
     expect(alice.crypto.telemetry(now).envelopesDropped).toBe(1);
+  });
+
+  describe('chat', () => {
+    it('cannot send before the first key — no unencrypted chat', async () => {
+      const alice = server.client('alice');
+      expect(alice.crypto.chatReady()).toBe(false);
+      await expect(
+        alice.crypto.sealChat({ type: 'message', id: newChatId(), text: 'hi' }),
+      ).rejects.toThrow('Chat is not ready.');
+      await server.join(alice);
+      expect(alice.crypto.chatReady()).toBe(true);
+    });
+
+    it('delivers signed messages, with the author’s identity, to everyone else', async () => {
+      const [alice, bob, carol] = ['alice', 'bob', 'carol'].map((id) => server.client(id));
+      for (const c of [alice, bob, carol]) await server.join(c);
+      await afterRotation();
+      const [bobLog, carolLog] = [chatLog(bob), chatLog(carol)];
+
+      await say(alice, 'hello');
+      await settle();
+
+      for (const log of [bobLog, carolLog]) {
+        expect(log).toEqual([
+          {
+            fromId: 'alice',
+            authorPub: alice.crypto.identityPub(),
+            event: { v: 1, seq: 1, type: 'message', id: expect.any(String), text: 'hello' },
+          },
+        ]);
+      }
+    });
+
+    it('chat switches keys together with media', async () => {
+      const alice = server.client('alice');
+      const bob = server.client('bob');
+      await server.join(alice);
+      expect(chatKeyIndex(await say(alice, 'alone'))).toBe(0);
+      await server.join(bob);
+      await afterRotation();
+      expect(chatKeyIndex(await say(alice, 'together'))).toBe(lastSendKey(alice).keyIndex);
+      expect(lastSendKey(alice).keyIndex).toBe(1);
+    });
+
+    it('a newcomer can’t read what was said before they joined', async () => {
+      const alice = server.client('alice');
+      const bob = server.client('bob');
+      await server.join(alice);
+      const early = await say(alice, 'before bob');
+      await server.join(bob);
+      await afterRotation();
+      const bobLog = chatLog(bob);
+
+      bob.chatInbox('alice', early);
+      await settle(11_000);
+      expect(bobLog).toEqual([]);
+    });
+
+    it('holds a message that beats its sender’s key, then delivers it in order', async () => {
+      const alice = server.client('alice');
+      const bob = server.client('bob');
+      await server.join(alice);
+      const aliceLog = chatLog(alice);
+      alice.heldEnvelopes = [];
+      await server.join(bob);
+      await say(bob, 'first');
+      await say(bob, 'second');
+      await settle();
+      expect(aliceLog).toEqual([]);
+
+      const held = alice.heldEnvelopes;
+      alice.heldEnvelopes = undefined;
+      held.forEach(([from, blob]) => alice.inbox(from, blob));
+      await settle();
+
+      expect(aliceLog.map((e) => e.event)).toMatchObject([{ text: 'first' }, { text: 'second' }]);
+    });
+
+    it('drops replays and events the server re-attributes', async () => {
+      const [alice, bob, carol] = ['alice', 'bob', 'carol'].map((id) => server.client(id));
+      for (const c of [alice, bob, carol]) await server.join(c);
+      await afterRotation();
+      const bobLog = chatLog(bob);
+
+      const blob = await say(alice, 'once');
+      await settle();
+      bob.chatInbox('alice', blob);
+      // Carol's message, relayed as if Alice sent it.
+      const carols = await carol.crypto.sealChat({ type: 'message', id: newChatId(), text: 'x' });
+      bob.chatInbox('alice', carols);
+      await settle();
+
+      expect(bobLog.map((e) => e.event)).toMatchObject([{ text: 'once' }]);
+    });
+
+    it('forgets a leaver at once: nothing more from them is read', async () => {
+      const [alice, bob, carol] = ['alice', 'bob', 'carol'].map((id) => server.client(id));
+      for (const c of [alice, bob, carol]) await server.join(c);
+      await afterRotation();
+      const aliceLog = chatLog(alice);
+      const late = await carol.crypto.sealChat({ type: 'message', id: newChatId(), text: 'bye' });
+
+      server.leave(carol);
+      await settle();
+      alice.chatInbox('carol', late);
+      await settle();
+
+      expect(aliceLog).toEqual([]);
+    });
+
+    it('stop drops the chat key', async () => {
+      const alice = server.client('alice');
+      await server.join(alice);
+      alice.crypto.stop();
+      expect(alice.crypto.chatReady()).toBe(false);
+      await expect(
+        alice.crypto.sealChat({ type: 'message', id: newChatId(), text: 'hi' }),
+      ).rejects.toThrow('Chat is not ready.');
+    });
   });
 
   it('stop ends the call’s encryption: worker gone, later envelopes ignored', async () => {

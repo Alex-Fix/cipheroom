@@ -33,6 +33,7 @@ Payloads never contain plaintext keys: only public keys and opaque signed envelo
 | C→S | `SetTrackMuted` | `source`, `muted` | — |
 | C→S | `SelectVideoLayer` | `mid` (received camera track), `rid` (`f` / `h` / `q`) | — |
 | C→S | `SendKeyEnvelopes` | `envelopes[{ toId, blob }]` (1–64, distinct `toId`s, each another participant of the caller's room; `blob` base64url, 1–2048 chars) | — (each relayed to its `toId` only) |
+| C→S | `SendChat` | `blob` (base64url, 1–22,528 chars) | — (relayed to everyone else in the caller's room) |
 | C→S | `ReportCallStats` | `CallStatsDto` (numbers only — see "Call-quality reports") | — |
 | S→C | `ParticipantJoined` | `ParticipantDto { id, tracks[], identity, videoCodecs[], ticket }` (no name: names travel encrypted) | |
 | S→C | `ParticipantLeft` | `id` | |
@@ -40,6 +41,7 @@ Payloads never contain plaintext keys: only public keys and opaque signed envelo
 | S→C | `TracksUnpublished` | `participantId`, `sources[]` | |
 | S→C | `TrackMuted` | `participantId`, `source`, `muted` | |
 | S→C | `KeyEnvelopeReceived` | `fromId` (set by the server from the sender's connection), `blob` | |
+| S→C | `ChatReceived` | `fromId` (set by the server), `blob` | to everyone in the room but the sender |
 | S→C | `KnockReceived` | `LobbyGuestDto { id, identity }`, `blob` | to the admitter it's for |
 | S→C | `LobbyLeft` | `guestId` | to admitters: admitted, denied or gone |
 | S→C | `Admitted` | `LobbyResult` (as from `JoinLobby`, `admitted: true`) | to the guest |
@@ -110,6 +112,15 @@ verifies, stores or logs them (clients verify everything — the server is untru
 - Clients that call `JoinLobby` without all its arguments fail SignalR's argument binding and never join (so do
   clients still calling the removed `JoinRoom`); `null` or a malformed identity gets `Invalid identity.`
 
+### Encrypted chat
+
+Design: `docs/plans/2026-10-09-encrypted-chat-design.md`. One opaque event per `SendChat` — a message or a reaction,
+the server can't tell which. `blob` = version ‖ key index ‖ IV ‖ AES-GCM under the sender's chat key (derived from
+their current sender key) over a signed, padded event; sizes come in four buckets (largest 21,886 chars). The api
+checks the shape only, relays it to the room's other members (never the lobby), and never stores or logs it.
+Receivers check the AES-GCM tag (AAD binds room, relayed `fromId` and key index), the author's Ed25519 signature and a
+per-author sequence number. Newcomers can only read events sent after they joined (keys rotate on join).
+
 ### Video codecs
 
 Designs: `docs/plans/2026-10-08-video-compression-design.md`, `docs/plans/2026-10-08-remove-av1-design.md`.
@@ -177,14 +188,15 @@ echo input. Mapped centrally by `HubExceptionFilter`; pinned by `Cipheroom.Api.F
 | `Unknown participant.` | No such guest in the lobby / member in the room |
 | `Invalid settings.` | `UpdateSettings` with `seq` outside 1–2³²−1 |
 | `Invalid knock.` | `Knock` with no / over 16 knocks, a malformed or over-long blob, a duplicate `toId`, or a `toId` that isn't an admitter in the call |
-| `Not admitted.` | A lobby guest calling `GetRtcConfig`, a media method, `SendKeyEnvelopes`, `ReportCallStats` or a host control |
+| `Not admitted.` | A lobby guest calling `GetRtcConfig`, a media method, `SendKeyEnvelopes`, `SendChat`, `ReportCallStats` or a host control |
 | `Not allowed.` | A host control by someone without the role (co-host removing a host or co-host, guest admitting, non-host settings or grants), a stale settings `seq`, `Knock` from a member, or a removed identity trying to come back |
 | `Lobby is full.` | `JoinLobby` when 20 people already wait |
 | `Already asked, try again later.` | `JoinLobby` within 30 s of being denied, on the same connection |
 | `Invalid key envelope.` | `SendKeyEnvelopes` with no / over 64 envelopes, a malformed or over-long blob, a duplicate `toId`, or a `toId` that isn't another participant of the caller's room |
+| `Invalid chat message.` | `SendChat` with a missing, malformed or over-long blob |
 | `Already in a room.` | `JoinLobby` on a connection that is already in a room or lobby |
 | `Calls are paused.` | Usage guard: `JoinLobby` at audio-only (except reconnects into a running call) or paused; `Admit` at audio-only or paused |
-| `Join a room first.` | `GetRtcConfig`, any media method, `SendKeyEnvelopes` or `ReportCallStats` before joining |
+| `Join a room first.` | `GetRtcConfig`, any media method, `SendKeyEnvelopes`, `SendChat` or `ReportCallStats` before joining |
 | `Invalid stats.` | `ReportCallStats` with a missing report, a bad platform/path string, an interval outside 0–120 s, or a number that's negative, not finite or over its cap |
 | `Invalid session description.` | SDP missing, over 32 KB or not starting with `v=0` |
 | `Invalid track.` | Bad track list, mid, source or participant id |
@@ -195,12 +207,3 @@ echo input. Mapped centrally by `HubExceptionFilter`; pinned by `Cipheroom.Api.F
 | `Media server unavailable.` | Cloudflare refused or failed the request (cause logged as status / error code only) |
 | `Too many requests.` | More than 20 calls in a burst / 5 per second on one connection (`RateLimiting:Hub`) |
 | `Something went wrong.` | Any unexpected server error (details only in the server log) |
-
-## Planned
-
-| Direction | Method | Args | Notes |
-|---|---|---|---|
-| C→S | `SendChat` | `ciphertext, keyIndex` | broadcast to room |
-| S→C | `ChatReceived` | `fromId, ciphertext, keyIndex` | |
-
-_Draft — update as the hub is implemented._
