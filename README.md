@@ -21,8 +21,9 @@ want private calls without trusting a vendor, and it runs on a home computer wit
 - 🖥️ Screen sharing, camera switching (front/rear on phones), active-speaker highlight, automatic reconnect
 - 🏠 Runs at home behind NAT or CGNAT: nothing at home needs to be reachable — ingress via Cloudflare Tunnel, media
   straight between browsers and Cloudflare's edge
-- 💸 Free to run: uses only free tiers; a Grafana dashboard shows this month's Cloudflare usage against the free
-  tier (a guard that enforces it is planned)
+- 💸 Free to run: uses only free tiers, and a usage guard keeps Cloudflare's traffic inside the free tier — video is
+  capped at 80% of the month's allowance, calls go audio-only at 95% and pause at 99% until the month resets
+  (thresholds in `deploy/.env`; Grafana shows the numbers)
 - 📈 Optional self-hosted observability: traces, logs, metrics, call quality and Grafana dashboards — pseudonymous,
   kept 7 days, behind Grafana's login ([`docs/observability.md`](docs/observability.md))
 - 🔐 End-to-end encrypted media: per-call keys, rotated whenever someone joins or leaves, and a safety code to
@@ -99,7 +100,8 @@ You need a domain on Cloudflare (the free plan is fine) and a machine running Do
 
 To check it from real networks, join from a phone on mobile data (Wi-Fi off) and a laptop in the same meeting. To test
 the TURN fallback, set `TURN_FORCE_RELAY=true` and run `scripts/up.sh --tunnel` again. Keep an eye on usage: 4K video
-is ~3.6 GB per viewer-hour against the 1 TB/month free tier — set up a Cloudflare billing notification.
+is ~3.6 GB per viewer-hour against the 1 TB/month free tier. The usage guard enforces it (best with
+`CF_ACCOUNT_ID` / `CF_ANALYTICS_API_TOKEN` set); keep a Cloudflare billing notification as a second safety net.
 
 ### Operations
 
@@ -123,7 +125,7 @@ is ~3.6 GB per viewer-hour against the 1 TB/month free tier — set up a Cloudfl
 - [x] Lobby and host admission: host keys, signed tickets, co-hosts, remove, auto-admit, end for everyone
 - [ ] End-to-end encrypted chat
 - [x] Observability: traces, logs, metrics, call-quality reports, Grafana dashboards (self-hosted, optional)
-- [ ] Usage guard for the Cloudflare Realtime free tier (SFU + TURN) — usage is already measured and graphed
+- [x] Usage guard for the Cloudflare Realtime free tier (SFU + TURN): saving → audio-only → paused
 - [ ] Connection diagnostics panel (hidden since the SFU switch)
 - [ ] "Source" link in the UI (AGPL §13)
 - [ ] MLS-based group keys for large rooms

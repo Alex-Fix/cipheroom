@@ -215,6 +215,14 @@ public sealed class Room(RoomId id)
         return connections;
     }
 
+    /// <summary>Sends everyone waiting in the lobby away (the server's usage guard: no new people). Returns their connections.</summary>
+    public IReadOnlyList<string> ClearLobby()
+    {
+        string[] connections = [.. _lobby.Select(g => g.ConnectionId)];
+        _lobby.Clear();
+        return connections;
+    }
+
     /// <summary>Empties the room and its lobby without an admitter (the server's usage guard pausing all calls).</summary>
     public IReadOnlyList<string> Clear()
     {

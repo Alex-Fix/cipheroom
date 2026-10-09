@@ -38,16 +38,23 @@ public sealed partial class UsageGuardNotifier(
     {
         // A level reached before this started (e.g. restored from the usage file) still has to be applied.
         _changes.Writer.TryWrite(usage.Current);
-        await foreach (var status in _changes.Reader.ReadAllAsync(stoppingToken))
+        try
         {
-            try
+            await foreach (var status in _changes.Reader.ReadAllAsync(stoppingToken))
             {
-                await HandleAsync(status, stoppingToken);
+                try
+                {
+                    await HandleAsync(status, stoppingToken);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    LogFailed(logger, ex, status.Level);
+                }
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                LogFailed(logger, ex, status.Level);
-            }
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            // Shutting down.
         }
     }
 

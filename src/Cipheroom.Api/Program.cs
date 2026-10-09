@@ -14,6 +14,11 @@ if (args is [HealthProbe.Argument])
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Development only: settings to try things out while scripts/dev.sh runs, reloaded on change (e.g. the usage guard's
+// UsageGuard:ForceLevel). Git-ignored.
+if (builder.Environment.IsDevelopment())
+    builder.Configuration.AddJsonFile(Path.Combine(builder.Environment.ContentRootPath, "../../artifacts/dev-settings.json"), optional: true, reloadOnChange: true);
+
 builder.AddTelemetry();
 
 builder.Services.AddApplication();

@@ -31,6 +31,8 @@ import { CallTile } from './call-tile/call-tile';
 import { Device, deviceErrorMessage } from './device-error';
 import { ElementSizeDirective } from '../../shared/element-size.directive';
 import { LobbyScreen, LobbyScreenState } from './lobby-screen/lobby-screen';
+import { UsageBanner } from './usage-banner/usage-banner';
+import { isCallsPaused, resetDate, videoBlockedReason } from './usage-text';
 import { participantChanges } from './participant-changes';
 import { ParticipantAction, ParticipantsPanel } from './participants-panel/participants-panel';
 
@@ -50,6 +52,7 @@ import { ParticipantAction, ParticipantsPanel } from './participants-panel/parti
     NzIconModule,
     NzModalModule,
     ParticipantsPanel,
+    UsageBanner,
   ],
   providers: [MediaService, CryptoService, LobbyService],
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -87,8 +90,16 @@ export class Room implements OnInit, OnDestroy {
       : callStatus(this.media.state(), this.joined(), !!this.error()),
   );
   protected readonly participantCount = computed(() => this.media.participants().length);
-  /** Instead of the call: waiting in the lobby, or turned away / removed / call ended. */
+  /** Calls are paused by the usage guard (refused, or ended at the limit): the day they can start again. */
+  protected readonly pausedUntil = signal<string | undefined>(undefined);
+  /** Why camera and screen share are off right now (usage guard), if they are. */
+  protected readonly videoBlockedReason = computed(() =>
+    videoBlockedReason(this.signaling.usage()),
+  );
+  protected readonly usage = this.signaling.usage;
+  /** Instead of the call: waiting in the lobby, or turned away / removed / call ended / calls paused. */
   protected readonly lobbyScreen = computed<LobbyScreenState | undefined>(() => {
+    if (this.pausedUntil()) return 'paused';
     const state = this.lobby.state();
     return state === 'waiting' || state === 'denied' || state === 'removed' || state === 'ended'
       ? state
@@ -143,6 +154,24 @@ export class Room implements OnInit, OnDestroy {
     // Someone joined who can't decode the codec we send: rejoin, which picks one everyone can play.
     effect(() => {
       if (this.joined() && this.media.codecUnsupported()) untracked(() => void this.rejoin());
+    });
+
+    // Usage guard: audio-only turns our camera and screen share off (they come back when the month resets, on request);
+    // paused ends the call for good (the server already did). Waiting in a lobby, either means we won't get in: the
+    // server sent the lobby away.
+    effect(() => {
+      const usage = this.signaling.usage();
+      const waiting = this.lobby.state() === 'waiting';
+      if (!usage || (!this.joined() && !waiting)) return;
+      untracked(() => {
+        if (usage.level === 'paused' || (waiting && usage.level === 'audio-only')) {
+          if (waiting) this.lobby.cancel();
+          return void this.pauseCalls();
+        }
+        if (usage.level !== 'audio-only') return;
+        if (this.media.cameraEnabled()) void this.setDevice('camera', false);
+        if (this.media.screenShareEnabled()) void this.setDevice('screen', false);
+      });
     });
 
     // Removed, or the host ended the call: leave for good (no automatic rejoin).
@@ -206,6 +235,8 @@ export class Room implements OnInit, OnDestroy {
 
   /** The user turns a device on or off: remembered, so a rejoin brings back what they chose. */
   protected async toggleDevice(device: Device, enabled: boolean): Promise<void> {
+    // Usage guard: no video while it's audio-only (the buttons are disabled; this covers a race).
+    if (enabled && device !== 'microphone' && !this.media.videoAllowed()) return;
     if (device !== 'screen') this.wanted = { ...this.wanted, [device]: enabled };
     await this.setDevice(device, enabled);
   }
@@ -393,6 +424,7 @@ export class Room implements OnInit, OnDestroy {
       this.wanted = { microphone: this.media.micEnabled(), camera: this.media.cameraEnabled() };
     } catch (e) {
       if (stale()) return;
+      if (isCallsPaused(e)) return this.pauseCalls();
       if (e instanceof LobbyClosedError) {
         // Turned away: stay connected, so asking again goes through the server's cooldown.
         if (e.reason === 'denied') return this.allowAskingAgainLater();
@@ -404,6 +436,13 @@ export class Room implements OnInit, OnDestroy {
       // Shown via interpolation only — never through nz-message (renders HTML).
       this.error.set(e instanceof Error ? e.message : String(e));
     }
+  }
+
+  /** The usage guard paused calls: leave, and say until when. */
+  private async pauseCalls(): Promise<void> {
+    const usage = this.signaling.usage();
+    this.pausedUntil.set(usage ? resetDate(usage) : 'next month');
+    await this.teardown();
   }
 
   private allowAskingAgainLater(): void {
@@ -423,7 +462,8 @@ export class Room implements OnInit, OnDestroy {
           ? undefined
           : this.setDevice('microphone', false, run),
       ),
-      devices.camera ? this.setDevice('camera', true, run) : undefined,
+      // Usage guard: no camera while it's audio-only (its slot is reserved below, so it can come back later).
+      devices.camera && this.media.videoAllowed() ? this.setDevice('camera', true, run) : undefined,
     ]);
     // Camera off, denied or missing: reserve its slot anyway.
     if (run === this.joinRun && !this.media.cameraEnabled()) {

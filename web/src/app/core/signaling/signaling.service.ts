@@ -26,6 +26,7 @@ import {
   TrackDto,
   TrackRefDto,
   TrackSource,
+  UsageDto,
   VideoLayer,
 } from './signaling.types';
 
@@ -60,6 +61,8 @@ export class SignalingService {
   readonly connected = signal(false);
   readonly participants = signal<ParticipantDto[]>([]);
   readonly authority = signal<AuthorityDto | undefined>(undefined);
+  /** The usage guard's latest verdict (kept across calls: it's server-wide). */
+  readonly usage = signal<UsageDto | undefined>(undefined);
   private readonly keyEnvelopeListeners = new Set<KeyEnvelopeListener>();
   private readonly lobbyListeners = new Set<LobbyEventListener>();
 
@@ -250,6 +253,7 @@ export class SignalingService {
     connection.on(ClientEvents.CallEnded, (issuer: string, sig: string) =>
       this.emit({ type: 'callEnded', issuer, sig }),
     );
+    connection.on(ClientEvents.UsageChanged, (usage: UsageDto) => this.usage.set(usage));
     connection.onclose(() => this.connected.set(false));
 
     await connection.start();

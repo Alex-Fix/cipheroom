@@ -17,7 +17,7 @@ namespace Cipheroom.Infrastructure.Usage;
 /// restarts in a small file of numbers and timestamps (no ids, names or rooms).
 /// </summary>
 public sealed partial class UsageGuard(
-    IOptions<UsageGuardOptions> options,
+    IOptionsMonitor<UsageGuardOptions> options,
     IOptions<RealtimeUsageOptions> freeTier,
     IHostEnvironment environment,
     CipheroomMetrics metrics,
@@ -42,7 +42,9 @@ public sealed partial class UsageGuard(
 
     public UsageStatus Current => _current ?? Evaluate();
 
-    private UsageGuardOptions Options => options.Value;
+    private IDisposable? _optionsChanged;
+
+    private UsageGuardOptions Options => options.CurrentValue;
 
     /// <summary>A relative path is relative to the app's content root (the project folder under scripts/dev.sh).</summary>
     private string DataPath => Path.IsPathRooted(Options.DataPath)
@@ -124,6 +126,8 @@ public sealed partial class UsageGuard(
     /// <summary>Loads the saved state before anything can ask (ExecuteAsync runs in the background).</summary>
     public override Task StartAsync(CancellationToken cancellationToken)
     {
+        // New thresholds, or a forced level while trying the guard out (Development), apply at once.
+        _optionsChanged = options.OnChange(_ => Evaluate());
         Load();
         if (!Options.Enabled)
             LogDisabled(logger);
@@ -150,6 +154,7 @@ public sealed partial class UsageGuard(
 
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
+        _optionsChanged?.Dispose();
         await base.StopAsync(cancellationToken);
         Save();
     }

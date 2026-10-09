@@ -7,12 +7,12 @@ namespace Cipheroom.Application.Usage.Commands.ApplyUsageLevel;
 
 /// <summary>
 /// The usage guard reached a new level: apply it to the calls in progress, server-side (clients are untrusted).
-/// Saving: every received camera to the half layer. Audio-only: stop forwarding all video. Paused: stop forwarding
-/// everything and empty every room and lobby. Sent by the server itself, never by a client.
+/// Saving: every received camera to the half layer. Audio-only: stop forwarding all video and empty every lobby.
+/// Paused: stop forwarding everything and empty every room and lobby. Sent by the server itself, never by a client.
 /// </summary>
 public sealed record ApplyUsageLevelCommand(UsageLevel Level) : ICommand<ApplyUsageLevelResult>;
 
-/// <param name="Ended">Connections taken out of their room or lobby (paused), so the hub can drop their groups.</param>
+/// <param name="Ended">Connections taken out of their room or lobby, so the hub can drop their groups.</param>
 public sealed record ApplyUsageLevelResult(IReadOnlyList<EndedConnection> Ended);
 
 public sealed record EndedConnection(string ConnectionId, RoomId RoomId);
@@ -28,7 +28,8 @@ public sealed class ApplyUsageLevelCommandHandler(IRoomStore rooms, ISfu sfu) : 
                 return new ApplyUsageLevelResult([]);
             case UsageLevel.AudioOnly:
                 await CloseAsync(rooms.AcrossRooms(room => Unsubscribe(room, s => s.Source != TrackSource.Microphone)), cancellationToken);
-                return new ApplyUsageLevelResult([]);
+                // No new people: whoever waits in a lobby is sent away (they'd never be let in).
+                return new ApplyUsageLevelResult(rooms.AcrossRooms(room => room.ClearLobby().Select(c => new EndedConnection(c, room.Id))));
             case UsageLevel.Paused:
                 await CloseAsync(rooms.AcrossRooms(room => Unsubscribe(room, _ => true)), cancellationToken);
                 return new ApplyUsageLevelResult(rooms.AcrossRooms(room => room.Clear().Select(c => new EndedConnection(c, room.Id))));

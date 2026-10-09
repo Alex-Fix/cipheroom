@@ -1,5 +1,5 @@
 # Usage guard — design
-Status: approved · Date: 2026-10-09
+Status: approved, implemented · Date: 2026-10-09
 
 ## Problem
 
@@ -167,6 +167,19 @@ Updated together: `IRoomClient` + hub, `signaling.types.ts` + `SignalingService`
   screen, no rejoin after Paused.
 - Browser (headless Chromium against `scripts/dev.sh`, which runs the api in Development so `ForceLevel` works):
   Saving → AudioOnly → Paused with two people; then a normal-level smoke run on the home stack.
+
+## As built (deviations from the sections above)
+
+- **Lobbies at audio-only:** `Admit` is refused too (`Calls are paused.`), and reaching audio-only empties every
+  lobby — otherwise a host could still let a new person in, and guests would wait forever. A waiting guest's browser
+  shows the paused screen.
+- **Trying it out:** the guard reads its options through `IOptionsMonitor` and re-evaluates on change; in Development
+  the api also loads the git-ignored `artifacts/dev-settings.json` (reloaded on change), so `ForceLevel` can move a
+  live call between levels.
+- **Start-up:** the guard loads its file in `StartAsync` (in .NET 10 `ExecuteAsync` runs in the background), so the
+  first `JoinLobby` already sees the restored level.
+- The call header hides connection and encryption state on the lobby-style screens (paused, removed, ended), which
+  showed "Connecting… Securing…" there.
 
 ## Open questions
 

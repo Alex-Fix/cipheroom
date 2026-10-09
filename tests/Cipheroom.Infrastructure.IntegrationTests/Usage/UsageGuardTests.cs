@@ -180,12 +180,21 @@ public sealed class UsageGuardTests : IDisposable
         configure?.Invoke(options);
         var metrics = new CipheroomMetrics(_services.GetRequiredService<IMeterFactory>(), new InMemoryRoomStore(), _time);
         return new UsageGuard(
-            Options.Create(options),
+            new StaticOptionsMonitor<UsageGuardOptions>(options),
             Options.Create(new RealtimeUsageOptions()),
             new TestEnvironment(environment),
             metrics,
             _time,
             NullLogger<UsageGuard>.Instance);
+    }
+
+    private sealed class StaticOptionsMonitor<T>(T value) : IOptionsMonitor<T>
+    {
+        public T CurrentValue => value;
+
+        public T Get(string? name) => value;
+
+        public IDisposable? OnChange(Action<T, string?> listener) => null;
     }
 
     internal sealed class TestEnvironment(string name) : IHostEnvironment

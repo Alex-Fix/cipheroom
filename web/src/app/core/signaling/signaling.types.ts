@@ -195,6 +195,19 @@ export interface CallStatsDto {
   e2ee: E2eeStatsDto | null;
 }
 
+/** The usage guard's level (server-wide): how close this month's Cloudflare traffic is to the free tier. */
+export type UsageLevel = 'normal' | 'saving' | 'audio-only' | 'paused';
+
+/**
+ * Sent when we connect and whenever the level changes. `percent` of the free tier (null at `normal`); `resetsAt`:
+ * when the month resets (ISO-8601, UTC). Design: docs/plans/2026-10-09-usage-guard-design.md.
+ */
+export interface UsageDto {
+  level: UsageLevel;
+  percent: number | null;
+  resetsAt: string;
+}
+
 /** Client → server hub methods. */
 export const HubMethods = {
   JoinLobby: 'JoinLobby',
@@ -236,4 +249,5 @@ export const ClientEvents = {
   Removed: 'Removed',
   MuteRequested: 'MuteRequested',
   CallEnded: 'CallEnded',
+  UsageChanged: 'UsageChanged',
 } as const;

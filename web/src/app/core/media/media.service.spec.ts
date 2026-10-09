@@ -1,7 +1,7 @@
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { SignalingService } from '../signaling/signaling.service';
-import { IdentityDto, ParticipantDto, RtcConfig } from '../signaling/signaling.types';
+import { IdentityDto, ParticipantDto, RtcConfig, UsageDto } from '../signaling/signaling.types';
 import { CryptoService } from '../crypto/crypto.service';
 import { FrameCrypto } from '../crypto/frame-transforms';
 import { MediaService } from './media.service';
@@ -151,8 +151,10 @@ function bobWithCamera(): ParticipantDto {
 
 function setup({ inCall = [] as ParticipantDto[] } = {}) {
   const participants = signal<ParticipantDto[]>(inCall);
+  const usage = signal<UsageDto | undefined>(undefined);
   const signaling = {
     participants,
+    usage,
     publishTracks: vi.fn().mockResolvedValue('v=0 sfu answer'),
     subscribeTracks: vi.fn(),
     renegotiate: vi.fn().mockResolvedValue(undefined),
@@ -191,6 +193,7 @@ function setup({ inCall = [] as ParticipantDto[] } = {}) {
     media,
     signaling,
     participants,
+    usage,
     mic,
     camera,
     pc: FakePeerConnection.last,
@@ -551,6 +554,64 @@ describe('MediaService', () => {
     });
   });
 
+  describe('usage guard', () => {
+    beforeEach(() => localStorage.removeItem('cipheroom.videoQuality'));
+
+    const at = (level: UsageDto['level']): UsageDto => ({
+      level,
+      percent: 85,
+      resetsAt: '2026-11-01T00:00:00Z',
+    });
+
+    it('while saving, sends at most 720p (re-capturing a live camera) and offers only that', async () => {
+      const { media, usage } = setup();
+      const devices = navigator.mediaDevices as unknown as {
+        getUserMedia: ReturnType<typeof vi.fn>;
+      };
+      await media.setCamera(true);
+
+      usage.set(at('saving'));
+      await settle();
+
+      expect(media.offeredQualities()).toEqual(['720p']);
+      expect(media.effectiveQuality()).toBe('720p');
+      expect(media.videoQuality()).toBe('auto'); // the choice is kept for later
+      expect(devices.getUserMedia).toHaveBeenLastCalledWith({
+        video: expect.objectContaining({ height: { ideal: 720, max: 720 } }),
+      });
+    });
+
+    it('audio-only: receives no video and lets go of the video it had', async () => {
+      const { media, signaling, participants, usage } = setup();
+      signaling.subscribeTracks.mockResolvedValue({
+        offerSdp: 'v=0 sfu offer',
+        tracks: [
+          { participantId: 'bob', source: 'microphone', mid: '5' },
+          { participantId: 'bob', source: 'camera', mid: '6' },
+        ],
+      });
+      participants.set(
+        [bobWithCamera()].map((p) => ({
+          ...p,
+          tracks: [{ source: 'microphone', kind: 'audio', muted: false }, ...p.tracks],
+        })),
+      );
+      await settle();
+      signaling.subscribeTracks.mockClear();
+
+      usage.set(at('audio-only'));
+      await settle();
+
+      expect(media.videoAllowed()).toBe(false);
+      expect(signaling.unsubscribeTracks).toHaveBeenCalledWith(['6']);
+      participants.update((list) => [...list, { ...bobWithCamera(), id: 'carol' }]);
+      await settle();
+      expect(signaling.subscribeTracks).not.toHaveBeenCalledWith(
+        expect.arrayContaining([expect.objectContaining({ source: 'camera' })]),
+      );
+    });
+  });
+
   describe('pull retries', () => {
     afterEach(() => vi.useRealTimers());
 
@@ -626,6 +687,7 @@ describe('MediaService', () => {
       ]);
       const signaling = {
         participants,
+        usage: signal<UsageDto | undefined>(undefined),
         subscribeTracks: vi.fn().mockResolvedValue({ offerSdp: null, tracks: [] }),
       };
       vi.stubGlobal('RTCPeerConnection', FakePeerConnection);

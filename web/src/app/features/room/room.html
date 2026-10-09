@@ -4,6 +4,7 @@
     [link]="link"
     [status]="status()"
     [participants]="participantCount()"
+    [inCall]="!lobbyScreen()"
     [safetyCode]="crypto.safetyCode()"
     [unverified]="crypto.unverified().size"
     [manualCopy]="manualCopy()"
@@ -51,6 +52,7 @@
       [state]="screen"
       [hostHere]="hostHere()"
       [canAskAgain]="canAskAgain()"
+      [resetDate]="pausedUntil() ?? ''"
       (cancel)="cancelWaiting()"
       (home)="leave()"
       (askAgain)="askAgain()"
@@ -72,6 +74,8 @@
       </div>
     }
 
+    <app-usage-banner [usage]="usage()" />
+
     <section class="grid" [attr.data-count]="media.tiles().length">
       @for (tile of media.tiles(); track tile.key) {
         <app-call-tile [tile]="tile" (appElementSize)="media.setTileSize(tile.key, $event)" />
@@ -87,8 +91,9 @@
       [cameras]="media.cameras()"
       [activeCameraId]="media.activeCameraId()"
       [canFlip]="media.canFlip()"
-      [qualities]="media.availableQualities()"
-      [quality]="media.videoQuality()"
+      [qualities]="media.offeredQualities()"
+      [quality]="media.effectiveQuality()"
+      [videoBlockedReason]="videoBlockedReason()"
       [codecs]="media.availableCodecs"
       [codec]="media.videoCodec()"
       [sendingCodec]="media.sendingCodec()"

@@ -29,104 +29,106 @@
   </ng-template>
 </div>
 
-<div class="status glass">
-  <span class="state" [attr.data-status]="status()">
-    <span class="dot" aria-hidden="true"></span>
-    <span class="state-text">{{ statusText() }}</span>
-  </span>
-
-  @if (status() === 'disconnected') {
-    <button
-      nz-button
-      nzType="primary"
-      nzShape="round"
-      nzSize="small"
-      class="rejoin"
-      (click)="rejoin.emit()"
-    >
-      Rejoin
-    </button>
-  }
-
-  <span class="divider" aria-hidden="true"></span>
-
-  @if (safetyCode(); as code) {
-    <button
-      type="button"
-      class="e2ee secure"
-      [class.warn]="unverified() > 0"
-      [attr.aria-label]="safetyCodeLabel()"
-      nz-popover
-      nzPopoverTitle="Safety code"
-      [nzPopoverContent]="safetyCodeTpl"
-      nzPopoverTrigger="click"
-      nzPopoverPlacement="bottom"
-    >
-      <nz-icon [nzType]="unverified() > 0 ? 'exclamation-circle' : 'lock'" />
-      <span class="label">Encrypted</span>
-      <!-- Always visible, so people can compare without opening anything. -->
-      <span class="code" aria-hidden="true">
-        <span class="code-emoji">
-          @for (e of code.emoji; track $index) {
-            <span>{{ e.symbol }}</span>
-          }
-        </span>
-        <span class="code-digits">{{ code.digits }}</span>
-      </span>
-    </button>
-    <ng-template #safetyCodeTpl>
-      <app-safety-code [code]="code" [unverified]="unverified()" />
-    </ng-template>
-  } @else {
-    <!-- Never optimistic: no lock until our keys are in place. Media doesn't flow unencrypted meanwhile. -->
-    <span class="e2ee" nz-tooltip nzTooltipTitle="Setting up end-to-end encryption">
-      <nz-icon nzType="sync" /> <span class="label">Securing…</span>
+@if (inCall()) {
+  <div class="status glass">
+    <span class="state" [attr.data-status]="status()">
+      <span class="dot" aria-hidden="true"></span>
+      <span class="state-text">{{ statusText() }}</span>
     </span>
-  }
 
-  <span class="divider" aria-hidden="true"></span>
-
-  <button
-    type="button"
-    class="count"
-    nz-tooltip
-    nzTooltipTitle="People"
-    [attr.aria-label]="'Show people (' + participants() + ')'"
-    (click)="showParticipants.emit()"
-  >
-    <nz-icon nzType="team" /> {{ participants() }}
-    @if (waiting() > 0) {
-      <span class="waiting" [attr.aria-label]="waiting() + ' waiting to join'"
-        >+{{ waiting() }}</span
+    @if (status() === 'disconnected') {
+      <button
+        nz-button
+        nzType="primary"
+        nzShape="round"
+        nzSize="small"
+        class="rejoin"
+        (click)="rejoin.emit()"
       >
+        Rejoin
+      </button>
     }
-  </button>
 
-  @if (canAdmit()) {
     <span class="divider" aria-hidden="true"></span>
+
+    @if (safetyCode(); as code) {
+      <button
+        type="button"
+        class="e2ee secure"
+        [class.warn]="unverified() > 0"
+        [attr.aria-label]="safetyCodeLabel()"
+        nz-popover
+        nzPopoverTitle="Safety code"
+        [nzPopoverContent]="safetyCodeTpl"
+        nzPopoverTrigger="click"
+        nzPopoverPlacement="bottom"
+      >
+        <nz-icon [nzType]="unverified() > 0 ? 'exclamation-circle' : 'lock'" />
+        <span class="label">Encrypted</span>
+        <!-- Always visible, so people can compare without opening anything. -->
+        <span class="code" aria-hidden="true">
+          <span class="code-emoji">
+            @for (e of code.emoji; track $index) {
+              <span>{{ e.symbol }}</span>
+            }
+          </span>
+          <span class="code-digits">{{ code.digits }}</span>
+        </span>
+      </button>
+      <ng-template #safetyCodeTpl>
+        <app-safety-code [code]="code" [unverified]="unverified()" />
+      </ng-template>
+    } @else {
+      <!-- Never optimistic: no lock until our keys are in place. Media doesn't flow unencrypted meanwhile. -->
+      <span class="e2ee" nz-tooltip nzTooltipTitle="Setting up end-to-end encryption">
+        <nz-icon nzType="sync" /> <span class="label">Securing…</span>
+      </span>
+    }
+
+    <span class="divider" aria-hidden="true"></span>
+
     <button
       type="button"
-      class="host-menu"
-      aria-label="Host controls"
-      nz-dropdown
-      nzTrigger="click"
-      nzPlacement="bottomRight"
-      [nzDropdownMenu]="hostMenu"
+      class="count"
+      nz-tooltip
+      nzTooltipTitle="People"
+      [attr.aria-label]="'Show people (' + participants() + ')'"
+      (click)="showParticipants.emit()"
     >
-      <nz-icon nzType="crown" />
+      <nz-icon nzType="team" /> {{ participants() }}
+      @if (waiting() > 0) {
+        <span class="waiting" [attr.aria-label]="waiting() + ' waiting to join'"
+          >+{{ waiting() }}</span
+        >
+      }
     </button>
-    <nz-dropdown-menu #hostMenu="nzDropdownMenu">
-      <ul nz-menu>
-        @if (isHost()) {
-          <li nz-menu-item class="auto-admit" (click)="setAutoAdmit.emit(!autoAdmit())">
-            <nz-icon [nzType]="autoAdmit() ? 'lock' : 'login'" />
-            {{ autoAdmit() ? 'Turn off auto-admit' : 'Auto-admit everyone' }}
+
+    @if (canAdmit()) {
+      <span class="divider" aria-hidden="true"></span>
+      <button
+        type="button"
+        class="host-menu"
+        aria-label="Host controls"
+        nz-dropdown
+        nzTrigger="click"
+        nzPlacement="bottomRight"
+        [nzDropdownMenu]="hostMenu"
+      >
+        <nz-icon nzType="crown" />
+      </button>
+      <nz-dropdown-menu #hostMenu="nzDropdownMenu">
+        <ul nz-menu>
+          @if (isHost()) {
+            <li nz-menu-item class="auto-admit" (click)="setAutoAdmit.emit(!autoAdmit())">
+              <nz-icon [nzType]="autoAdmit() ? 'lock' : 'login'" />
+              {{ autoAdmit() ? 'Turn off auto-admit' : 'Auto-admit everyone' }}
+            </li>
+          }
+          <li nz-menu-item nzDanger class="end-call" (click)="endCall.emit()">
+            <nz-icon nzType="poweroff" /> End call for everyone
           </li>
-        }
-        <li nz-menu-item nzDanger class="end-call" (click)="endCall.emit()">
-          <nz-icon nzType="poweroff" /> End call for everyone
-        </li>
-      </ul>
-    </nz-dropdown-menu>
-  }
-</div>
+        </ul>
+      </nz-dropdown-menu>
+    }
+  </div>
+}

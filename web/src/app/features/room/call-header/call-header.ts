@@ -47,6 +47,8 @@ export class CallHeader {
   /** Participants whose identity didn't verify (they get no keys). */
   readonly unverified = input(0);
   readonly participants = input.required<number>();
+  /** Not in a call (lobby, removed, ended, paused): no connection or encryption state to show. */
+  readonly inCall = input(true);
   /** Clipboard API unavailable (insecure context): show the link for manual copying. */
   readonly manualCopy = input(false);
   /** People knocking (shown to admitters). */

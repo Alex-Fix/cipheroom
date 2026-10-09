@@ -207,10 +207,19 @@ Contingency if Cloudflare's SFU ever stops fitting (cost, terms): bring back a s
 behind the same seams — `MediaService` in the browser and the `ISfu` port in the api — once the home has a public IP
 (IPv6 or a port-forwarded IPv4).
 
-### Usage guard (planned — stay free)
-- Track Realtime egress per month (client-reported byte counts as an estimate; Cloudflare's analytics as the
-  authority if they expose SFU usage) against `REALTIME_MONTHLY_SOFT_LIMIT_GB` (warn) and
-  `REALTIME_MONTHLY_HARD_LIMIT_GB` (refuse new calls).
-- Also set a Cloudflare billing notification as a second safety net.
+### Usage guard — stay free
+Design: [`plans/2026-10-09-usage-guard-design.md`](plans/2026-10-09-usage-guard-design.md). `UsageGuard` (api) keeps
+Cloudflare Realtime egress (SFU + TURN, 1 TB/month free) inside the free tier, enforced server-side:
+- **The figure:** Cloudflare's month-to-date egress while its last poll is fresh (≤ 45 min), plus the api's own
+  estimate since an hour before that poll; without fresh Cloudflare data, the estimate for the month. The estimate
+  is what browsers' call-quality reports say they received (capped per report, ×1.1 for TURN overhead), kept in
+  `/data/usage.json` (volume `api-data`; numbers and timestamps only) across restarts.
+- **Levels** (`REALTIME_*_PERCENT` in `deploy/.env`): saving at 80% (received cameras held at the half simulcast
+  layer, senders capped at 720p), audio-only at 95% (no new calls or guests, lobbies emptied, video forwarding
+  stopped), paused at 99% (every call ended). Within a month the level only rises; it resets on the 1st (UTC).
+- Everyone sees why (`UsageChanged`: level, percent, reset date — nothing at normal). `REALTIME_GUARD_ENABLED=false`
+  turns it off. Keep a Cloudflare billing notification as a second safety net.
+- Abuse: an admitted participant over-reporting can only bring a pause forward (capped per report; Cloudflare's
+  figure wins while fresh) — a denial of service, never a bill.
 
 Cloudflare's SFU and TURN see only end-to-end encrypted frames + metadata.

@@ -1,0 +1,11 @@
+@if (visible()) {
+  <div class="banner glass" role="status" [attr.data-level]="usage()?.level">
+    <nz-icon [nzType]="dismissible() ? 'info-circle' : 'exclamation-circle'" />
+    <span class="text">{{ text() }}</span>
+    @if (dismissible()) {
+      <button type="button" class="dismiss" aria-label="Dismiss" (click)="dismiss()">
+        <nz-icon nzType="close" />
+      </button>
+    }
+  </div>
+}

@@ -3,7 +3,7 @@ import { NzButtonModule } from 'ng-zorro-antd/button';
 import { NzIconModule } from 'ng-zorro-antd/icon';
 
 /** What the lobby screen shows: waiting to be let in, or why we're out of the call. */
-export type LobbyScreenState = 'waiting' | 'denied' | 'removed' | 'ended';
+export type LobbyScreenState = 'waiting' | 'denied' | 'removed' | 'ended' | 'paused';
 
 interface Copy {
   icon: string;
@@ -28,6 +28,8 @@ export class LobbyScreen {
   readonly hostHere = input(false);
   /** Asking again is allowed (the server makes us wait a little after being turned away). */
   readonly canAskAgain = input(true);
+  /** Paused (usage guard): the day calls are possible again, e.g. "1 November". */
+  readonly resetDate = input('');
 
   readonly cancel = output();
   readonly home = output();
@@ -61,6 +63,12 @@ export class LobbyScreen {
         };
       case 'ended':
         return { icon: 'poweroff', title: 'The host ended the call', text: 'Everyone has left.' };
+      case 'paused':
+        return {
+          icon: 'pause-circle',
+          title: `Calls are paused until ${this.resetDate()}`,
+          text: 'This month’s free traffic is used up. You can start calls again once the month resets.',
+        };
     }
   });
 }

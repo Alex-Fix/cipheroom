@@ -119,6 +119,23 @@ public sealed class UsageEnforcementTests
     }
 
     [Fact]
+    public async Task Reaching_audio_only_sends_the_lobby_away_and_admitting_is_refused()
+    {
+        var (alice, _) = Call();
+        var guest = _rooms.Enter(alice.RoomId, "conn-guest", room => room.EnterLobby("conn-guest", TestIdentity.Distinct("guest"), VideoCodecs.Baseline, DateTimeOffset.UnixEpoch));
+
+        var result = await Apply(UsageLevel.AudioOnly);
+        Assert.Equal(["conn-guest"], result.Ended.Select(e => e.ConnectionId));
+        Assert.Equal(2, _rooms.Stats().Participants);
+
+        _usage.Level = UsageLevel.AudioOnly;
+        var error = await Assert.ThrowsAsync<DomainException>(async () =>
+            await new Cipheroom.Application.Admission.Commands.Admit.AdmitCommandHandler(_rooms, new FakeSignatureVerifier(), TestMetrics.Create(_rooms).Metrics, _usage)
+                .Handle(new Cipheroom.Application.Admission.Commands.Admit.AdmitCommand("conn-a", guest.Id.Value, TestIdentity.Sig), _ct));
+        Assert.Equal("Calls are paused.", error.Message);
+    }
+
+    [Fact]
     public async Task Pausing_ends_every_call_and_lobby()
     {
         var (alice, _) = Call();

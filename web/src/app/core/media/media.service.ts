@@ -122,6 +122,22 @@ export class MediaService implements OnDestroy {
   readonly videoQuality = signal<VideoQuality>(loadVideoQuality());
   /** Qualities the current camera can actually capture (4K / 1080p only when supported). */
   readonly availableQualities = signal<VideoQuality[]>(supportedQualities(undefined));
+  /** The usage guard's level (server-wide; see docs/plans/2026-10-09-usage-guard-design.md). */
+  readonly usageLevel = computed(() => this.signaling.usage()?.level ?? 'normal');
+  /** Saving bandwidth: we send at most 720p (the api already holds what we receive at the half layer). */
+  readonly qualityCapped = computed(() => this.usageLevel() === 'saving');
+  /** Audio-only or paused: no camera, no screen share, no video received. */
+  readonly videoAllowed = computed(
+    () => this.usageLevel() === 'normal' || this.usageLevel() === 'saving',
+  );
+  /** What we actually capture: the chosen quality, or 720p while saving. */
+  readonly effectiveQuality = computed<VideoQuality>(() =>
+    this.qualityCapped() ? CAPPED_QUALITY : this.videoQuality(),
+  );
+  /** What the quality picker offers right now. */
+  readonly offeredQualities = computed<VideoQuality[]>(() =>
+    this.qualityCapped() ? [CAPPED_QUALITY] : this.availableQualities(),
+  );
   /** Video codec the user chose; remembered in this browser. */
   readonly videoCodec = signal<VideoCodec>(loadVideoCodec());
   /** Codecs this browser can send (the picker offers only these). */
@@ -202,10 +218,30 @@ export class MediaService implements OnDestroy {
   });
 
   constructor() {
-    // Follow the room: pull newly published tracks, drop ones that went away.
+    // Follow the room: pull newly published tracks, drop ones that went away (and, audio-only, all video).
     effect(() => {
       const participants = this.signaling.participants();
-      if (this.self() && this.receiving()) untracked(() => this.syncSubscriptions(participants));
+      const videoAllowed = this.videoAllowed();
+      if (this.self() && this.receiving()) {
+        untracked(() =>
+          this.syncSubscriptions(videoAllowed ? participants : audioOnly(participants)),
+        );
+      }
+    });
+
+    // Saving bandwidth started or ended: a live camera is re-captured at the new cap.
+    let capped = this.qualityCapped();
+    effect(() => {
+      const now = this.qualityCapped();
+      if (now === capped) return;
+      capped = now;
+      untracked(() => {
+        if (!this.cameraEnabled()) return;
+        const deviceId = this.activeCameraId();
+        void this.switchCamera(deviceId ? { deviceId: { exact: deviceId } } : {}).catch(
+          () => undefined,
+        );
+      });
     });
   }
 
@@ -534,7 +570,8 @@ export class MediaService implements OnDestroy {
     const delay = Math.min(PULL_RETRY_BASE_MS * 2 ** this.pullFailures++, PULL_RETRY_MAX_MS);
     this.resyncTimer = setTimeout(() => {
       this.resyncTimer = undefined;
-      this.syncSubscriptions(this.signaling.participants());
+      const participants = this.signaling.participants();
+      this.syncSubscriptions(this.videoAllowed() ? participants : audioOnly(participants));
     }, delay);
   }
 
@@ -690,7 +727,7 @@ export class MediaService implements OnDestroy {
   }
 
   private cameraConstraints(extra: MediaTrackConstraints = {}): MediaTrackConstraints {
-    return { ...captureConstraints(this.videoQuality()), ...extra };
+    return { ...captureConstraints(this.effectiveQuality()), ...extra };
   }
 
   private updateCameraInfo(): void {
@@ -790,6 +827,17 @@ function mediaState(state: RTCPeerConnectionState): MediaState {
       // 'new': nothing negotiated yet (e.g. no devices on and nobody publishing) — we're still in the call.
       return 'connected';
   }
+}
+
+/** The quality we send at most while the usage guard is saving bandwidth. */
+const CAPPED_QUALITY: VideoQuality = '720p';
+
+/** The room as far as receiving goes when only audio may flow (usage guard). */
+function audioOnly(participants: readonly ParticipantDto[]): ParticipantDto[] {
+  return participants.map((p) => ({
+    ...p,
+    tracks: p.tracks.filter((t) => t.source === 'microphone'),
+  }));
 }
 
 /** Shown until someone's first key envelope (which carries their name) arrives. */
