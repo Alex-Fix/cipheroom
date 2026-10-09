@@ -87,7 +87,7 @@ public sealed class ReportCallStatsCommandValidator : AbstractValidator<ReportCa
             && CallStatsRules.InRange(e.SecuringSeconds, CallStatsRules.MaxSecuringSeconds));
 }
 
-public sealed class ReportCallStatsCommandHandler(IRoomStore rooms, CipheroomMetrics metrics) : ICommandHandler<ReportCallStatsCommand>
+public sealed class ReportCallStatsCommandHandler(IRoomStore rooms, CipheroomMetrics metrics, IUsageLedger usage) : ICommandHandler<ReportCallStatsCommand>
 {
     public ValueTask<Unit> Handle(ReportCallStatsCommand command, CancellationToken cancellationToken)
     {
@@ -98,6 +98,8 @@ public sealed class ReportCallStatsCommandHandler(IRoomStore rooms, CipheroomMet
         var platform = CallStatsRules.Platforms.Contains(stats.Platform!) ? stats.Platform! : CallStatsRules.OtherPlatform;
         var path = CallStatsRules.Paths.Contains(stats.Path!) ? stats.Path! : CallStatsRules.UnknownPath;
         metrics.CallReport(stats, platform, path);
+        // What Cloudflare sent this browser: the usage guard's estimate of billed egress.
+        usage.RecordReceived((stats.AudioReceived?.Bytes ?? 0) + (stats.VideoReceived?.Bytes ?? 0), stats.IntervalSeconds);
         return ValueTask.FromResult(Unit.Value);
     }
 }

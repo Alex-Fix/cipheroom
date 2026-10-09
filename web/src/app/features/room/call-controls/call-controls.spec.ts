@@ -16,6 +16,7 @@ interface State {
   codecs?: string[];
   codec?: string;
   sendingCodec?: string;
+  videoBlockedReason?: string;
 }
 
 function render(state: State) {
@@ -48,6 +49,17 @@ async function openMore(
 const allOn: State = { micEnabled: true, cameraEnabled: true, screenShareEnabled: false };
 
 describe('CallControls', () => {
+  it('disables camera and screen share while video is paused, keeping the microphone', () => {
+    const { button } = render({
+      ...allOn,
+      canShareScreen: true,
+      videoBlockedReason: 'Video is paused until 1 November.',
+    });
+    expect(button('camera')!.disabled).toBe(true);
+    expect(button('screen')!.disabled).toBe(true);
+    expect(button('mic')!.disabled).toBe(false);
+  });
+
   it('shows devices as on with their action labels', () => {
     const { button } = render(allOn);
     expect(button('mic')!.classList).not.toContain('off');

@@ -2,6 +2,7 @@ using Cipheroom.Application.Common.Exceptions;
 using Cipheroom.Application.Common.Interfaces;
 using Cipheroom.Application.Common.Telemetry;
 using Cipheroom.Application.Media;
+using Cipheroom.Application.Usage;
 using Cipheroom.Domain.Common;
 using Cipheroom.Domain.Rooms;
 using FluentValidation;
@@ -30,10 +31,15 @@ public sealed class AdmitCommandValidator : AbstractValidator<AdmitCommand>
     }
 }
 
-public sealed class AdmitCommandHandler(IRoomStore rooms, ISignatureVerifier verifier, CipheroomMetrics metrics) : ICommandHandler<AdmitCommand, AdmitResult>
+public sealed class AdmitCommandHandler(IRoomStore rooms, ISignatureVerifier verifier, CipheroomMetrics metrics, IUsageGuard usage)
+    : ICommandHandler<AdmitCommand, AdmitResult>
 {
     public ValueTask<AdmitResult> Handle(AdmitCommand command, CancellationToken cancellationToken)
     {
+        // Usage guard: no new people once it's audio-only.
+        if (usage.Current.Level >= UsageLevel.AudioOnly)
+            throw new DomainException(UsageRules.CallsPaused);
+
         var guestId = new ParticipantId(command.GuestId!);
 
         var result = rooms.InRoom(command.ConnectionId, (room, self) =>

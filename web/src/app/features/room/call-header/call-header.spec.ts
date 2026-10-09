@@ -31,6 +31,12 @@ function render(status: CallStatus, extra: Record<string, unknown> = {}) {
 }
 
 describe('CallHeader', () => {
+  it('shows no connection or encryption state outside a call', () => {
+    const { el } = render('connecting', { inCall: false });
+    expect(el.querySelector('.status')).toBeNull();
+    expect(el.textContent).toContain('abc-123');
+  });
+
   it('shows room id, state and participant count', () => {
     const { el } = render('connected');
     expect(el.querySelector('.room-id')?.textContent).toBe('abc-123');

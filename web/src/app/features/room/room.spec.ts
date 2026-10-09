@@ -15,6 +15,7 @@ import { SafetyCode } from '../../core/crypto/safety-code';
 import { MediaService } from '../../core/media/media.service';
 import { CallParticipant, MediaState } from '../../core/media/media.types';
 import { SignalingService } from '../../core/signaling/signaling.service';
+import { UsageDto } from '../../core/signaling/signaling.types';
 import { APP_ICONS } from '../../core/ui/icons';
 import { DISPLAY_NAME_KEY } from '../../core/settings/display-name';
 import { Room } from './room';
@@ -35,6 +36,9 @@ function fakeMedia() {
     canFlip: signal(false),
     availableQualities: signal(['auto', '720p']),
     videoQuality: signal('auto'),
+    offeredQualities: signal(['auto', '720p']),
+    effectiveQuality: signal('auto'),
+    videoAllowed: signal(true),
     setVideoQuality: vi.fn().mockResolvedValue(undefined),
     availableCodecs: ['vp9', 'vp8'],
     decodableCodecs: ['vp8', 'vp9'],
@@ -116,6 +120,7 @@ function fakeSignaling() {
   return {
     connected: signal(true),
     authority: signal<{ admitters: unknown[] } | undefined>(undefined),
+    usage: signal<UsageDto | undefined>(undefined),
     getRtcConfig: vi.fn().mockResolvedValue({ iceServers: [], forceRelay: false }),
     leave: vi.fn().mockResolvedValue(undefined),
   };
@@ -466,6 +471,86 @@ describe('Room', () => {
       await (modal.confirm.mock.calls[0][0]!.nzOnOk as () => Promise<void>)();
 
       expect(message.error).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('usage guard', () => {
+    const at = (level: UsageDto['level']): UsageDto => ({
+      level,
+      percent: 96,
+      resetsAt: '2026-11-01T00:00:00Z',
+    });
+
+    it('shows the paused screen when the server refuses the call', async () => {
+      const { el, fixture, media } = await setup({
+        tweak: (_, sig) => sig.usage.set(at('audio-only')),
+        lobby: (l) =>
+          l.enter.mockRejectedValue(
+            new Error(
+              "An unexpected error occurred invoking 'JoinLobby' on the server. HubException: Calls are paused.",
+            ),
+          ),
+      });
+      fixture.detectChanges();
+
+      expect(el.querySelector('app-lobby-screen')?.textContent).toContain(
+        'Calls are paused until 1 November',
+      );
+      expect(el.querySelector('.join-error')).toBeNull();
+      expect(media.connect).not.toHaveBeenCalled();
+    });
+
+    it('audio-only turns the camera and screen share off and disables them', async () => {
+      const { el, fixture, media, signaling } = await setup();
+      media.cameraEnabled.set(true);
+      media.screenShareEnabled.set(true);
+      media.setCamera.mockClear();
+
+      signaling.usage.set(at('audio-only'));
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(media.setCamera).toHaveBeenCalledWith(false);
+      expect(media.setScreenShare).toHaveBeenCalledWith(false);
+      expect(el.querySelector<HTMLButtonElement>('app-call-controls .camera')!.disabled).toBe(true);
+      expect(el.querySelector('app-usage-banner')?.textContent).toContain(
+        'audio-only until 1 November',
+      );
+    });
+
+    it('paused ends the call for good', async () => {
+      const { el, fixture, media, signaling, lobby } = await setup();
+
+      signaling.usage.set(at('paused'));
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(media.disconnect).toHaveBeenCalled();
+      expect(signaling.leave).toHaveBeenCalled();
+      expect(el.querySelector('app-lobby-screen')?.textContent).toContain(
+        'Calls are paused until 1 November',
+      );
+      expect(lobby.enter).toHaveBeenCalledOnce();
+    });
+
+    it('someone waiting in the lobby learns they won’t get in', async () => {
+      const { el, fixture, lobby, signaling } = await setup({
+        lobby: (l) =>
+          l.enter.mockImplementation(() => {
+            l.state.set('waiting');
+            return new Promise(() => undefined);
+          }),
+      });
+
+      signaling.usage.set(at('audio-only'));
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(lobby.cancel).toHaveBeenCalled();
+      expect(el.querySelector('app-lobby-screen')?.textContent).toContain('Calls are paused');
     });
   });
 

@@ -58,6 +58,7 @@ Metrics, as Prometheus names them:
 | `cipheroom_call_*` — bytes, packets, packets lost, jitter, RTT, freeze time, video height and fps | browser reports |
 | `cipheroom_e2ee_*` — frames by result, envelopes dropped, time spent "Securing…" | browser reports |
 | `cipheroom_realtime_egress_bytes{service}`, `…_free_tier_bytes`, `…_polled_seconds`, `…_polls_total` | Cloudflare analytics |
+| `cipheroom_usage_guard_level` (0 normal … 3 paused), `cipheroom_usage_estimate_bytes` | api (usage guard) |
 | `node_*`, `container_*`, `otelcol_*`, `dotnet_*`, `http_*` | exporters, collector, runtime |
 
 Browser reports (`ReportCallStats`, protocol: [`signaling-protocol.md`](signaling-protocol.md)) carry numbers only and a
@@ -69,7 +70,7 @@ coarse platform bucket — computed per stream from `getStats()` deltas in `web/
 
 Provisioned, read-only, in the Grafana folder **Cipheroom**: **Overview** (api health, signaling, SFU, logs, failed
 traces), **Call quality** (bitrate, loss, jitter, RTT, freezes, resolution, E2EE health; filter by platform and path),
-**Free tier** (month-to-date egress vs 1 TB, projection, poll freshness, browser-report estimate), **Host &
+**Free tier** (month-to-date egress vs 1 TB, projection, poll freshness, the usage guard's level and estimate, browser-report estimate), **Host &
 containers** (machine, every container, the telemetry pipeline itself).
 
 They're generated — edit the script, regenerate, commit both (`scripts/lint.sh` checks they match):

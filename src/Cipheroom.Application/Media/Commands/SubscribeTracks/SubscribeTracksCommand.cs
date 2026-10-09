@@ -1,5 +1,6 @@
 using Cipheroom.Application.Common.Exceptions;
 using Cipheroom.Application.Common.Interfaces;
+using Cipheroom.Application.Usage;
 using Cipheroom.Domain.Rooms;
 using FluentValidation;
 using Mediator;
@@ -36,12 +37,18 @@ public sealed class SubscribeTracksCommandValidator : AbstractValidator<Subscrib
     }
 }
 
-public sealed class SubscribeTracksCommandHandler(IRoomStore rooms, ISfu sfu) : ICommandHandler<SubscribeTracksCommand, SubscribeTracksResult>
+public sealed class SubscribeTracksCommandHandler(IRoomStore rooms, ISfu sfu, IUsageGuard usage) : ICommandHandler<SubscribeTracksCommand, SubscribeTracksResult>
 {
     public async ValueTask<SubscribeTracksResult> Handle(SubscribeTracksCommand command, CancellationToken cancellationToken)
     {
+        var level = usage.Current.Level;
         (ParticipantId, TrackSource)[] wanted =
             [.. command.Tracks!.Select(t => (new ParticipantId(t.ParticipantId!), MediaRules.Source(t.Source)))];
+        // Usage guard: audio only. Video is dropped silently, so a client racing the change gets audio, not an error.
+        if (level >= UsageLevel.AudioOnly)
+            wanted = [.. wanted.Where(w => w.Item2 == TrackSource.Microphone)];
+        if (wanted.Length == 0)
+            return SubscribeTracksResult.Nothing;
 
         // Resolve first: a track outside the caller's room fails before any media server call.
         var remote = rooms.InRoom(command.ConnectionId, (room, self) => room.ResolveForSubscribe(self.Id, wanted))
@@ -69,6 +76,16 @@ public sealed class SubscribeTracksCommandHandler(IRoomStore rooms, ISfu sfu) : 
             room.Subscribe(p.Id, [.. subscribed.Select(s => new Subscription(s.Mid, s.PublisherId, s.Source))]);
             return subscribed;
         });
+
+        // Usage guard: the SFU starts at the full layer; while saving, hold cameras at half from the start.
+        if (level == UsageLevel.Saving)
+        {
+            foreach (var (s, r) in subscribed.Join(remote, s => (s.PublisherId, s.Source), r => (r.PublisherId, r.Track.Source), (s, r) => (s, r)))
+            {
+                if (s.Source == TrackSource.Camera)
+                    await UsageLayers.HoldAtHalfAsync(sfu, self.SfuSessionId!, s.Mid, r, cancellationToken);
+            }
+        }
 
         return new SubscribeTracksResult(pulled.OfferSdp, subscribed);
     }

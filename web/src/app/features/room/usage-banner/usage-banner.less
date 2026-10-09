@@ -1,0 +1,46 @@
+// Centered under the header, as wide as its text needs.
+:host {
+  display: flex;
+  justify-content: center;
+}
+
+.banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  align-self: center;
+  max-width: min(720px, 100%);
+  padding: 8px 10px 8px 16px;
+  border-radius: 999px;
+  color: var(--label);
+  font-size: 13px;
+
+  &[data-level='audio-only'] nz-icon {
+    color: var(--orange);
+  }
+}
+
+.text {
+  flex: 1;
+}
+
+.dismiss {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--label-secondary);
+  cursor: pointer;
+
+  &:hover {
+    background: var(--fill);
+  }
+
+  @media (pointer: coarse) {
+    width: 44px;
+    height: 44px;
+  }
+}

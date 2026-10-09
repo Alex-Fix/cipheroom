@@ -34,9 +34,14 @@ No media server runs at home and no UDP ports are published.
 ## Free tier and usage guard
 SFU and TURN share **1,000 GB/month** of free egress (traffic from Cloudflare to clients); 4K video is ~3.6 GB per
 viewer-hour. With `CF_ACCOUNT_ID` + `CF_ANALYTICS_API_TOKEN` (Account Analytics: Read) the api polls month-to-date
-usage from Cloudflare (`RealtimeUsagePoller`) and the Grafana **Free tier** dashboard shows it. The guard that refuses
-calls near `REALTIME_MONTHLY_HARD_LIMIT_GB` isn't built yet — keep a Cloudflare billing notification on. Don't add paid services or rented VMs without
-approval.
+usage from Cloudflare (`RealtimeUsagePoller`) and the Grafana **Free tier** dashboard shows it. The **usage guard**
+(`UsageGuard`, design `docs/plans/2026-10-09-usage-guard-design.md`) enforces the free tier: `REALTIME_SAVING_PERCENT`
+(80, video capped), `REALTIME_AUDIO_ONLY_PERCENT` (95, no new calls, audio only), `REALTIME_PAUSED_PERCENT` (99, calls
+end) of `REALTIME_FREE_TIER_GB` (1000); `REALTIME_GUARD_ENABLED=false` turns it off. Its estimate lives in the
+`api-data` volume (`/data/usage.json`) — don't delete that volume mid-month without a Cloudflare analytics token.
+To try it out, pin a level with `{"UsageGuard": {"ForceLevel": "Saving"}}` (or `AudioOnly`, `Paused`) in
+`artifacts/dev-settings.json` while `scripts/dev.sh` runs — Development only, applied live; `{}` puts it back.
+Keep a Cloudflare billing notification on as a second net. Don't add paid services or rented VMs without approval.
 
 ## Commands
 - `scripts/secrets.sh` — create `deploy/.env` from example, list required values that are still empty

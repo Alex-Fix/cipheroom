@@ -32,6 +32,13 @@
     transform: scale(0.94);
   }
 
+  // Usage guard: video isn't allowed right now.
+  &:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+    transform: none;
+  }
+
   // Apple convention: a toggled-off device is a white button with a dark glyph.
   &.off {
     background: #fff;

@@ -36,11 +36,18 @@ internal sealed class FakeRoomStore : IRoomStore
             throw new DomainException("Already in a room.");
         if (!_rooms.TryGetValue(roomId, out var room))
             _rooms[roomId] = room = new Room(roomId);
-        var result = action(room);
-        if (room.HasConnection(connectionId))
-            _byConnection[connectionId] = roomId;
-        Reconcile();
-        return result;
+        try
+        {
+            var result = action(room);
+            if (room.HasConnection(connectionId))
+                _byConnection[connectionId] = roomId;
+            return result;
+        }
+        finally
+        {
+            // Like the real store: a failed entry leaves no empty room behind.
+            Reconcile();
+        }
     }
 
     public Participant? FindByConnection(string connectionId) =>
@@ -54,6 +61,18 @@ internal sealed class FakeRoomStore : IRoomStore
         where T : class =>
         InAnyRoom(connectionId, room =>
             action(room, room.Participants.FirstOrDefault(p => p.ConnectionId == connectionId) ?? throw new DomainException(Room.NotAdmitted)));
+
+    public IReadOnlyList<T> AcrossRooms<T>(Func<Room, IEnumerable<T>> action)
+    {
+        try
+        {
+            return [.. _rooms.Values.ToArray().SelectMany(action)];
+        }
+        finally
+        {
+            Reconcile();
+        }
+    }
 
     public T? InAnyRoom<T>(string connectionId, Func<Room, T> action)
         where T : class

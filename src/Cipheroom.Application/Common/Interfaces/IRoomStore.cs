@@ -33,6 +33,12 @@ public interface IRoomStore
     T? InRoom<T>(string connectionId, Func<Room, Participant, T> action)
         where T : class;
 
+    /// <summary>
+    /// Runs <paramref name="action"/> on every room, one at a time (each atomically), and returns everything it yielded.
+    /// For server-wide changes (the usage guard).
+    /// </summary>
+    IReadOnlyList<T> AcrossRooms<T>(Func<Room, IEnumerable<T>> action);
+
     /// <summary>Runs <paramref name="action"/> on the room the connection is in (member or lobby guest); null if none.</summary>
     T? InAnyRoom<T>(string connectionId, Func<Room, T> action)
         where T : class;

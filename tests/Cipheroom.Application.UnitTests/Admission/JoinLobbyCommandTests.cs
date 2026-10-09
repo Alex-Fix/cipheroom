@@ -14,6 +14,7 @@ public sealed class JoinLobbyCommandTests
     private readonly JoinLobbyCommandValidator _validator = new();
     private readonly FakeRoomStore _rooms = new();
     private readonly FakeSignatureVerifier _verifier = new();
+    private readonly FakeUsageGuard _usage = new();
     private readonly CancellationToken _ct = TestContext.Current.CancellationToken;
 
     [Fact]
@@ -131,7 +132,7 @@ public sealed class JoinLobbyCommandTests
     }
 
     private async Task<JoinLobbyResult> Handle(JoinLobbyCommand command) =>
-        await new JoinLobbyCommandHandler(_rooms, _verifier, new FakeTimeProvider(), TestMetrics.Create(_rooms).Metrics).Handle(command, _ct);
+        await new JoinLobbyCommandHandler(_rooms, _verifier, new FakeTimeProvider(), TestMetrics.Create(_rooms).Metrics, _usage).Handle(command, _ct);
 
     private string[] Messages(JoinLobbyCommand command) => [.. _validator.Validate(command).Errors.Select(e => e.ErrorMessage)];
 }

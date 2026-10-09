@@ -45,6 +45,14 @@ describe('LobbyScreen', () => {
     expect(el.querySelector('.home')).not.toBeNull();
   });
 
+  it('says until when calls are paused', () => {
+    fixture.componentRef.setInput('resetDate', '1 November');
+    const el = render('paused');
+    expect(el.textContent).toContain('Calls are paused until 1 November');
+    expect(el.querySelector('.home')).not.toBeNull();
+    expect(el.querySelector('.ask-again')).toBeNull();
+  });
+
   it('emits the chosen action', () => {
     const cancel = vi.fn();
     fixture.componentInstance.cancel.subscribe(cancel);

@@ -15,8 +15,11 @@
   type="button"
   class="control camera"
   [class.off]="!cameraEnabled()"
+  [disabled]="!!videoBlockedReason()"
   nz-tooltip
-  [nzTooltipTitle]="cameraEnabled() ? 'Turn camera off' : 'Turn camera on'"
+  [nzTooltipTitle]="
+    videoBlockedReason() ?? (cameraEnabled() ? 'Turn camera off' : 'Turn camera on')
+  "
   [attr.aria-label]="cameraEnabled() ? 'Turn camera off' : 'Turn camera on'"
   [attr.aria-pressed]="!cameraEnabled()"
   (click)="toggleCamera.emit()"
@@ -42,8 +45,11 @@
     type="button"
     class="control screen"
     [class.active]="screenShareEnabled()"
+    [disabled]="!!videoBlockedReason()"
     nz-tooltip
-    [nzTooltipTitle]="screenShareEnabled() ? 'Stop sharing' : 'Share screen'"
+    [nzTooltipTitle]="
+      videoBlockedReason() ?? (screenShareEnabled() ? 'Stop sharing' : 'Share screen')
+    "
     [attr.aria-label]="screenShareEnabled() ? 'Stop sharing' : 'Share screen'"
     [attr.aria-pressed]="screenShareEnabled()"
     (click)="toggleScreenShare.emit()"

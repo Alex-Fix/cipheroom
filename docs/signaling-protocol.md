@@ -48,6 +48,7 @@ Payloads never contain plaintext keys: only public keys and opaque signed envelo
 | S→C | `Removed` | — | to the removed participant |
 | S→C | `MuteRequested` | `fromId`, `seq`, `sig` | to the participant asked |
 | S→C | `CallEnded` | `issuer`, `sig` | to the room and the lobby |
+| S→C | `UsageChanged` | `UsageDto { level, percent, resetsAt }` | to each connection as it connects, and to everyone when the level changes — see "Usage guard" |
 
 Values: `source` ∈ `microphone` / `camera` / `screen`; `kind` ∈ `audio` / `video` (follows from the source); SDP ≤ 32 KB
 and starts with `v=0`; `mid` matches `^[A-Za-z0-9_-]{1,16}$`. Media events go to the **other** participants in the room;
@@ -123,6 +124,23 @@ Designs: `docs/plans/2026-10-08-video-compression-design.md`, `docs/plans/2026-1
   can't play — never read anything (frames are end-to-end encrypted whatever the codec).
 - `null` or a malformed list gets `Invalid video codecs.`
 
+### Usage guard
+
+Design: `docs/plans/2026-10-09-usage-guard-design.md`. The api keeps this month's Cloudflare Realtime traffic inside
+the free tier and enforces it server-side (clients are untrusted).
+
+- `UsageDto { level: 'normal' | 'saving' | 'audio-only' | 'paused', percent: number | null, resetsAt: string }`:
+  `percent` of the free tier (rounded down), null at `normal`; `resetsAt` ISO-8601 UTC (the 1st of next month).
+  Server-wide: every connection gets it on connect (before joining anything) and on every change.
+- **saving** (default 80%): a camera subscription is held at the half layer from the start, and `SelectVideoLayer`
+  with `f` is served as `h`. Browsers send at most 720p.
+- **audio-only** (95%): `JoinLobby` → `Calls are paused.` unless it's a reconnect into a running call (a valid
+  ticket, or a host proof into a room with people in it); `Admit` → `Calls are paused.`; everyone waiting in a lobby
+  is sent away; `SubscribeTracks` silently drops camera and screen tracks; all video forwarding is closed at the SFU.
+- **paused** (99%): every room and lobby is emptied (forwarding closed), `JoinLobby` → `Calls are paused.`.
+- The level only rises within a month and returns to `normal` at the reset (UTC).
+- Browser call-quality reports feed the api's own usage estimate (received bytes, capped per report).
+
 ### Call-quality reports
 
 Design: `docs/plans/2026-10-07-observability-design.md`. Every 15 s each browser in a call sends what changed since
@@ -165,6 +183,7 @@ echo input. Mapped centrally by `HubExceptionFilter`; pinned by `Cipheroom.Api.F
 | `Already asked, try again later.` | `JoinLobby` within 30 s of being denied, on the same connection |
 | `Invalid key envelope.` | `SendKeyEnvelopes` with no / over 64 envelopes, a malformed or over-long blob, a duplicate `toId`, or a `toId` that isn't another participant of the caller's room |
 | `Already in a room.` | `JoinLobby` on a connection that is already in a room or lobby |
+| `Calls are paused.` | Usage guard: `JoinLobby` at audio-only (except reconnects into a running call) or paused; `Admit` at audio-only or paused |
 | `Join a room first.` | `GetRtcConfig`, any media method, `SendKeyEnvelopes` or `ReportCallStats` before joining |
 | `Invalid stats.` | `ReportCallStats` with a missing report, a bad platform/path string, an interval outside 0–120 s, or a number that's negative, not finite or over its cap |
 | `Invalid session description.` | SDP missing, over 32 KB or not starting with `v=0` |
@@ -183,6 +202,5 @@ echo input. Mapped centrally by `HubExceptionFilter`; pinned by `Cipheroom.Api.F
 |---|---|---|---|
 | C→S | `SendChat` | `ciphertext, keyIndex` | broadcast to room |
 | S→C | `ChatReceived` | `fromId, ciphertext, keyIndex` | |
-| S→C | `QuotaWarning` | `usedGb, limitGb` | admins |
 
 _Draft — update as the hub is implemented._

@@ -178,7 +178,8 @@ public sealed class CloudflareSfuTests
             .AddLogging()
             .AddMetrics()
             .AddApplication()
-            .AddInfrastructure();
+            .AddInfrastructure()
+            .AddSingleton<Microsoft.Extensions.Hosting.IHostEnvironment>(new Usage.UsageGuardTests.TestEnvironment("Production"));
         services.AddHttpClient<CloudflareSfuClient>().ConfigurePrimaryHttpMessageHandler(() => handler);
         var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
 

@@ -26,6 +26,7 @@ import {
   PlusOutline,
   LoginOutline,
   HourglassOutline,
+  PauseCircleOutline,
 } from '@ant-design/icons-angular/icons';
 import { IconDefinition } from '@ant-design/icons-angular';
 
@@ -62,4 +63,5 @@ export const APP_ICONS: IconDefinition[] = [
   PlusOutline,
   LoginOutline,
   HourglassOutline,
+  PauseCircleOutline,
 ];

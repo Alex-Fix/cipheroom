@@ -44,6 +44,8 @@ export class CallControls {
   readonly codecs = input<readonly VideoCodec[]>([]);
   readonly codec = input<VideoCodec>('vp9');
   readonly sendingCodec = input<VideoCodec | undefined>(undefined);
+  /** Set while the usage guard allows no video: camera and screen share are disabled with this explanation. */
+  readonly videoBlockedReason = input<string | undefined>(undefined);
 
   readonly toggleMic = output();
   readonly toggleCamera = output();

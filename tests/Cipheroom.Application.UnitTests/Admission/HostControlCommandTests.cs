@@ -24,6 +24,7 @@ public sealed class HostControlCommandTests
 
     private readonly FakeRoomStore _rooms = new();
     private readonly FakeSignatureVerifier _verifier = new();
+    private readonly FakeUsageGuard _usage = new();
     private readonly ISfu _sfu = Substitute.For<ISfu>();
     private readonly FakeTimeProvider _time = new();
     private readonly CancellationToken _ct = TestContext.Current.CancellationToken;
@@ -41,7 +42,7 @@ public sealed class HostControlCommandTests
     {
         var guest = Waiting("guest");
 
-        var result = await new AdmitCommandHandler(_rooms, _verifier, Metrics()).Handle(new("host", guest.Id.Value, Sig), _ct);
+        var result = await new AdmitCommandHandler(_rooms, _verifier, Metrics(), _usage).Handle(new("host", guest.Id.Value, Sig), _ct);
 
         Assert.Equal(guest.Id, result.Admitted.Id);
         Assert.Equal([_host], result.Others);
@@ -57,7 +58,7 @@ public sealed class HostControlCommandTests
         _verifier.Valid = false;
 
         var error = await Assert.ThrowsAsync<DomainException>(async () =>
-            await new AdmitCommandHandler(_rooms, _verifier, Metrics()).Handle(new("host", guest.Id.Value, Sig), _ct));
+            await new AdmitCommandHandler(_rooms, _verifier, Metrics(), _usage).Handle(new("host", guest.Id.Value, Sig), _ct));
 
         Assert.Equal("Invalid signature.", error.Message);
         Assert.Equal([guest], _rooms.RoomOf("host").Lobby);
@@ -70,7 +71,7 @@ public sealed class HostControlCommandTests
         var other = Waiting("other");
 
         var error = await Assert.ThrowsAsync<DomainException>(async () =>
-            await new AdmitCommandHandler(_rooms, _verifier, Metrics()).Handle(new("guest", other.Id.Value, Sig), _ct));
+            await new AdmitCommandHandler(_rooms, _verifier, Metrics(), _usage).Handle(new("guest", other.Id.Value, Sig), _ct));
         Assert.Equal("Not admitted.", error.Message);
         Assert.NotNull(guest);
     }

@@ -241,6 +241,22 @@ b.add([
            description="Resets with the month."),
     series("Usage polls", [("sum by (outcome) (increase(cipheroom_realtime_polls_total[1h]))", "{{outcome}}")], 6, "short"),
 ], 8)
+b.row("Usage guard")
+GUARD_LEVELS = [{"type": "value", "options": {
+    "0": {"text": "Normal", "color": "green"},
+    "1": {"text": "Saving (video capped)", "color": "orange"},
+    "2": {"text": "Audio only", "color": "red"},
+    "3": {"text": "Paused", "color": "dark-red"},
+}}]
+b.add([
+    stat("Guard level", "max(cipheroom_usage_guard_level)", 6, mappings=GUARD_LEVELS,
+         description="What the api enforces: saving at 80%, audio-only at 95%, paused at 99% of the free tier (configurable). "
+                     "Only rises within a month; resets on the 1st (UTC)."),
+    stat("Estimate this month", "max(cipheroom_usage_estimate_bytes)", 6, "decbytes", decimals=2,
+         description="The api's own count from browser reports (×1.1 for TURN overhead), kept across restarts. "
+                     "Used with Cloudflare's figure, or alone when Cloudflare's is missing or stale."),
+    series("Guard level over time", [("max(cipheroom_usage_guard_level)", "level")], 12, "short"),
+], 6)
 b.row("Without a Cloudflare analytics token")
 b.add([
     stat("Estimate from browser reports (last 7 days)", 'sum(increase(cipheroom_call_bytes_total{direction="received"}[7d]))', 8, "decbytes", decimals=2,

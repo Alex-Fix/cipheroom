@@ -20,6 +20,7 @@ public sealed class MediaCommandTests
 
     private readonly FakeRoomStore _rooms = new();
     private readonly ISfu _sfu = Substitute.For<ISfu>();
+    private readonly FakeUsageGuard _usage = new();
     private readonly CancellationToken _ct = TestContext.Current.CancellationToken;
 
     [Fact]
@@ -173,7 +174,7 @@ public sealed class MediaCommandTests
             room.Subscribe(bob.Id, [new Subscription("6", alice.Id, TrackSource.Microphone), new Subscription("7", alice.Id, TrackSource.Camera)]);
             return bob;
         });
-        var handler = new SelectVideoLayerCommandHandler(_rooms, _sfu);
+        var handler = new SelectVideoLayerCommandHandler(_rooms, _sfu, _usage);
 
         await handler.Handle(new SelectVideoLayerCommand("conn-b", "7", "q"), _ct);
 
@@ -247,7 +248,7 @@ public sealed class MediaCommandTests
             .AsTask();
 
     private Task<SubscribeTracksResult> Subscribe(string connectionId, params (string ParticipantId, string Source)[] tracks) =>
-        new SubscribeTracksCommandHandler(_rooms, _sfu)
+        new SubscribeTracksCommandHandler(_rooms, _sfu, _usage)
             .Handle(new SubscribeTracksCommand(connectionId, [.. tracks.Select(t => new SubscribeTrackInput(t.ParticipantId, t.Source))]), _ct)
             .AsTask();
 

@@ -9,6 +9,7 @@ namespace Cipheroom.Application.UnitTests.CallStats;
 
 public sealed class ReportCallStatsCommandTests
 {
+    private readonly FakeUsageGuard _usage = new();
     private readonly FakeRoomStore _rooms = new();
     private readonly ReportCallStatsCommandValidator _validator = new();
     private readonly CancellationToken _ct = TestContext.Current.CancellationToken;
@@ -66,7 +67,7 @@ public sealed class ReportCallStatsCommandTests
     {
         var (metrics, _) = TestMetrics.Create(_rooms);
         var error = await Assert.ThrowsAsync<NotFoundException>(async () =>
-            await new ReportCallStatsCommandHandler(_rooms, metrics).Handle(new ReportCallStatsCommand("conn-x", Report()), _ct));
+            await new ReportCallStatsCommandHandler(_rooms, metrics, _usage).Handle(new ReportCallStatsCommand("conn-x", Report()), _ct));
         Assert.Equal("Join a room first.", error.Message);
     }
 
@@ -80,7 +81,7 @@ public sealed class ReportCallStatsCommandTests
         using var rtt = new MetricCollector<double>(factory, CipheroomMetrics.MeterName, "cipheroom.call.rtt");
         using var frames = new MetricCollector<double>(factory, CipheroomMetrics.MeterName, "cipheroom.e2ee.frames");
 
-        await new ReportCallStatsCommandHandler(_rooms, metrics).Handle(new ReportCallStatsCommand("conn-a", Report()), _ct);
+        await new ReportCallStatsCommandHandler(_rooms, metrics, _usage).Handle(new ReportCallStatsCommand("conn-a", Report()), _ct);
 
         var videoIn = Assert.Single(bytes.GetMeasurementSnapshot(), m => (string)m.Tags["kind"]! == "video" && (string)m.Tags["direction"]! == "received");
         Assert.Equal(2_000_000, videoIn.Value);
@@ -92,6 +93,18 @@ public sealed class ReportCallStatsCommandTests
     }
 
     [Fact]
+    public async Task Received_bytes_feed_the_usage_estimate()
+    {
+        _rooms.Join("conn-a");
+        var (metrics, _) = TestMetrics.Create(_rooms);
+
+        await new ReportCallStatsCommandHandler(_rooms, metrics, _usage).Handle(new ReportCallStatsCommand("conn-a", Report()), _ct);
+
+        var report = Report();
+        Assert.Equal([(report.AudioReceived!.Bytes + report.VideoReceived!.Bytes, report.IntervalSeconds)], _usage.Recorded);
+    }
+
+    [Fact]
     public async Task Unknown_platforms_and_paths_are_recorded_as_other_and_unknown()
     {
         _rooms.Join("conn-a");
@@ -99,7 +112,7 @@ public sealed class ReportCallStatsCommandTests
         using var reports = new MetricCollector<long>(factory, CipheroomMetrics.MeterName, "cipheroom.call.reports");
         using var bytes = new MetricCollector<double>(factory, CipheroomMetrics.MeterName, "cipheroom.call.bytes");
 
-        await new ReportCallStatsCommandHandler(_rooms, metrics).Handle(
+        await new ReportCallStatsCommandHandler(_rooms, metrics, _usage).Handle(
             new ReportCallStatsCommand("conn-a", Report(platform: "tv-browser-9000", path: "carrier-pigeon")), _ct);
 
         Assert.Equal("other", reports.LastMeasurement!.Tags["platform"]);
