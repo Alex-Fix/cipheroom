@@ -85,6 +85,21 @@ public sealed class UsageGuardTests : IDisposable
     }
 
     [Fact]
+    public async Task New_thresholds_work_the_level_out_again_instead_of_keeping_it()
+    {
+        var trying = Guard(o => o.SavingPercent = 0.1);
+        await trying.StartAsync(TestContext.Current.CancellationToken);
+        Report(trying, 2 * GB / Factor); // 0.2 %
+        Assert.Equal(UsageLevel.Saving, trying.Evaluate().Level);
+        await trying.StopAsync(TestContext.Current.CancellationToken);
+
+        var back = Guard(o => o.SavingPercent = 90);
+        await back.StartAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(UsageLevel.Normal, back.Evaluate().Level);
+        await back.StopAsync(TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
     public void Changes_are_announced_once()
     {
         var guard = Guard();

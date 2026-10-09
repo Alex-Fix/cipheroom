@@ -178,6 +178,8 @@ Updated together: `IRoomClient` + hub, `signaling.types.ts` + `SignalingService`
   live call between levels.
 - **Start-up:** the guard loads its file in `StartAsync` (in .NET 10 `ExecuteAsync` runs in the background), so the
   first `JoinLobby` already sees the restored level.
+- **Changed thresholds start the level over:** it only rises within a month for the same thresholds; editing
+  `REALTIME_*_PERCENT` works the level out again from the current figure (saved with the level in the file).
 - **Thresholds may have decimals** (0.01–100, e.g. `REALTIME_SAVING_PERCENT=0.1` to try saving out early); levels
   compare the exact share, and the percent shown is rounded down but at least 1 once anything is used.
 - The call header hides connection and encryption state on the lobby-style screens (paused, removed, ended), which

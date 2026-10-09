@@ -13,7 +13,7 @@ namespace Cipheroom.Infrastructure.Usage;
 /// Keeps this month's Cloudflare Realtime traffic under the free tier (docs/plans/2026-10-09-usage-guard-design.md).
 /// The figure is Cloudflare's month-to-date egress while its last poll is fresh, plus the api's own estimate (from
 /// browsers' call-quality reports) for the time since a little before that poll; without fresh Cloudflare data, the
-/// estimate for the whole month. The level only rises within a month and drops at the reset. The estimate survives
+/// estimate for the whole month. The level only rises within a month (unless the thresholds change) and drops at the reset. The estimate survives
 /// restarts in a small file of numbers and timestamps (no ids, names or rooms).
 /// </summary>
 public sealed partial class UsageGuard(
@@ -35,6 +35,8 @@ public sealed partial class UsageGuard(
     private long? _cloudflareBytes;
     private DateTimeOffset _cloudflareAt;
     private UsageLevel _level;
+    /// <summary>The thresholds <see cref="_level"/> was reached under: other thresholds start it over.</summary>
+    private string _thresholds = "";
     private bool _dirty;
     private UsageStatus? _current;
 
@@ -92,6 +94,14 @@ public sealed partial class UsageGuard(
         lock (_gate)
         {
             RollMonth(now);
+            // Thresholds changed (deploy/.env): the level is worked out again from the figure, not carried over.
+            var thresholds = Thresholds();
+            if (thresholds != _thresholds)
+            {
+                _thresholds = thresholds;
+                _level = UsageLevel.Normal;
+                _dirty = true;
+            }
             var used = UsedBytes(now);
             var computed = UsageRules.LevelFor(used, FreeTierBytes, Options.SavingPercent, Options.AudioOnlyPercent, Options.PausedPercent);
             if (computed > _level)
@@ -192,6 +202,10 @@ public sealed partial class UsageGuard(
             _buckets.Remove(stale);
     }
 
+    private string Thresholds() => string.Create(
+        System.Globalization.CultureInfo.InvariantCulture,
+        $"{Options.SavingPercent}/{Options.AudioOnlyPercent}/{Options.PausedPercent}/{FreeTierBytes}");
+
     private static long BucketOf(DateTimeOffset at) => at.ToUnixTimeSeconds() / (long)Bucket.TotalSeconds * (long)Bucket.TotalSeconds;
 
     private void Load()
@@ -213,6 +227,7 @@ public sealed partial class UsageGuard(
                 _cloudflareBytes = file.CloudflareBytes;
                 _cloudflareAt = file.CloudflareAt ?? default;
                 _level = file.Level;
+                _thresholds = file.Thresholds ?? "";
                 RollMonth(time.GetUtcNow());
             }
         }
@@ -230,7 +245,7 @@ public sealed partial class UsageGuard(
             if (!_dirty)
                 return;
             file = new UsageFile(_month, _estimate, new Dictionary<long, double>(_buckets), _cloudflareBytes,
-                _cloudflareBytes is null ? null : _cloudflareAt, _level);
+                _cloudflareBytes is null ? null : _cloudflareAt, _level, _thresholds);
             _dirty = false;
         }
         try
@@ -270,7 +285,8 @@ internal sealed record UsageFile(
     Dictionary<long, double> Buckets,
     long? CloudflareBytes,
     DateTimeOffset? CloudflareAt,
-    UsageLevel Level);
+    UsageLevel Level,
+    string? Thresholds = null);
 
 [JsonSerializable(typeof(UsageFile))]
 [JsonSourceGenerationOptions(WriteIndented = false, UseStringEnumConverter = true)]
