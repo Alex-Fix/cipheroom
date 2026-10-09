@@ -17,10 +17,12 @@ describe('host key', () => {
     ).toBe(hostKey.roomId);
   });
 
-  it('keeps the stored private keys non-extractable', async () => {
+  it('keeps the signing key non-extractable and no X25519 private key at all', async () => {
     const { hostKey } = await createHostKey();
     expect(hostKey.signing.extractable).toBe(false);
-    expect(hostKey.agreement.extractable).toBe(false);
+    // WebKit can't read X25519 CryptoKeys back from IndexedDB: only Ed25519 keys may be stored (Safari, iOS).
+    const stored = Object.values(hostKey).filter((v) => v instanceof CryptoKey) as CryptoKey[];
+    expect(stored.map((k) => k.algorithm.name)).toEqual(['Ed25519']);
   });
 
   it('is the same meeting when imported from its private keys', async () => {
