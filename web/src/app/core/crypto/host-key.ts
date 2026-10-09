@@ -2,14 +2,17 @@ import { fields, fromBase64Url, toBase32, toBase64Url } from './encoding';
 
 /**
  * A meeting's host key, held in the creator's browser (design: docs/plans/2026-10-08-lobby-admission-design.md):
- * Ed25519 for signing host attestations and X25519 (kept for later use, and part of the room id). The room id is a
- * hash of both public keys, so the invite link itself says who the host is — nobody, the server included, can
- * claim the room without these private keys. Private keys are non-extractable once stored.
+ * Ed25519 for signing host attestations, and an X25519 key that is part of the room id. The room id is a hash of both
+ * public keys, so the invite link itself says who the host is — nobody, the server included, can claim the room
+ * without the host's private keys.
+ *
+ * The browser keeps only the Ed25519 private key (non-extractable). The X25519 private key isn't used by the app, and
+ * WebKit (Safari, every iOS browser) can't keep X25519 keys in IndexedDB — they can't be read back — so it lives only
+ * in the backup file; the browser keeps its public half.
  */
 export interface HostKey {
   roomId: string;
   signing: CryptoKey;
-  agreement: CryptoKey;
   ed25519Pub: string;
   x25519Pub: string;
   createdAt: number;
@@ -53,7 +56,10 @@ export async function createHostKey(
   return { hostKey: await hostKeyFrom(material, now), material };
 }
 
-/** Imports private keys (from a backup) as a non-extractable host key; its room id follows from the public keys. */
+/**
+ * Imports private keys (from creation or a backup) as a host key; its room id follows from the public keys. Checks the
+ * X25519 key is a real private key (the room id commits to it) but keeps only its public half.
+ */
 export async function hostKeyFrom(material: HostKeyMaterial, now = Date.now()): Promise<HostKey> {
   const ed25519Pub = await publicKeyOf(material.ed25519Pkcs8, 'Ed25519', ['sign']);
   const x25519Pub = await publicKeyOf(material.x25519Pkcs8, 'X25519', ['deriveBits']);
@@ -61,9 +67,6 @@ export async function hostKeyFrom(material: HostKeyMaterial, now = Date.now()): 
     roomId: await deriveRoomId(ed25519Pub, x25519Pub),
     signing: await crypto.subtle.importKey('pkcs8', material.ed25519Pkcs8, 'Ed25519', false, [
       'sign',
-    ]),
-    agreement: await crypto.subtle.importKey('pkcs8', material.x25519Pkcs8, 'X25519', false, [
-      'deriveBits',
     ]),
     ed25519Pub: toBase64Url(ed25519Pub),
     x25519Pub: toBase64Url(x25519Pub),

@@ -261,7 +261,9 @@ Updated in the same change: `IRoomClient` + hub, `signaling.types.ts` + `Signali
 - `LobbyResult` also returns the caller's own **ticket**, which the browser presents on `JoinLobby` to rejoin the
   same call without knocking. A ticket that doesn't check out puts the caller in the lobby instead of failing.
 - The host's **X25519 key** is part of the room id and the backup but not otherwise used yet (knocks go to admitters'
-  per-call identities).
+  per-call identities). The browser keeps only its public half: WebKit (Safari, every iOS browser) can't read
+  X25519 `CryptoKey`s back from IndexedDB, which made "New Meeting" fail there (fixed 2026-10-09). If the host ever
+  needs it, unwrap it from the backup or store it wrapped under a non-extractable AES key.
 - A co-host's tickets stay valid after that co-host is removed (documented in `docs/architecture.md` → Known limits).
 - New metric `cipheroom_admissions_total{outcome}`.
 

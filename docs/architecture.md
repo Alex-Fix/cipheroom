@@ -65,8 +65,9 @@ Cipheroom.Api ──► Cipheroom.Application ──► Cipheroom.Domain
 
 Design: [`plans/2026-10-08-lobby-admission-design.md`](plans/2026-10-08-lobby-admission-design.md).
 
-0. **New meeting** (home page): the browser creates a **host key** (Ed25519 + X25519), stores it non-extractable in
-   IndexedDB and offers a one-time, passphrase-encrypted backup file. The room id is
+0. **New meeting** (home page): the browser creates a **host key** (Ed25519 + X25519), stores the Ed25519 signing
+   key non-extractable in IndexedDB (the X25519 private key isn't used, and WebKit can't keep X25519 keys in
+   IndexedDB, so only the backup holds it) and offers a one-time, passphrase-encrypted backup file. The room id is
    `base32(SHA-256(fields("cipheroom/room/v1", hostEd25519Pub, hostX25519Pub)))[0..26]`, so the invite link names
    its host — nobody can claim the room without the host key.
 1. The browser creates its per-call identity (`CryptoService`); a browser that can't encrypt stops here.
