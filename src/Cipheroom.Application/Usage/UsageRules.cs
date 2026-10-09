@@ -8,18 +8,24 @@ public static class UsageRules
     public const string CallsPaused = "Calls are paused.";
 
     /// <summary>The level for <paramref name="usedBytes"/> of <paramref name="freeTierBytes"/>.</summary>
-    public static UsageLevel LevelFor(double usedBytes, long freeTierBytes, int savingPercent, int audioOnlyPercent, int pausedPercent)
+    public static UsageLevel LevelFor(double usedBytes, long freeTierBytes, double savingPercent, double audioOnlyPercent, double pausedPercent)
     {
-        var percent = Percent(usedBytes, freeTierBytes);
+        // Exact, not the rounded percent shown to people: thresholds may have decimals.
+        var percent = freeTierBytes <= 0 ? 100 : usedBytes * 100 / freeTierBytes;
         return percent >= pausedPercent ? UsageLevel.Paused
             : percent >= audioOnlyPercent ? UsageLevel.AudioOnly
             : percent >= savingPercent ? UsageLevel.Saving
             : UsageLevel.Normal;
     }
 
-    /// <summary>Percent of the free tier used, rounded down.</summary>
-    public static int Percent(double usedBytes, long freeTierBytes) =>
-        freeTierBytes <= 0 ? 100 : (int)Math.Min(Math.Floor(usedBytes * 100 / freeTierBytes), 1000);
+    /// <summary>Percent of the free tier used, as shown to people: rounded down, but at least 1 once anything is used.</summary>
+    public static int Percent(double usedBytes, long freeTierBytes)
+    {
+        if (freeTierBytes <= 0)
+            return 100;
+        var exact = usedBytes * 100 / freeTierBytes;
+        return exact > 0 ? (int)Math.Clamp(Math.Floor(exact), 1, 1000) : 0;
+    }
 
     /// <summary>"yyyy-MM" of <paramref name="now"/> in UTC: Cloudflare bills by calendar month in UTC.</summary>
     public static string MonthOf(DateTimeOffset now) => now.UtcDateTime.ToString("yyyy-MM", System.Globalization.CultureInfo.InvariantCulture);

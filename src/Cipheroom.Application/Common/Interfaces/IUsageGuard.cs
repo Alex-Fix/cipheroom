@@ -16,7 +16,7 @@ public enum UsageLevel
     Paused,
 }
 
-/// <param name="Percent">Of the free tier, rounded down; null at <see cref="UsageLevel.Normal"/> (not shown to anyone).</param>
+/// <param name="Percent">Of the free tier, rounded down (at least 1 once anything is used); null at <see cref="UsageLevel.Normal"/> (not shown to anyone).</param>
 /// <param name="ResetsAt">Start of next month, UTC — when the free tier resets.</param>
 public sealed record UsageStatus(UsageLevel Level, int? Percent, DateTimeOffset ResetsAt);
 

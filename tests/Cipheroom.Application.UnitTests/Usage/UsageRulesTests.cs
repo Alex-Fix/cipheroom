@@ -18,7 +18,16 @@ public sealed class UsageRulesTests
         Assert.Equal(level, UsageRules.LevelFor(used, FreeTier, 80, 95, 99));
 
     [Fact]
-    public void Percent_is_rounded_down() => Assert.Equal(83, UsageRules.Percent(839_999_999_999, FreeTier));
+    public void Percent_is_rounded_down_but_at_least_one_once_anything_is_used()
+    {
+        Assert.Equal(83, UsageRules.Percent(839_999_999_999, FreeTier));
+        Assert.Equal(1, UsageRules.Percent(1_600_000_000, FreeTier)); // 0.16 %
+        Assert.Equal(0, UsageRules.Percent(0, FreeTier));
+    }
+
+    [Fact]
+    public void Thresholds_may_have_decimals() =>
+        Assert.Equal(UsageLevel.Saving, UsageRules.LevelFor(1_600_000_000, FreeTier, 0.1, 95, 99));
 
     [Fact]
     public void The_month_resets_on_the_first_at_midnight_utc()

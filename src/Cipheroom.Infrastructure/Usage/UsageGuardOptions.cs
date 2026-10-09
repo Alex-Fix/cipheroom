@@ -8,17 +8,19 @@ public sealed class UsageGuardOptions : IValidatableObject
 {
     public const string Section = "UsageGuard";
 
+    // Thresholds are percent of the free tier and may have decimals (e.g. 0.1 to try the saving level out early).
+
     /// <summary>Off: nothing is ever limited (an escape hatch — the $0 rule is then up to you).</summary>
     public bool Enabled { get; set; } = true;
 
-    [Range(1, 100)]
-    public int SavingPercent { get; set; } = 80;
+    [Range(0.01, 100.0)]
+    public double SavingPercent { get; set; } = 80;
 
-    [Range(1, 100)]
-    public int AudioOnlyPercent { get; set; } = 95;
+    [Range(0.01, 100.0)]
+    public double AudioOnlyPercent { get; set; } = 95;
 
-    [Range(1, 100)]
-    public int PausedPercent { get; set; } = 99;
+    [Range(0.01, 100.0)]
+    public double PausedPercent { get; set; } = 99;
 
     /// <summary>Browser reports don't see TURN relay overhead: their bytes count this much more.</summary>
     [Range(1.0, 3.0)]
