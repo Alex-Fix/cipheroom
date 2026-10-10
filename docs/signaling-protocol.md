@@ -58,7 +58,8 @@ Payloads never contain plaintext keys: only public keys and opaque signed envelo
 
 Values: `source` ∈ `microphone` / `camera` / `screen`; `kind` ∈ `audio` / `video` (follows from the source); SDP ≤ 32 KB
 and starts with `v=0`; `mid` matches `^[A-Za-z0-9_-]{1,16}$`. Media events go to the **other** participants in the room;
-the caller already knows its own state. The media session is created on the first `PublishTracks` / `SubscribeTracks`.
+the caller already knows its own state. The media session is created by `GetRtcConfig` (best effort, in parallel with the ICE servers) or else on the first
+`PublishTracks` / `SubscribeTracks`.
 
 ### Lobby and admission
 
