@@ -185,7 +185,8 @@ its last report, computed from `getStats()` per stream and from `CryptoService`'
 ```
 CallStatsDto { platform, path, intervalSeconds, rttMs?,
                audioSent?, audioReceived?, videoSent?, videoReceived?,   // StreamStatsDto
-               e2ee? }                                                    // E2eeStatsDto
+               e2ee?,                                                     // E2eeStatsDto
+               fileBytesReceived? }                                       // data channel (file) bytes
 StreamStatsDto { bytes, packets, packetsLost, jitterMs?, freezeSeconds?, height?, fps? }
 E2eeStatsDto   { framesEncrypted, framesDecrypted, framesFailed, framesMissingKey, envelopesDropped, securingSeconds }
 ```
@@ -196,6 +197,8 @@ E2eeStatsDto   { framesEncrypted, framesDecrypted, framesFailed, framesMissingKe
   a cap (`CallStatsRules`); `intervalSeconds` is 0–120.
 - Members only, no reply, nothing is broadcast or stored: the api records it as `cipheroom_call_*` /
   `cipheroom_e2ee_*` metrics (labels: platform, path, kind, direction). Accepted even when telemetry export is off.
+- Received audio + video bytes, and `fileBytesReceived` separately (capped at `Usage:MaxFileReportMbps`, 200 Mbit/s,
+  instead of `MaxReportMbps`), feed the usage guard's estimate of Cloudflare egress.
 
 ### Errors
 

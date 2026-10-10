@@ -105,6 +105,21 @@ public sealed class ReportCallStatsCommandTests
     }
 
     [Fact]
+    public async Task File_bytes_feed_the_usage_estimate_separately()
+    {
+        _rooms.Join("conn-a");
+        var (metrics, _) = TestMetrics.Create(_rooms);
+
+        await new ReportCallStatsCommandHandler(_rooms, metrics, _usage).Handle(new ReportCallStatsCommand("conn-a", Report() with { FileBytesReceived = 5_000_000 }), _ct);
+
+        Assert.Equal([(5_000_000d, Report().IntervalSeconds)], _usage.RecordedFiles);
+    }
+
+    [Fact]
+    public void File_bytes_must_be_in_range() =>
+        Assert.False(new ReportCallStatsCommandValidator().Validate(new ReportCallStatsCommand("conn-a", Report() with { FileBytesReceived = -1 })).IsValid);
+
+    [Fact]
     public async Task Unknown_platforms_and_paths_are_recorded_as_other_and_unknown()
     {
         _rooms.Join("conn-a");

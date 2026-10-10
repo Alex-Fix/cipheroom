@@ -307,7 +307,8 @@ public sealed partial class RoomHub(IMediator mediator, IUsageGuard usage, Telem
             ToInput(s.VideoReceived),
             s.E2ee is { } e
                 ? new E2eeStatsInput(e.FramesEncrypted, e.FramesDecrypted, e.FramesFailed, e.FramesMissingKey, e.EnvelopesDropped, e.SecuringSeconds)
-                : null);
+                : null,
+            s.FileBytesReceived);
 
     private static StreamStatsInput? ToInput(StreamStatsDto? s) =>
         s is null ? null : new StreamStatsInput(s.Bytes, s.Packets, s.PacketsLost, s.JitterMs, s.FreezeSeconds, s.Height, s.Fps);

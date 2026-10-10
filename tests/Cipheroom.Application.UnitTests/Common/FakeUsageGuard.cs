@@ -18,4 +18,8 @@ internal sealed class FakeUsageGuard : IUsageGuard, IUsageLedger
     }
 
     public void RecordReceived(double bytes, double intervalSeconds) => Recorded.Add((bytes, intervalSeconds));
+
+    public List<(double Bytes, double IntervalSeconds)> RecordedFiles { get; } = [];
+
+    public void RecordFilesReceived(double bytes, double intervalSeconds) => RecordedFiles.Add((bytes, intervalSeconds));
 }

@@ -30,6 +30,10 @@ public sealed class UsageGuardOptions : IValidatableObject
     [Range(1, 1000)]
     public double MaxReportMbps { get; set; } = 50;
 
+    /// <summary>The most one participant's report can credit for file transfers (data channels), per second.</summary>
+    [Range(1, 1000)]
+    public double MaxFileReportMbps { get; set; } = 200;
+
     /// <summary>Cloudflare's figure is used while its last successful poll is at most this old.</summary>
     [Range(1, 1440)]
     public int FreshPollMinutes { get; set; } = 45;

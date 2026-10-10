@@ -204,6 +204,8 @@ export interface CallStatsDto {
   videoSent: StreamStatsDto | null;
   videoReceived: StreamStatsDto | null;
   e2ee: E2eeStatsDto | null;
+  /** Encrypted file chunks received on data channels (counts towards the usage estimate). */
+  fileBytesReceived?: number | null;
 }
 
 /** The usage guard's level (server-wide): how close this month's Cloudflare traffic is to the free tier. */

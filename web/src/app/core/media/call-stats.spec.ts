@@ -122,6 +122,13 @@ describe('call stats', () => {
     ).toBe(20);
   });
 
+  it('sums file bytes received on data channels, channels that closed meanwhile left out', () => {
+    const dc = (id: string, bytes: number) => ({ id, type: 'data-channel', bytesReceived: bytes, bytesSent: 999 });
+    const prev = statsSnapshot(report([dc('D1', 1_000), dc('D2', 50)]), 0);
+    const next = statsSnapshot(report([dc('D1', 41_000), dc('D3', 2_000)]), 15_000);
+    expect(callStats(prev, next, 'desktop-chrome', undefined)!.fileBytesReceived).toBe(42_000);
+  });
+
   it('reports relayed connections as relay', () => {
     const snap = statsSnapshot(report(pair('relay', 0.08)), 0);
     expect(snap.path).toBe('relay');

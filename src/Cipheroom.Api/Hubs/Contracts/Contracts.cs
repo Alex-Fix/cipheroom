@@ -149,7 +149,8 @@ public sealed record CallStatsDto(
     StreamStatsDto? AudioReceived,
     StreamStatsDto? VideoSent,
     StreamStatsDto? VideoReceived,
-    E2eeStatsDto? E2ee);
+    E2eeStatsDto? E2ee,
+    double? FileBytesReceived = null);
 
 public sealed record StreamStatsDto(
     double Bytes,
