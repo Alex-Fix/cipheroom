@@ -134,6 +134,24 @@ is ~3.6 GB per viewer-hour against the 1 TB/month free tier. The usage guard enf
 - [ ] Connection diagnostics panel (hidden since the SFU switch)
 - [x] "Source code" link in the UI (AGPL §13) — opens the exact commit that is running (`SOURCE_URL` for forks)
 - [ ] MLS-based group keys for large rooms
+- [ ] End-to-end encrypted files and images in chat
+
+### Deployment modes
+
+Today Cipheroom runs in one mode: at home, behind Cloudflare Tunnel, with Cloudflare Realtime SFU and TURN. A
+deployment switch will offer three:
+
+- [x] **Cloudflare** (current): Cloudflare Tunnel for HTTPS/WSS, Cloudflare Realtime SFU and TURN. No public IP,
+  free tier only.
+- [ ] **Tunnel + self-hosted media**: Cloudflare Tunnel for HTTPS/WSS, a self-hosted SFU and TURN server on the same
+  machine, reached on its public IP. No Cloudflare Realtime traffic limits.
+- [ ] **Fully self-hosted**: self-hosted SFU and TURN, and the app served directly on the server's public IP with a
+  signed certificate. No Cloudflare dependency at all.
+- [ ] Infrastructure as code: Terraform to provision a server on Hetzner or AWS, Ansible to install and configure any
+  of the modes on it.
+
+The self-hosted modes need a public IP (and open UDP ports for media). On Hetzner or AWS they also cost money, unlike
+the default mode, which stays free.
 
 ## Project layout
 
