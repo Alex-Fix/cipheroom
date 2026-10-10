@@ -53,7 +53,7 @@ export interface Self {
  *   can't add a camera once the connection began by answering the SFU's offer; the camera transceiver is therefore
  *   always negotiated up front (`reserveCamera`), and later device changes only swap tracks.
  * - Quality: we send the camera at the chosen quality (`videoQuality`, default auto = best the camera has, up to
- *   4K) as f/h/q simulcast, and receive the highest layer of every camera on screen (`q` when hidden).
+ *   4K) as f/h/q simulcast, and receive the layer that matches each camera tile's size (`q` when hidden).
  * - Codec: chosen when we connect (`sendingCodec`, from `videoCodec` and what everyone in the call can decode — see
  *   codecs.ts). Cloudflare doesn't forward a codec change on a published track, so a different codec means
  *   rejoining: `codecUnsupported` tells the room when someone who joined can't play ours.
@@ -275,7 +275,6 @@ export class MediaService implements OnDestroy {
    * simulcast layer (debounced, so resizing doesn't flood the SFU).
    */
   setTileSize(tileKey: string, width: number): void {
-    // Only on/off screen matters: on screen we always want the highest layer.
     const key = tileKey as TrackKey;
     if (!key.endsWith(':camera')) return;
     this.tileWidths.set(key, width);
@@ -589,9 +588,11 @@ export class MediaService implements OnDestroy {
   private async applyLayer(key: TrackKey): Promise<void> {
     const mid = this.subscriptions.get(key);
     if (!mid) return;
-    // Tiles that never reported a size count as on screen.
-    const onScreen = document.visibilityState !== 'hidden' && (this.tileWidths.get(key) ?? 1) > 0;
-    const layer = receiveLayer(onScreen);
+    const layer = receiveLayer(
+      this.tileWidths.get(key),
+      window.devicePixelRatio,
+      document.visibilityState !== 'hidden',
+    );
     // Subscriptions start at the full layer (see the SFU adapter).
     if ((this.layers.get(key) ?? 'f') === layer) return;
     this.layers.set(key, layer);

@@ -371,15 +371,17 @@ describe('MediaService', () => {
       return ctx;
     }
 
-    it('receives the highest layer by default and the smallest only off screen', async () => {
+    it('receives the layer that matches the tile’s size, the smallest off screen', async () => {
       const { media, signaling } = await withBobsCamera();
+      vi.stubGlobal('devicePixelRatio', 1);
 
-      // On screen, any size: the full layer we subscribed with — nothing to send.
-      media.setTileSize('bob:camera', 160);
+      // A big tile: the full layer we subscribed with — nothing to send.
+      media.setTileSize('bob:camera', 1200);
       await vi.advanceTimersByTimeAsync(500);
       expect(signaling.selectVideoLayer).not.toHaveBeenCalled();
 
-      media.setTileSize('bob:camera', 0);
+      // A thumbnail: quarter. Our own tile is never requested.
+      media.setTileSize('bob:camera', 160);
       media.setTileSize('me:camera', 0);
       await vi.advanceTimersByTimeAsync(500);
       expect(signaling.selectVideoLayer).toHaveBeenCalledTimes(1);
@@ -387,7 +389,11 @@ describe('MediaService', () => {
 
       media.setTileSize('bob:camera', 640);
       await vi.advanceTimersByTimeAsync(500);
-      expect(signaling.selectVideoLayer).toHaveBeenLastCalledWith('6', 'f');
+      expect(signaling.selectVideoLayer).toHaveBeenLastCalledWith('6', 'h');
+
+      media.setTileSize('bob:camera', 0);
+      await vi.advanceTimersByTimeAsync(500);
+      expect(signaling.selectVideoLayer).toHaveBeenLastCalledWith('6', 'q');
     });
 
     it('drops to the smallest layer while the tab is hidden', async () => {
