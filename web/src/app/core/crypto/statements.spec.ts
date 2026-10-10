@@ -107,6 +107,14 @@ describe('statements', () => {
     });
   });
 
+  it('never accepts a signature from a small-order key', async () => {
+    const zero = toBase64Url(new Uint8Array(32));
+    for (let i = 0; i < 20; i++) {
+      const message = crypto.getRandomValues(new Uint8Array(32));
+      expect(await verify(zero, message, toBase64Url(new Uint8Array(64)))).toBe(false);
+    }
+  });
+
   describe('verifyAuthority', () => {
     it('trusts hosts the host key attested, and co-hosts and removals a host signed', async () => {
       const verified = await verifyAuthority(

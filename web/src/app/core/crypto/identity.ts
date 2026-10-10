@@ -1,4 +1,5 @@
 import { fields, fromBase64Url, toBase64Url } from './encoding';
+import { isWeakEd25519Key } from './weak-keys';
 
 /**
  * Per-call device identity: an Ed25519 signing key and an X25519 agreement key, created at join and kept in memory
@@ -73,6 +74,8 @@ export async function verifyIdentity(
     ) {
       return undefined;
     }
+    // Small-order keys can "sign" without a private key: several people could share such an identity.
+    if (await isWeakEd25519Key(ed25519Pub)) return undefined;
     const signing = await crypto.subtle.importKey('raw', ed25519Pub, 'Ed25519', true, ['verify']);
     const valid = await crypto.subtle.verify(
       'Ed25519',
