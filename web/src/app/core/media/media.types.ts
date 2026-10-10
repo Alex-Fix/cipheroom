@@ -5,6 +5,8 @@ export type MediaState = 'disconnected' | 'connecting' | 'connected' | 'reconnec
 
 export interface Tile {
   key: string;
+  /** Whose camera or screen it is. */
+  participantId: string;
   /** Label for the tile, e.g. "Alex (you)". */
   name: string;
   /** The participant's own name, same on every client (avatar initials and colour). */

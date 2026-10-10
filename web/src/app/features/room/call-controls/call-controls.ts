@@ -1,3 +1,4 @@
+import { CallView, SelfView } from '../../../core/settings/call-view';
 import { ChangeDetectionStrategy, Component, input, output } from '@angular/core';
 import { NzDropdownModule } from 'ng-zorro-antd/dropdown';
 import { NzIconModule } from 'ng-zorro-antd/icon';
@@ -8,7 +9,6 @@ import { VideoCodec } from '../../../core/media/codecs';
 import { VideoQuality } from '../../../core/media/quality';
 
 const QUALITY_LABELS: Record<VideoQuality, string> = {
-  auto: 'Auto',
   '2160p': '4K',
   '1080p': '1080p',
   '720p': '720p',
@@ -37,8 +37,8 @@ export class CallControls {
   /** Phone/tablet with a rear camera: show the front ⇄ rear button. */
   readonly canFlip = input(false);
   /** Camera send quality: the qualities this camera supports, and the chosen one. */
-  readonly qualities = input<VideoQuality[]>(['auto']);
-  readonly quality = input<VideoQuality>('auto');
+  readonly qualities = input<VideoQuality[]>(['1080p', '720p']);
+  readonly quality = input<VideoQuality>('1080p');
   /** Video codecs this browser can send, the chosen one, and the one actually sent (a fallback when someone in
    * the call can't decode the chosen one). */
   readonly codecs = input<readonly VideoCodec[]>([]);
@@ -48,6 +48,8 @@ export class CallControls {
   readonly videoBlockedReason = input<string | undefined>(undefined);
   /** Chat messages that arrived while the chat panel was closed. */
   readonly unreadChats = input(0);
+  readonly view = input<CallView>('grid');
+  readonly selfView = input<SelfView>('tile');
 
   readonly toggleMic = output();
   readonly toggleCamera = output();
@@ -57,8 +59,19 @@ export class CallControls {
   readonly selectQuality = output<VideoQuality>();
   readonly selectCodec = output<VideoCodec>();
   readonly openChat = output();
+  readonly selectView = output<CallView>();
+  readonly selectSelfView = output<SelfView>();
   readonly leave = output();
 
+  protected readonly views: { value: CallView; label: string }[] = [
+    { value: 'grid', label: 'Grid' },
+    { value: 'speaker', label: 'Speaker' },
+  ];
+  protected readonly selfViews: { value: SelfView; label: string }[] = [
+    { value: 'tile', label: 'In layout' },
+    { value: 'float', label: 'Floating' },
+    { value: 'hidden', label: 'Hidden' },
+  ];
   protected readonly qualityLabels = QUALITY_LABELS;
   protected readonly codecNames = CODEC_NAMES;
 }

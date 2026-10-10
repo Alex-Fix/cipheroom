@@ -17,25 +17,72 @@
   }
 }
 
-.grid {
+.stage {
+  position: relative;
   flex: 1;
   min-height: 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
-  // Tiles are overflow:hidden, which drops their min height to 0 — without this, rows shrink and tiles overlap.
-  grid-auto-rows: max-content;
-  gap: 10px;
-  // "safe": when tiles don't fit, scroll from the top instead of clipping the first row.
-  align-content: safe center;
-  overflow: auto;
-  // Room for the floating control bar.
-  padding-bottom: calc(96px + env(safe-area-inset-bottom));
+  overflow: hidden;
+  // Tiles stay above the floating control bar.
+  margin-bottom: calc(96px + env(safe-area-inset-bottom));
+
+  &.scrolls {
+    overflow-y: auto;
+  }
 }
 
-// One person: let their tile use the stage instead of a small card.
-.grid[data-count='1'] {
-  grid-template-columns: minmax(0, min(100%, 960px));
-  justify-content: center;
+.canvas {
+  position: relative;
+}
+
+// Every tile is placed by the layout (transform + size); moves animate instead of jumping.
+.canvas > app-call-tile,
+.more-tiles {
+  position: absolute;
+  top: 0;
+  left: 0;
+  aspect-ratio: auto;
+  transition:
+    transform 200ms ease-out,
+    width 200ms ease-out,
+    height 200ms ease-out;
+}
+
+// Hidden: zero-sized but still mounted, so the person's audio keeps playing.
+.canvas > app-call-tile[data-role='hidden'] {
+  visibility: hidden;
+}
+
+.canvas > app-call-tile[data-role='stage'] {
+  border-radius: 22px;
+}
+
+.canvas > app-call-tile[data-role='float'] {
+  z-index: 3;
+  cursor: grab;
+
+  &.dragging {
+    cursor: grabbing;
+    transition: none;
+  }
+
+  box-shadow: 0 8px 28px rgb(0 0 0 / 0.45);
+}
+
+.more-tiles {
+  border: 0;
+  border-radius: 18px;
+  background: var(--bg-tile);
+  color: var(--label);
+  font-size: 20px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .canvas > app-call-tile,
+  .more-tiles {
+    transition: none;
+  }
 }
 
 .controls {
@@ -128,10 +175,6 @@
   .room {
     padding-left: max(8px, env(safe-area-inset-left));
     padding-right: max(8px, env(safe-area-inset-right));
-    gap: 8px;
-  }
-
-  .grid {
     gap: 8px;
   }
 }

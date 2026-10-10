@@ -34,6 +34,8 @@ web/
                          device-error.ts, and one folder per child component:
         call-header/  call-tile/  call-controls/  participants-panel/  chat-panel/  emoji-picker/
         diagnostics-drawer/ (hidden for now)
+        layout/       call-layout.ts (pure: tile roles + rects), stage-speaker.ts (active-speaker hysteresis);
+                      corner-drag.directive.ts (floating self-view)
   src/styles.less        global tokens/styles;  src/theme/  ng-zorro light/dark themes
   design/                logo masters for scripts/icons.sh (not part of the build)
 ```

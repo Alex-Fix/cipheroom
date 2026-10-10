@@ -3,8 +3,10 @@ import { VIDEO_QUALITY_KEY, loadVideoQuality, saveVideoQuality } from './video-q
 describe('video quality setting', () => {
   beforeEach(() => localStorage.removeItem(VIDEO_QUALITY_KEY));
 
-  it('defaults to auto', () => {
-    expect(loadVideoQuality()).toBe('auto');
+  it('defaults to Full HD, also for the old Auto choice', () => {
+    expect(loadVideoQuality()).toBe('1080p');
+    localStorage.setItem(VIDEO_QUALITY_KEY, 'auto');
+    expect(loadVideoQuality()).toBe('1080p');
   });
 
   it('round-trips a choice', () => {
@@ -14,6 +16,6 @@ describe('video quality setting', () => {
 
   it('ignores unknown stored values', () => {
     localStorage.setItem(VIDEO_QUALITY_KEY, '8k');
-    expect(loadVideoQuality()).toBe('auto');
+    expect(loadVideoQuality()).toBe('1080p');
   });
 });

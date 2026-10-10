@@ -1,20 +1,35 @@
-import { bitrateFor, cameraEncodings, captureConstraints, supportedQualities } from './quality';
+import {
+  bitrateFor,
+  cameraEncodings,
+  captureConstraints,
+  closestQuality,
+  supportedQualities,
+} from './quality';
 
 describe('video quality', () => {
-  it('auto asks for the best the camera has, up to 4K; explicit choices cap it', () => {
-    expect(captureConstraints('auto')).toEqual({
-      width: { ideal: 3840 },
-      height: { ideal: 2160 },
+  it('asks for the chosen size and caps it there (a smaller camera gives its closest mode)', () => {
+    expect(captureConstraints('1080p')).toEqual({
+      width: { ideal: 1920, max: 1920 },
+      height: { ideal: 1080, max: 1080 },
       frameRate: { ideal: 30 },
     });
-    expect(captureConstraints('1080p').height).toEqual({ ideal: 1080, max: 1080 });
+    expect(captureConstraints('2160p').height).toEqual({ ideal: 2160, max: 2160 });
+    expect(captureConstraints('720p').width).toEqual({ ideal: 1280, max: 1280 });
   });
 
   it('offers 4K and 1080p only when the camera can capture them', () => {
-    expect(supportedQualities(2160)).toEqual(['auto', '2160p', '1080p', '720p']);
-    expect(supportedQualities(1080)).toEqual(['auto', '1080p', '720p']);
-    expect(supportedQualities(720)).toEqual(['auto', '720p']);
-    expect(supportedQualities(undefined)).toEqual(['auto', '720p']);
+    expect(supportedQualities(2160)).toEqual(['2160p', '1080p', '720p']);
+    expect(supportedQualities(1080)).toEqual(['1080p', '720p']);
+    expect(supportedQualities(720)).toEqual(['720p']);
+    expect(supportedQualities(480)).toEqual(['720p']);
+    expect(supportedQualities(undefined)).toEqual(['1080p', '720p']);
+  });
+
+  it('turns a choice into the closest one the camera offers, never above it', () => {
+    expect(closestQuality('1080p', ['2160p', '1080p', '720p'])).toBe('1080p');
+    expect(closestQuality('1080p', ['720p'])).toBe('720p');
+    expect(closestQuality('2160p', ['1080p', '720p'])).toBe('1080p');
+    expect(closestQuality('720p', ['2160p', '1080p', '720p'])).toBe('720p');
   });
 
   it('scales simulcast bitrates with the captured resolution', () => {

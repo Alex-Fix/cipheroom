@@ -17,6 +17,8 @@ interface State {
   codec?: string;
   sendingCodec?: string;
   videoBlockedReason?: string;
+  view?: string;
+  selfView?: string;
 }
 
 function render(state: State) {
@@ -162,6 +164,35 @@ describe('CallControls', () => {
     expect(select).toHaveBeenCalledWith('b');
   });
 
+  it('offers the views and self-view modes, checks the current ones and emits choices', async () => {
+    const { fixture, button } = render({ ...allOn, view: 'speaker', selfView: 'float' });
+    const views: string[] = [];
+    const selfViews: string[] = [];
+    fixture.componentInstance.selectView.subscribe((v) => views.push(v));
+    fixture.componentInstance.selectSelfView.subscribe((v) => selfViews.push(v));
+
+    await openMore(fixture, button('more')!);
+    const viewItems = [...document.body.querySelectorAll<HTMLElement>('.view-item')];
+    const selfItems = [...document.body.querySelectorAll<HTMLElement>('.self-view-item')];
+    expect(viewItems.map((i) => i.textContent!.trim())).toEqual(['Grid', 'Speaker']);
+    expect(viewItems.map((i) => i.getAttribute('aria-checked'))).toEqual(['false', 'true']);
+    expect(selfItems.map((i) => i.textContent!.trim())).toEqual([
+      'In layout',
+      'Floating',
+      'Hidden',
+    ]);
+    expect(selfItems.map((i) => i.getAttribute('aria-checked'))).toEqual([
+      'false',
+      'true',
+      'false',
+    ]);
+
+    viewItems[0].click();
+    selfItems[2].click();
+    expect(views).toEqual(['grid']);
+    expect(selfViews).toEqual(['hidden']);
+  });
+
   it('hides the camera picker with a single camera', async () => {
     const { fixture, button } = render({ ...allOn, cameras: [{ id: 'a', label: 'Only' }] });
     await openMore(fixture, button('more')!);
@@ -172,8 +203,8 @@ describe('CallControls', () => {
   it('offers the camera qualities, checks the chosen one and emits a new choice', async () => {
     const { fixture, button } = render({
       ...allOn,
-      qualities: ['auto', '2160p', '1080p', '720p'],
-      quality: 'auto',
+      qualities: ['2160p', '1080p', '720p'],
+      quality: '1080p',
     });
     const select = vi.fn();
     fixture.componentInstance.selectQuality.subscribe(select);
@@ -181,15 +212,10 @@ describe('CallControls', () => {
     await openMore(fixture, button('more')!);
     const items = [...document.body.querySelectorAll<HTMLElement>('.quality-item')];
 
-    expect(items.map((i) => i.textContent!.trim())).toEqual(['Auto', '4K', '1080p', '720p']);
-    expect(items.map((i) => i.getAttribute('aria-checked'))).toEqual([
-      'true',
-      'false',
-      'false',
-      'false',
-    ]);
-    items[2].click();
-    expect(select).toHaveBeenCalledWith('1080p');
+    expect(items.map((i) => i.textContent!.trim())).toEqual(['4K', '1080p', '720p']);
+    expect(items.map((i) => i.getAttribute('aria-checked'))).toEqual(['false', 'true', 'false']);
+    items[0].click();
+    expect(select).toHaveBeenCalledWith('2160p');
   });
 
   it('offers the video codecs, checks the chosen one and emits a new choice', async () => {

@@ -371,15 +371,17 @@ describe('MediaService', () => {
       return ctx;
     }
 
-    it('receives the highest layer by default and the smallest only off screen', async () => {
+    it('receives the layer that matches the tile’s size, the smallest off screen', async () => {
       const { media, signaling } = await withBobsCamera();
+      vi.stubGlobal('devicePixelRatio', 1);
 
-      // On screen, any size: the full layer we subscribed with — nothing to send.
-      media.setTileSize('bob:camera', 160);
+      // A big tile: the full layer we subscribed with — nothing to send.
+      media.setTileSize('bob:camera', 1200);
       await vi.advanceTimersByTimeAsync(500);
       expect(signaling.selectVideoLayer).not.toHaveBeenCalled();
 
-      media.setTileSize('bob:camera', 0);
+      // A thumbnail: quarter. Our own tile is never requested.
+      media.setTileSize('bob:camera', 160);
       media.setTileSize('me:camera', 0);
       await vi.advanceTimersByTimeAsync(500);
       expect(signaling.selectVideoLayer).toHaveBeenCalledTimes(1);
@@ -387,7 +389,11 @@ describe('MediaService', () => {
 
       media.setTileSize('bob:camera', 640);
       await vi.advanceTimersByTimeAsync(500);
-      expect(signaling.selectVideoLayer).toHaveBeenLastCalledWith('6', 'f');
+      expect(signaling.selectVideoLayer).toHaveBeenLastCalledWith('6', 'h');
+
+      media.setTileSize('bob:camera', 0);
+      await vi.advanceTimersByTimeAsync(500);
+      expect(signaling.selectVideoLayer).toHaveBeenLastCalledWith('6', 'q');
     });
 
     it('drops to the smallest layer while the tab is hidden', async () => {
@@ -495,7 +501,7 @@ describe('MediaService', () => {
   describe('camera quality', () => {
     beforeEach(() => localStorage.removeItem('cipheroom.videoQuality'));
 
-    it('captures the best the camera has (up to 4K) by default, with bitrates for that resolution', async () => {
+    it('captures Full HD by default (the best below it on smaller cameras), with bitrates for that resolution', async () => {
       const { media, pc } = setup();
       const devices = navigator.mediaDevices as unknown as {
         getUserMedia: ReturnType<typeof vi.fn>;
@@ -503,16 +509,21 @@ describe('MediaService', () => {
 
       await media.setCamera(true);
 
-      expect(media.videoQuality()).toBe('auto');
+      expect(media.videoQuality()).toBe('1080p');
       expect(devices.getUserMedia).toHaveBeenCalledWith({
-        video: { width: { ideal: 3840 }, height: { ideal: 2160 }, frameRate: { ideal: 30 } },
+        video: {
+          width: { ideal: 1920, max: 1920 },
+          height: { ideal: 1080, max: 1080 },
+          frameRate: { ideal: 30 },
+        },
       });
       // The fake camera delivered 720p.
       expect(pc.transceivers[0].init.sendEncodings?.map((e) => e.maxBitrate)).toEqual([
         1_500_000, 500_000, 200_000,
       ]);
       // It can do 1080p but not 4K.
-      expect(media.availableQualities()).toEqual(['auto', '1080p', '720p']);
+      expect(media.availableQualities()).toEqual(['1080p', '720p']);
+      expect(media.effectiveQuality()).toBe('1080p');
     });
 
     it('changing quality re-captures the same camera in place and is remembered', async () => {
@@ -522,12 +533,12 @@ describe('MediaService', () => {
       };
       await media.setCamera(true);
 
-      await media.setVideoQuality('1080p');
+      await media.setVideoQuality('720p');
 
       expect(devices.getUserMedia).toHaveBeenLastCalledWith({
         video: {
-          width: { ideal: 1920, max: 1920 },
-          height: { ideal: 1080, max: 1080 },
+          width: { ideal: 1280, max: 1280 },
+          height: { ideal: 720, max: 720 },
           frameRate: { ideal: 30 },
           deviceId: { exact: 'video-1' },
         },
@@ -535,7 +546,7 @@ describe('MediaService', () => {
       expect(camera.stop).toHaveBeenCalled();
       expect(pc.transceivers[0].sender.replaceTrack).toHaveBeenCalled();
       expect(signaling.publishTracks).toHaveBeenCalledTimes(1);
-      expect(localStorage.getItem('cipheroom.videoQuality')).toBe('1080p');
+      expect(localStorage.getItem('cipheroom.videoQuality')).toBe('720p');
     });
 
     it('with the camera off, a new quality applies the next time it turns on', async () => {
@@ -575,7 +586,7 @@ describe('MediaService', () => {
 
       expect(media.offeredQualities()).toEqual(['720p']);
       expect(media.effectiveQuality()).toBe('720p');
-      expect(media.videoQuality()).toBe('auto'); // the choice is kept for later
+      expect(media.videoQuality()).toBe('1080p'); // the choice is kept for later
       expect(devices.getUserMedia).toHaveBeenLastCalledWith({
         video: expect.objectContaining({ height: { ideal: 720, max: 720 } }),
       });

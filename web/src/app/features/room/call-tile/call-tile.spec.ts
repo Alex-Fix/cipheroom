@@ -7,6 +7,7 @@ import { CallTile } from './call-tile';
 function tile(overrides: Partial<Tile> = {}): Tile {
   return {
     key: 'alex:camera',
+    participantId: 'p1',
     name: 'Alex Papish',
     displayName: 'Alex Papish',
     isLocal: false,
@@ -80,5 +81,86 @@ describe('CallTile', () => {
   it('does not mirror a rear camera', () => {
     const el = render(tile({ video: fakeTrack(), isLocal: true, mirror: false }));
     expect(el.querySelector('video')?.classList).not.toContain('mirror');
+  });
+});
+
+describe('CallTile pin', () => {
+  function renderPin(inputs: { pinned?: boolean; canPin?: boolean } = {}) {
+    TestBed.configureTestingModule({ imports: [CallTile], providers: [provideNzIcons(APP_ICONS)] });
+    const fixture = TestBed.createComponent(CallTile);
+    fixture.componentRef.setInput('tile', tile());
+    for (const [k, v] of Object.entries(inputs)) fixture.componentRef.setInput(k, v);
+    fixture.detectChanges();
+    const pins: number[] = [];
+    fixture.componentInstance.pin.subscribe(() => pins.push(1));
+    return { fixture, el: fixture.nativeElement as HTMLElement, pins };
+  }
+
+  afterEach(() => vi.useRealTimers());
+
+  it('offers pinning and says whether the tile is pinned', () => {
+    const { el, fixture, pins } = renderPin();
+    const button = el.querySelector<HTMLButtonElement>('.pin')!;
+    expect(button.getAttribute('aria-label')).toBe('Pin Alex Papish');
+    expect(button.getAttribute('aria-pressed')).toBe('false');
+    button.click();
+    expect(pins).toHaveLength(1);
+
+    fixture.componentRef.setInput('pinned', true);
+    fixture.detectChanges();
+    expect(button.getAttribute('aria-label')).toBe('Unpin Alex Papish');
+    expect(button.classList).toContain('on');
+  });
+
+  it('has no pin button where pinning makes no sense', () => {
+    expect(renderPin({ canPin: false }).el.querySelector('.pin')).toBeNull();
+  });
+
+  it('a tap shows the buttons for a few seconds (touch screens have no hover)', () => {
+    vi.useFakeTimers();
+    const { el, fixture } = renderPin();
+    el.click();
+    fixture.detectChanges();
+    expect(el.classList).toContain('revealed');
+    vi.advanceTimersByTime(3000);
+    fixture.detectChanges();
+    expect(el.classList).not.toContain('revealed');
+  });
+});
+
+describe('CallTile floating self-view', () => {
+  function renderFloat(collapsed: boolean) {
+    TestBed.configureTestingModule({ imports: [CallTile], providers: [provideNzIcons(APP_ICONS)] });
+    const fixture = TestBed.createComponent(CallTile);
+    fixture.componentRef.setInput(
+      'tile',
+      tile({ isLocal: true, name: 'Alex (you)', micMuted: true }),
+    );
+    fixture.componentRef.setInput('floating', true);
+    fixture.componentRef.setInput('canPin', false);
+    fixture.componentRef.setInput('collapsed', collapsed);
+    fixture.detectChanges();
+    const toggles: number[] = [];
+    fixture.componentInstance.toggleCollapse.subscribe(() => toggles.push(1));
+    return { el: fixture.nativeElement as HTMLElement, toggles };
+  }
+
+  it('can be minimized', () => {
+    const { el, toggles } = renderFloat(false);
+    const button = el.querySelector<HTMLButtonElement>('.collapse')!;
+    expect(button.getAttribute('aria-label')).toBe('Minimize my video');
+    button.click();
+    expect(toggles).toHaveLength(1);
+    expect(el.querySelector('.pin')).toBeNull();
+  });
+
+  it('collapsed: a pill with our mic state and no video, and a button to bring it back', () => {
+    const { el, toggles } = renderFloat(true);
+    expect(el.classList).toContain('pill');
+    expect(el.querySelector('video, .monogram')).toBeNull();
+    expect(el.querySelector('.pill-label')!.textContent!.trim()).toBe('You');
+    expect(el.querySelector('.pill-label nz-icon')).not.toBeNull();
+    el.querySelector<HTMLButtonElement>('.collapse[aria-label="Show my video"]')!.click();
+    expect(toggles).toHaveLength(1);
   });
 });
