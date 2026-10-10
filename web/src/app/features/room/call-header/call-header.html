@@ -61,7 +61,9 @@
         nzPopoverTitle="Safety code"
         [nzPopoverContent]="safetyCodeTpl"
         nzPopoverTrigger="click"
-        nzPopoverPlacement="bottom"
+        [nzPopoverOrigin]="host"
+        nzPopoverOverlayClassName="safety-code-popover"
+        [nzPopoverPlacement]="safetyCodePlacement"
       >
         <nz-icon [nzType]="unverified() > 0 ? 'exclamation-circle' : 'lock'" />
         <span class="label">Encrypted</span>

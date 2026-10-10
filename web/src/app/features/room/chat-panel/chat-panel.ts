@@ -60,6 +60,9 @@ export class ChatPanel {
   /** "Who reacted" opens towards the middle: chips sit at the screen's edge on phones. */
   protected readonly tipOthers = ['topLeft', 'bottomLeft'];
   protected readonly tipOwn = ['topRight', 'bottomRight'];
+  /** The reaction picker is nearly as wide as a phone: it opens centred on the whole message row, not the button. */
+  protected readonly pickerPlacement = ['top', 'bottom'];
+  private readonly origins = new WeakMap<HTMLElement, ElementRef<HTMLElement>>();
   protected readonly draft = signal('');
   protected readonly pickerOpen = signal(false);
   /** The message whose reaction picker is open. */
@@ -88,6 +91,13 @@ export class ChatPanel {
       const list = this.list()?.nativeElement;
       if (list && this.open() && this.stick) list.scrollTop = list.scrollHeight;
     });
+  }
+
+  /** A stable ElementRef per row (a new one on every check would re-position the popover). */
+  protected originOf(el: HTMLElement): ElementRef<HTMLElement> {
+    let ref = this.origins.get(el);
+    if (!ref) this.origins.set(el, (ref = new ElementRef(el)));
+    return ref;
   }
 
   protected onScroll(list: HTMLElement): void {

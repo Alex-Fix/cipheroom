@@ -20,7 +20,7 @@
         @if (item.kind === 'notice') {
           <p class="system">{{ item.text }}</p>
         } @else {
-          <article class="message" [class.own]="item.own" [class.grouped]="!row.header">
+          <article #messageEl class="message" [class.own]="item.own" [class.grouped]="!row.header">
             @if (row.header) {
               <header>
                 <span class="author">{{ item.authorName }}</span>
@@ -47,6 +47,8 @@
                   nz-popover
                   nzPopoverTrigger="click"
                   [nzPopoverContent]="reactTpl"
+                  [nzPopoverOrigin]="originOf(messageEl)"
+                  [nzPopoverPlacement]="pickerPlacement"
                   [nzPopoverVisible]="reactingTo() === item.id"
                   (nzPopoverVisibleChange)="reactingTo.set($event ? item.id : undefined)"
                 >

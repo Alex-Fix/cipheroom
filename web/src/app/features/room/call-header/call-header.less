@@ -183,3 +183,8 @@ button.e2ee {
     display: none;
   }
 }
+
+// The safety code card hangs from the whole header (see safetyCodePlacement): an arrow would point past the badge.
+::ng-deep .safety-code-popover .ant-popover-arrow {
+  display: none;
+}
