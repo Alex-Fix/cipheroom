@@ -125,7 +125,8 @@ is ~3.6 GB per viewer-hour against the 1 TB/month free tier. The usage guard enf
 - [x] Quality selection (up to 4K), simulcast, automatic reconnect
 - [x] Single-hostname deployment via Cloudflare Tunnel
 - [x] **End-to-end encryption**: per-call identities, sender keys, rotation on join/leave, safety codes
-- [ ] Remember contacts' keys across calls (TOFU) — today identities are fresh per call
+- [x] Remember contacts across calls (TOFU): known / verified marks, a warning for a verified name with another key —
+  device keys travel only inside encrypted envelopes, so the server still can't link calls
 - [x] Lobby and host admission: host keys, signed tickets, co-hosts, remove, auto-admit, end for everyone
 - [x] End-to-end encrypted chat: text, emoji reactions, links (no previews); memory only
 - [x] Observability: traces, logs, metrics, call-quality reports, Grafana dashboards (self-hosted, optional)

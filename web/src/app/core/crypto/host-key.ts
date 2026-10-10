@@ -97,7 +97,7 @@ export function hostAttestationMessage(
 }
 
 /** The public key of a PKCS#8 private key (via a short-lived extractable import that is never stored). */
-async function publicKeyOf(
+export async function publicKeyOf(
   pkcs8: Uint8Array<ArrayBuffer>,
   algorithm: 'Ed25519' | 'X25519',
   usages: KeyUsage[],

@@ -22,6 +22,17 @@ describe('identity', () => {
     expect(agreement.privateKey.extractable).toBe(false);
   });
 
+  it('rejects a small-order key, which could "sign" without a private key', async () => {
+    const zero = toBase64Url(new Uint8Array(32));
+    const { bundle } = await createIdentity('room');
+    expect(
+      await verifyIdentity(
+        { ...bundle, ed25519Pub: zero, sig: toBase64Url(new Uint8Array(64)) },
+        'room',
+      ),
+    ).toBeUndefined();
+  });
+
   it('rejects a bundle replayed into another room', async () => {
     const { bundle } = await createIdentity('team-sync');
     expect(await verifyIdentity(bundle, 'other-room')).toBeUndefined();

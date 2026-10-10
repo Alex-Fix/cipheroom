@@ -37,6 +37,15 @@
         ><nz-icon nzType="audio-muted"
       /></span>
     }
+    @if (trust() === 'verified') {
+      <span class="trust verified" role="img" aria-label="Verified contact"
+        ><nz-icon nzType="check"
+      /></span>
+    } @else if (trust() === 'mismatch') {
+      <span class="trust mismatch" role="img" aria-label="Not the person you verified"
+        ><nz-icon nzType="exclamation-circle"
+      /></span>
+    }
     <span class="name">{{ t.name }}</span>
   </div>
   @if (canPin()) {

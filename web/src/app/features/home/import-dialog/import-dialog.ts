@@ -17,7 +17,7 @@ import { NzModalModule } from 'ng-zorro-antd/modal';
 const MAX_FILE_BYTES = 16 * 1024;
 
 /**
- * Restore a meeting from its host key backup file and passphrase. Every opening starts empty; an error from the
+ * Restore a meeting (host key) or this browser's identity (device key) from a backup file and passphrase. Every opening starts empty; an error from the
  * container is shown until the file or passphrase changes. Presentational.
  */
 @Component({
@@ -73,7 +73,7 @@ export class ImportDialog {
     this.fileError.set(undefined);
     if (!file) return;
     if (file.size > MAX_FILE_BYTES) {
-      this.fileError.set("This isn't a Cipheroom host key backup.");
+      this.fileError.set("This isn't a Cipheroom backup.");
       return;
     }
     this.contents.set(await file.text());

@@ -16,6 +16,7 @@ import { NzIconModule } from 'ng-zorro-antd/icon';
 import { NzMessageService } from 'ng-zorro-antd/message';
 import { NzModalModule, NzModalService } from 'ng-zorro-antd/modal';
 import { ChatService } from '../../core/chat/chat.service';
+import { CallContactsService } from '../../core/contacts/call-contacts.service';
 import { CryptoService } from '../../core/crypto/crypto.service';
 import { LobbyClosedError, LobbyService } from '../../core/lobby/lobby.service';
 import { MediaService, UNNAMED } from '../../core/media/media.service';
@@ -72,7 +73,7 @@ import { ParticipantAction, ParticipantsPanel } from './participants-panel/parti
     ParticipantsPanel,
     UsageBanner,
   ],
-  providers: [MediaService, CryptoService, LobbyService, ChatService],
+  providers: [MediaService, CryptoService, LobbyService, ChatService, CallContactsService],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './room.html',
   styleUrl: './room.less',
@@ -90,6 +91,7 @@ export class Room implements OnInit, OnDestroy {
   protected readonly crypto = inject(CryptoService);
   protected readonly lobby = inject(LobbyService);
   protected readonly chat = inject(ChatService);
+  protected readonly callContacts = inject(CallContactsService);
 
   protected readonly error = signal<string | undefined>(undefined);
   protected readonly showParticipants = signal(false);
@@ -177,6 +179,7 @@ export class Room implements OnInit, OnDestroy {
   /** Bumped by every join and teardown: a join that isn't the current one stops. */
   private joinRun = 0;
   private knownGuests = new Set<string>();
+  private readonly warnedMismatch = new Set<string>();
   /** People who joined before their name arrived: announced when it does (or after NAME_WAIT_MS). */
   private readonly unnamedJoins = new Map<string, ReturnType<typeof setTimeout>>();
 
@@ -226,6 +229,19 @@ export class Room implements OnInit, OnDestroy {
         const override = this.shareOverride();
         if (override && !shares.has(override)) this.shareOverride.set(undefined);
         this.knownShares = shares;
+      });
+    });
+
+    // Contacts: someone using the name of a contact we verified, with another key — say so, once per person.
+    effect(() => {
+      const trust = this.callContacts.trust();
+      untracked(() => {
+        for (const [id, level] of trust) {
+          if (level !== 'mismatch' || this.warnedMismatch.has(id)) continue;
+          this.warnedMismatch.add(id);
+          const name = this.crypto.names().get(id) ?? 'Someone';
+          this.notify(`Not the ${name} you verified — compare the safety code`);
+        }
       });
     });
 
@@ -476,7 +492,18 @@ export class Room implements OnInit, OnDestroy {
     action: ParticipantAction;
     participantId: string;
   }): void {
-    if (action === 'make-cohost') void this.hostAction(() => this.lobby.makeCoHost(participantId));
+    if (action === 'verify')
+      this.confirm(
+        'Mark as verified?',
+        'Only after comparing the safety code out loud — the same emoji and digits on both screens. ' +
+          'You’ll then be warned if someone else ever uses this name.',
+        'Verified',
+        () => this.callContacts.setVerified(participantId, true),
+        false,
+      );
+    else if (action === 'unverify') void this.callContacts.setVerified(participantId, false);
+    else if (action === 'make-cohost')
+      void this.hostAction(() => this.lobby.makeCoHost(participantId));
     else if (action === 'ask-to-mute')
       void this.hostAction(() => this.lobby.askToMute(participantId));
     else
@@ -501,12 +528,18 @@ export class Room implements OnInit, OnDestroy {
    * Constant text only: nz-modal renders content as HTML. Centered, and Cancel has the focus: a destructive choice is
    * never what Enter does.
    */
-  private confirm(title: string, content: string, ok: string, onOk: () => Promise<void>): void {
+  private confirm(
+    title: string,
+    content: string,
+    ok: string,
+    onOk: () => Promise<unknown>,
+    danger = true,
+  ): void {
     this.modal.confirm({
       nzTitle: title,
       nzContent: content,
       nzOkText: ok,
-      nzOkDanger: true,
+      nzOkDanger: danger,
       nzCentered: true,
       nzAutofocus: 'cancel',
       nzOnOk: onOk,

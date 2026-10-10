@@ -82,7 +82,7 @@ describe('ImportDialog', () => {
     file.dispatchEvent(new Event('change'));
     await fixture.whenStable();
     fixture.detectChanges();
-    expect(modal().textContent).toContain("This isn't a Cipheroom host key backup.");
+    expect(modal().textContent).toContain("This isn't a Cipheroom backup.");
 
     fixture.componentRef.setInput('error', 'Wrong passphrase, or the file was changed.');
     fixture.detectChanges();

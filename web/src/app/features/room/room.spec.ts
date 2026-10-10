@@ -5,6 +5,8 @@ import { provideNzIcons } from 'ng-zorro-antd/icon';
 import { NzMessageService } from 'ng-zorro-antd/message';
 import { NzModalService } from 'ng-zorro-antd/modal';
 import { ChatMessage, ChatService } from '../../core/chat/chat.service';
+import { CallContactsService } from '../../core/contacts/call-contacts.service';
+import { Trust } from '../../core/contacts/contacts';
 import { CryptoService } from '../../core/crypto/crypto.service';
 import {
   LobbyClosedError,
@@ -81,6 +83,7 @@ function fakeCrypto() {
     canAdmit: signal(false),
     isHost: signal(false),
     authority: signal({ autoAdmit: false }),
+    names: signal<ReadonlyMap<string, string>>(new Map()),
   };
 }
 
@@ -96,6 +99,15 @@ function fakeChat() {
     retry: vi.fn(),
     react: vi.fn(),
     notice: vi.fn(),
+  };
+}
+
+/** CallContactsService: trust levels only. */
+function fakeContacts() {
+  return {
+    trust: signal<ReadonlyMap<string, Trust>>(new Map()),
+    verifiable: signal<ReadonlySet<string>>(new Set()),
+    setVerified: vi.fn().mockResolvedValue(true),
   };
 }
 
@@ -164,6 +176,7 @@ async function setup(
   const lobby = fakeLobby();
   opts.lobby?.(lobby);
   const chat = fakeChat();
+  const contacts = fakeContacts();
 
   TestBed.configureTestingModule({
     imports: [Room],
@@ -181,6 +194,7 @@ async function setup(
         { provide: CryptoService, useValue: crypto },
         { provide: LobbyService, useValue: lobby },
         { provide: ChatService, useValue: chat },
+        { provide: CallContactsService, useValue: contacts },
       ],
     },
   });
@@ -209,6 +223,7 @@ async function setup(
     crypto,
     lobby,
     chat,
+    contacts,
     modal,
   };
 }
@@ -390,6 +405,40 @@ describe('Room', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  describe('contacts', () => {
+    it('warns once when someone uses the name of a contact we verified, with another key', async () => {
+      const { el, fixture, contacts, crypto } = await setup();
+      crypto.names.set(new Map([['p-fake', '<b>Bob</b>']]));
+      const notices = () => [...el.querySelectorAll('.notice')].map((n) => n.textContent!.trim());
+
+      contacts.trust.set(new Map([['p-fake', 'mismatch']]));
+      fixture.detectChanges();
+      contacts.trust.set(new Map([['p-fake', 'mismatch']]));
+      fixture.detectChanges();
+
+      expect(notices()).toEqual(['Not the <b>Bob</b> you verified — compare the safety code']);
+      expect(el.querySelector('.notice b')).toBeNull();
+    });
+
+    it('asks to compare the safety code before marking someone verified; takes it back at once', async () => {
+      const { fixture, contacts, modal } = await setup();
+      const panel = fixture.debugElement.query(
+        (d) => d.name === 'app-participants-panel',
+      ).componentInstance;
+
+      panel.act.emit({ action: 'verify', participantId: 'p-bob' });
+      expect(contacts.setVerified).not.toHaveBeenCalled();
+      const options = modal.confirm.mock.calls[0][0]!;
+      expect(options.nzContent).toContain('safety code');
+      expect(options.nzOkDanger).toBe(false);
+      await (options.nzOnOk as () => Promise<unknown>)();
+      expect(contacts.setVerified).toHaveBeenCalledWith('p-bob', true);
+
+      panel.act.emit({ action: 'unverify', participantId: 'p-bob' });
+      expect(contacts.setVerified).toHaveBeenLastCalledWith('p-bob', false);
+    });
   });
 
   describe('video layout', () => {

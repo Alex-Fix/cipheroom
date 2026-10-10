@@ -22,9 +22,28 @@ const STRENGTH_TEXT: Record<PassphraseStrength, string> = {
   strong: 'Strong',
 };
 
+/** What is being backed up: a new meeting's host key, or this browser's identity (device key). */
+export type BackupKind = 'meeting' | 'identity';
+
+const TEXT: Record<BackupKind, { title: string; lead: string; skip: string; saved: string }> = {
+  meeting: {
+    title: 'Back up your host key',
+    lead: "This browser is the host of your new meeting. To host it from another device, or if this browser's data is cleared, you'll need a backup.",
+    skip: "Without a backup you can't host this meeting from another browser, or after this browser's data is cleared. You can't make one later.",
+    saved:
+      'Keep the file and your passphrase somewhere safe — anyone with both can host this meeting.',
+  },
+  identity: {
+    title: 'Back up your identity',
+    lead: "People you call will recognise this browser from now on. To be recognised on another device, or after this browser's data is cleared, you'll need a backup.",
+    skip: "Without a backup, people will see you as someone new on another device or after this browser's data is cleared. You can't make one later.",
+    saved: 'Keep the file and your passphrase somewhere safe — anyone with both can appear as you.',
+  },
+};
+
 /**
- * Right after creating a meeting: protect its host key with a passphrase and download the backup — the only way to
- * host it from another browser, and only possible now. Skipping asks once more, inside the same dialog (no stacked
+ * Right after creating a meeting or an identity: protect the key with a passphrase and download the backup — the only
+ * way to use it from another browser, and only possible now. Skipping asks once more, inside the same dialog (no stacked
  * dialogs). Esc goes one step back: form → "skip?" → form; it does nothing while encrypting. Presentational.
  */
 @Component({
@@ -36,6 +55,7 @@ const STRENGTH_TEXT: Record<PassphraseStrength, string> = {
 })
 export class BackupDialog {
   readonly open = input.required<boolean>();
+  readonly kind = input<BackupKind>('meeting');
   /** Encrypting (600k PBKDF2 iterations take a moment). */
   readonly busy = input(false);
   /** The backup was downloaded. */
@@ -58,12 +78,9 @@ export class BackupDialog {
     () =>
       this.strength() !== 'too-short' && this.confirmation() === this.passphrase() && !this.busy(),
   );
+  protected readonly text = computed(() => TEXT[this.kind()]);
   protected readonly title = computed(() =>
-    this.saved()
-      ? 'Backup saved'
-      : this.confirmingSkip()
-        ? 'Skip the backup?'
-        : 'Back up your host key',
+    this.saved() ? 'Backup saved' : this.confirmingSkip() ? 'Skip the backup?' : this.text().title,
   );
 
   constructor() {

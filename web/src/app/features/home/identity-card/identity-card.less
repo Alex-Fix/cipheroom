@@ -1,0 +1,32 @@
+:host {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: var(--bg-elevated);
+}
+
+.state {
+  flex: 1;
+  margin: 0;
+  color: var(--label-secondary);
+  font-size: 13px;
+
+  &.ready {
+    color: var(--label);
+
+    nz-icon {
+      color: var(--green);
+    }
+  }
+}
+
+.set-up,
+.start-over {
+  flex: none;
+}
+
+.start-over {
+  color: var(--red);
+}

@@ -1,3 +1,4 @@
+import { isWeakEd25519Key } from './weak-keys';
 import { AuthorityDto, IdentityDto, TicketDto } from '../signaling/signaling.types';
 import { fields, fromBase64Url, toBase64Url } from './encoding';
 import { deriveRoomId, hostAttestationMessage } from './host-key';
@@ -47,6 +48,8 @@ export async function verify(
     const pub = key(publicKey);
     const signature = fromBase64Url(sig);
     if (pub.byteLength !== 32 || signature.byteLength !== 64) return false;
+    // A small-order "key" can verify trivial signatures without anyone holding a private key.
+    if (await isWeakEd25519Key(pub)) return false;
     const k = await crypto.subtle.importKey('raw', pub, 'Ed25519', false, ['verify']);
     return await crypto.subtle.verify('Ed25519', k, signature, message);
   } catch {

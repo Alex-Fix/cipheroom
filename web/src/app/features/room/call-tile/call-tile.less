@@ -217,3 +217,22 @@ video.mirror {
 :host(.pill) {
   grid-template-columns: 1fr auto;
 }
+
+// Contacts: a verified contact, or a verified name with another key.
+.trust {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  font-size: 11px;
+  text-shadow: none;
+
+  &.verified {
+    background: var(--green);
+  }
+
+  &.mismatch {
+    background: var(--orange);
+  }
+}

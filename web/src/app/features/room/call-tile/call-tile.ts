@@ -10,6 +10,7 @@ import {
 } from '@angular/core';
 import { NzIconModule } from 'ng-zorro-antd/icon';
 import { Tile } from '../../../core/media/media.types';
+import { Trust } from '../../../core/contacts/contacts';
 import { initials } from '../../../shared/initials';
 import { TrackDirective } from '../../../shared/track.directive';
 
@@ -35,6 +36,8 @@ import { TrackDirective } from '../../../shared/track.directive';
 export class CallTile {
   readonly tile = input.required<Tile>();
   readonly pinned = input(false);
+  /** What we know about this person (contacts): verified ✓, or ⚠️ for a verified name with another key. */
+  readonly trust = input<Trust | undefined>(undefined);
   /** Hidden and floating tiles don't offer pinning. */
   readonly canPin = input(true);
   readonly pin = output();

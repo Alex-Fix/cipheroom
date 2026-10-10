@@ -2,6 +2,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { PendingGuest } from '../../../core/lobby/lobby.service';
 import { provideNzIcons } from 'ng-zorro-antd/icon';
 import { CallParticipant } from '../../../core/media/media.types';
+import { Trust } from '../../../core/contacts/contacts';
 import { APP_ICONS } from '../../../core/ui/icons';
 import { ParticipantsPanel } from './participants-panel';
 
@@ -21,7 +22,13 @@ let fixture: ComponentFixture<ParticipantsPanel>;
 
 function render(
   participants: CallParticipant[],
-  inputs: { guests?: PendingGuest[]; canAdmit?: boolean; isHost?: boolean } = {},
+  inputs: {
+    guests?: PendingGuest[];
+    canAdmit?: boolean;
+    isHost?: boolean;
+    trust?: ReadonlyMap<string, Trust>;
+    verifiable?: ReadonlySet<string>;
+  } = {},
 ): HTMLElement {
   TestBed.configureTestingModule({
     imports: [ParticipantsPanel],
@@ -33,6 +40,8 @@ function render(
   fixture.componentRef.setInput('guests', inputs.guests ?? []);
   fixture.componentRef.setInput('canAdmit', inputs.canAdmit ?? false);
   fixture.componentRef.setInput('isHost', inputs.isHost ?? false);
+  fixture.componentRef.setInput('trust', inputs.trust ?? new Map());
+  fixture.componentRef.setInput('verifiable', inputs.verifiable ?? new Set());
   fixture.detectChanges();
   // nz-drawer renders into a CDK overlay attached to document.body.
   return document.body.querySelector<HTMLElement>('.ant-drawer')!;
@@ -120,5 +129,61 @@ describe('ParticipantsPanel', () => {
     expect(drawer.querySelector('.person .name')!.textContent).toContain(
       '<img src=x onerror=alert(1)>',
     );
+  });
+
+  describe('contacts', () => {
+    const people = [
+      person({ name: 'Alex', isLocal: true }),
+      person({ name: 'Bob' }),
+      person({ name: 'Carol' }),
+      person({ name: 'Bob2', identity: 'fake' }),
+    ];
+    const trust = new Map<string, Trust>([
+      ['Bob', 'verified'],
+      ['Carol', 'known'],
+      ['fake', 'mismatch'],
+    ]);
+
+    it('says who we verified, who we met before, and warns about a verified name with another key', () => {
+      const drawer = render(people, { trust });
+      const lines = Object.fromEntries(
+        [...drawer.querySelectorAll('.person')].map((p) => [
+          p.querySelector('.name')!.textContent!.trim(),
+          p.querySelector('.trust')?.textContent!.replace(/\s+/g, ' ').trim(),
+        ]),
+      );
+      expect(lines).toEqual({
+        'Alex (You)': undefined,
+        Bob: 'Verified',
+        Carol: 'Met before',
+        Bob2: 'Not the Bob2 you verified — compare the safety code',
+      });
+      expect(drawer.querySelector('.trust.mismatch')!.getAttribute('role')).toBe('alert');
+    });
+
+    it('lets anyone mark someone with a device key as verified, or take it back', async () => {
+      const drawer = render(people, { trust, verifiable: new Set(['Bob', 'Carol']) });
+      const acts: unknown[] = [];
+      fixture.componentInstance.act.subscribe((a) => acts.push(a));
+      const more = [...drawer.querySelectorAll<HTMLButtonElement>('.more')];
+      expect(more.map((b) => b.getAttribute('aria-label'))).toEqual([
+        'Options for Bob',
+        'Options for Carol',
+      ]);
+
+      for (const [button, item] of [
+        [more[0], '.unverify'],
+        [more[1], '.verify'],
+      ] as const) {
+        button.click();
+        await new Promise((resolve) => setTimeout(resolve, 200));
+        fixture.detectChanges();
+        document.body.querySelector<HTMLElement>(`.ant-dropdown ${item}`)!.click();
+      }
+      expect(acts).toEqual([
+        { action: 'unverify', participantId: 'Bob' },
+        { action: 'verify', participantId: 'Carol' },
+      ]);
+    });
   });
 });

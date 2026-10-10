@@ -9,17 +9,22 @@ import { NzModalService } from 'ng-zorro-antd/modal';
 import { NzTooltipModule } from 'ng-zorro-antd/tooltip';
 import { BackupError } from '../../core/crypto/host-key-backup';
 import { HostKeysService } from '../../core/crypto/host-keys.service';
+import { DeviceKeysService } from '../../core/crypto/device-keys.service';
+import { backupKind } from '../../core/crypto/device-key-backup';
+import { ContactsService } from '../../core/contacts/contacts.service';
+import { ContactsList } from './contacts-list/contacts-list';
+import { IdentityCard } from './identity-card/identity-card';
 import { E2EE_UNSUPPORTED, e2eeSupported } from '../../core/crypto/support';
 import { loadDisplayName, saveDisplayName } from '../../core/settings/display-name';
-import { BackupDialog } from './backup-dialog/backup-dialog';
+import { BackupDialog, BackupKind } from './backup-dialog/backup-dialog';
 import { ImportDialog } from './import-dialog/import-dialog';
 import { downloadText } from './passphrase';
 import { parseRoomLink, shortRoomId } from './room-link';
 
 const IMPORT_ERRORS = {
   locked: 'Wrong passphrase, or the file was changed.',
-  malformed: "This isn't a Cipheroom host key backup.",
-  mismatch: "This isn't a Cipheroom host key backup.",
+  malformed: "This isn't a Cipheroom backup.",
+  mismatch: "This isn't a Cipheroom backup.",
 } as const;
 
 /**
@@ -29,6 +34,8 @@ const IMPORT_ERRORS = {
 @Component({
   selector: 'app-home',
   imports: [
+    ContactsList,
+    IdentityCard,
     BackupDialog,
     FormsModule,
     ImportDialog,
@@ -46,6 +53,16 @@ export class Home {
   private readonly message = inject(NzMessageService);
   private readonly modal = inject(NzModalService);
   protected readonly hostKeys = inject(HostKeysService);
+  protected readonly deviceKeys = inject(DeviceKeysService);
+  protected readonly contacts = inject(ContactsService);
+  protected readonly contactList = computed(() => [...this.contacts.contacts().values()]);
+  /** Setting up the identity (creating the key). */
+  protected readonly settingUp = signal(false);
+  /** The identity's one-time backup is being offered. */
+  protected readonly identityBackup = signal(false);
+  protected readonly backupKind = computed<BackupKind>(() =>
+    this.identityBackup() ? 'identity' : 'meeting',
+  );
 
   protected readonly name = signal(loadDisplayName());
   protected readonly link = signal(inject(ActivatedRoute).snapshot.queryParamMap.get('room') ?? '');
@@ -69,6 +86,7 @@ export class Home {
   constructor() {
     void e2eeSupported().then((ok) => this.supported.set(ok));
     void this.hostKeys.refresh();
+    void this.deviceKeys.refresh();
   }
 
   protected hasName(): boolean {
@@ -99,10 +117,13 @@ export class Home {
 
   protected async saveBackup(passphrase: string): Promise<void> {
     const roomId = this.backupFor();
-    if (!roomId) return;
+    const identity = this.identityBackup();
+    if (!roomId && !identity) return;
     this.backingUp.set(true);
     try {
-      const file = await this.hostKeys.backup(roomId, passphrase);
+      const file = identity
+        ? await this.deviceKeys.backup(passphrase)
+        : await this.hostKeys.backup(roomId!, passphrase);
       downloadText(file.fileName, file.contents);
       this.backupSaved.set(true);
     } catch (e) {
@@ -114,6 +135,11 @@ export class Home {
   }
 
   protected finishBackup(): void {
+    if (this.identityBackup()) {
+      this.deviceKeys.discardPendingBackup();
+      this.identityBackup.set(false);
+      return;
+    }
     const roomId = this.backupFor();
     this.hostKeys.discardPendingBackup();
     this.backupFor.set(undefined);
@@ -130,16 +156,72 @@ export class Home {
     this.importBusy.set(true);
     this.importError.set(undefined);
     try {
-      await this.hostKeys.import(contents, passphrase);
-      this.importing.set(false);
-      this.message.success('Meeting imported');
+      if (backupKind(contents) === 'device') {
+        await this.deviceKeys.restore(contents, passphrase);
+        this.importing.set(false);
+        this.message.success('Identity restored');
+      } else {
+        await this.hostKeys.import(contents, passphrase);
+        this.importing.set(false);
+        this.message.success('Meeting imported');
+      }
     } catch (e) {
       this.importError.set(
-        e instanceof BackupError ? IMPORT_ERRORS[e.problem] : "This browser can't keep host keys.",
+        e instanceof BackupError ? IMPORT_ERRORS[e.problem] : "This browser can't keep keys.",
       );
     } finally {
       this.importBusy.set(false);
     }
+  }
+
+  /** A new identity (device key), then its one-time backup. */
+  protected async setUpIdentity(): Promise<void> {
+    if (this.settingUp()) return;
+    this.settingUp.set(true);
+    try {
+      await this.deviceKeys.setUp();
+      this.backupSaved.set(false);
+      this.identityBackup.set(true);
+    } catch (e) {
+      console.warn('[cipheroom] setting up an identity failed', e);
+      this.message.error("This browser can't keep an identity. You can still join.");
+    } finally {
+      this.settingUp.set(false);
+    }
+  }
+
+  protected startOver(): void {
+    this.modal.confirm({
+      nzTitle: 'Start over with a new identity?',
+      nzContent:
+        'People who verified you will see a warning until they verify you again. A backup of this ' +
+        'identity still restores it.',
+      nzOkText: 'Start Over',
+      nzOkDanger: true,
+      nzCentered: true,
+      nzAutofocus: 'cancel',
+      nzOnOk: () => this.deviceKeys.remove(),
+    });
+  }
+
+  protected unverify(devicePub: string): void {
+    void this.contacts.setVerified(devicePub, false);
+  }
+
+  protected forgetContact(devicePub: string): void {
+    void this.contacts.forget(devicePub);
+  }
+
+  protected forgetAllContacts(): void {
+    this.modal.confirm({
+      nzTitle: 'Forget everyone?',
+      nzContent: 'Nobody will be recognised or marked verified in your next calls.',
+      nzOkText: 'Forget Everyone',
+      nzOkDanger: true,
+      nzCentered: true,
+      nzAutofocus: 'cancel',
+      nzOnOk: () => this.contacts.forgetAll(),
+    });
   }
 
   protected async copyLink(roomId: string): Promise<void> {
