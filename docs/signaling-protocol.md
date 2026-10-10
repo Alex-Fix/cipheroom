@@ -107,7 +107,8 @@ verifies, stores or logs them (clients verify everything — the server is untru
   per-call public keys, self-signed by their browser over the room id. Sent with `JoinLobby`, stored on the
   participant, included in every `ParticipantDto`. The server checks the shape only.
 - `SendKeyEnvelopes`: one call per key rotation, one envelope per other participant. `blob` is the signed, encrypted
-  envelope (v2: sender key and the sender's padded display name, ~1,000 chars); only `toId` is visible to the server.
+  envelope (v3: sender key, the sender's padded display name and a fixed-size device-key block, ~1,200 chars; v2
+  still accepted); only `toId` is visible to the server.
   Recipients check that the envelope's signed `fromId` matches the relayed `fromId`.
 - Clients that call `JoinLobby` without all its arguments fail SignalR's argument binding and never join (so do
   clients still calling the removed `JoinRoom`); `null` or a malformed identity gets `Invalid identity.`

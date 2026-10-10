@@ -130,7 +130,7 @@ fallback.
 
 ### Names
 Display names never reach the server in plaintext: guests encrypt theirs to each admitter (knocks, `knock.ts`), and
-everyone sends theirs to everyone inside key envelopes (v2: sender key ‖ name). Names are padded to one size
+everyone sends theirs to everyone inside key envelopes (v3: sender key ‖ name ‖ device block). Names are padded to one size
 (`names.ts`), and signed by the person who chose them.
 
 ### Sender keys
@@ -153,7 +153,15 @@ Defences:
   (ours included), behind the header's "Encrypted" badge; a toast asks to compare again whenever it changes.
 - Every join and leave is announced; keys go only to participants shown in the call **who were admitted** (see
   "Admission").
-- Later: **TOFU pinning** of contacts' keys (needs identities that persist across calls).
+- **Contacts (TOFU)** — design: [`plans/2026-10-10-contacts-tofu-design.md`](plans/2026-10-10-contacts-tofu-design.md).
+  A browser can set up a long-term **device key** (Ed25519, non-extractable, one-time passphrase backup). It signs
+  each per-call identity (`cipheroom/device/v1`, room id included), and that statement travels **only inside key
+  envelopes** (a fixed-size block, zeros without a device key): the server still sees unlinkable per-call keys, while
+  people who call each other recognise each other. Browsers remember everyone whose device key verified (IndexedDB,
+  this browser only) and show **known** (met in an earlier call), **verified** (marked after comparing the safety
+  code), and a **warning** when a newcomer uses a verified contact's name with another key or none.
+- Ed25519 keys of small order (and non-canonical encodings) are rejected everywhere (`weak-keys.ts`): for them
+  trivial signatures verify without a private key.
 
 ### Later: MLS
 For very large rooms / multi-device, swap sender-key distribution for MLS (RFC 9420). Only `CryptoService` changes;
