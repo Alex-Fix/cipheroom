@@ -27,13 +27,16 @@ web/
       ui/                icons.ts (static ng-zorro icon registry), theme.service.ts (OS appearance / forced dark)
       crypto/            identity, sender keys, frame-crypto worker, safety code, chat crypto (`e2ee-media`)
       chat/              chat.service.ts (room-scoped chat state), emoji.ts (curated set), links.ts (http(s) links only)
+      files/             file-transfer.service.ts (room-scoped: shares, requests, data channel streams), image-metadata.ts
+                         (photo metadata stripping), thumbnail.ts
     shared/              reusable directives/pipes and pure template helpers (track.directive.ts,
                          element-size.directive.ts, initials.ts)
     features/            routed screens; a feature never imports from another feature
       home/              home.ts .html .less .spec.ts, room-id.ts
       room/              room.ts .html .less .spec.ts (container), call-status.ts, participant-changes.ts,
                          device-error.ts, and one folder per child component:
-        call-header/  call-tile/  call-controls/  participants-panel/  chat-panel/  emoji-picker/
+        call-header/  call-tile/  call-controls/  participants-panel/  chat-panel/  emoji-picker/  file-card/
+        image-lightbox/
         connection-drawer/ (Connection: verdict, route, network, sending, encryption, copy report)
         layout/       call-layout.ts (pure: tile roles + rects), stage-speaker.ts (active-speaker hysteresis);
                       corner-drag.directive.ts (floating self-view)

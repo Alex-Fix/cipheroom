@@ -35,6 +35,9 @@ want private calls without trusting a vendor, and it runs on a home computer wit
   compare out loud. Browsers that can't encrypt can't join — calls never fall back to unencrypted
 - 💬 End-to-end encrypted chat with emoji reactions — signed by each sender, kept in memory only, gone when you
   leave; links stay plain links (no previews that would leak them)
+- 📎 End-to-end encrypted files and images in chat, up to 100 MB: sent straight from your browser over Cloudflare's
+  SFU (never stored, not even on your server), each with its own key; photos lose their location and camera details
+  before they leave; small images appear inline, everything else downloads on click
 - 🚪 Lobby and host controls: a meeting belongs to a host key kept in the creator's browser (with a
   passphrase-protected backup). Guests knock and wait; the host or a co-host lets them in, removes people, asks them
   to mute, or ends the call. Every decision is signed and checked by each browser, so even a malicious server can't
@@ -138,7 +141,8 @@ is ~3.6 GB per viewer-hour against the 1 TB/month free tier. The usage guard enf
   health and a copyable report; a "Poor connection" hint in the header
 - [x] "Source code" link in the UI (AGPL §13) — opens the exact commit that is running (`SOURCE_URL` for forks)
 - [ ] MLS-based group keys for large rooms
-- [ ] End-to-end encrypted files and images in chat
+- [x] End-to-end encrypted files and images in chat (up to 100 MB, from the sender's browser over SFU data channels,
+  photo metadata removed)
 
 ### Deployment modes
 

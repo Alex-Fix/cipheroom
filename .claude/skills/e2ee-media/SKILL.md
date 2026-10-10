@@ -41,6 +41,11 @@ Design: `docs/plans/2026-10-07-e2ee-media-design.md`. Everything lives in `web/s
   (`cipheroom/chat-aad/v1`). `CryptoService` derives chat keys before a sender key goes to the worker (which detaches
   it), switches them with the media key, holds events that beat their key (10 s), drops replays by per-author
   `seq`. `core/chat/ChatService` holds chat state and never sees keys.
+- `file-crypto.ts` / `file-events.ts` — files: a random AES-GCM key per file, carried only in the file card (a chat
+  event, so signed and chat-encrypted); 16 KiB chunks framed as version ‖ index ‖ random IV ‖ AES-GCM with AAD = room,
+  file id, index, total (`cipheroom/file-chunk/v1`); content hash = SHA-256 over the chunk hashes
+  (`cipheroom/file-hash/v1`), checked against the card. File keys are not rotated with call keys (a newcomer never
+  gets older cards). `core/files/FileTransferService` streams them over SFU data channels.
 
 ## Frame transform
 - One worker for all transforms (both APIs), so counters are per key, not per track. Keys per sender: ours (send)
@@ -94,9 +99,11 @@ sig  = Ed25519(sender identity, fields("cipheroom/env-sig/v1", aad, eph, iv, ct)
 - [ ] Display names only inside encrypted, padded payloads (knocks, envelopes) — never in SignalR plaintext fields.
 - [ ] Host keys non-extractable at rest; the exportable copy only in memory until the one-time backup or skip.
 - [ ] Safety code recomputed and shown whenever participant set changes.
-- [ ] No SFU data channels for app data (chat goes over SignalR, encrypted) — they're outside our key management.
+- [ ] SFU data channels carry only frames sealed by `file-crypto` (keys from signed, encrypted file cards) — never
+      plaintext app data, and nothing whose key travels outside our key management.
 - [ ] Every sender and receiver `MediaService` creates gets the transform before media flows (incl. placeholder and
       replaced tracks, and receivers the SFU reuses).
 - [ ] Only WebCrypto primitives; no `Math.random`, no custom ciphers.
 - [ ] Tests: envelope round trip, tampered envelope → reject, wrong recipient → reject, rotation on leave excludes leaver;
-      chat: forged author / re-attributed sender / replay → dropped, newcomer can't read earlier events.
+      chat: forged author / re-attributed sender / replay → dropped, newcomer can't read earlier events;
+      files: tampered / moved / truncated chunk → rejected, changed file → hash mismatch, cards validated strictly.

@@ -74,9 +74,21 @@ keeps the session 30 s). After two failed restarts `state` = `disconnected` → 
 goes straight to Cloudflare's anycast edge; TURN (UDP/TCP/TLS 443) is the fallback for restrictive networks.
 `Turn:ForceRelay` (`TURN_FORCE_RELAY=true`) forces relay to test that path. Nothing at home needs to be reachable.
 
+## Data channels (files)
+Design: `docs/plans/2026-10-10-encrypted-files-design.md`. `MediaService.publishChannel` / `subscribeChannel` /
+`closeChannel` (used only by `FileTransferService`):
+- The transport is added lazily on first use: `OpenDataTransport` → the SFU's offer (pulling its `server-events`
+  channel) → our answer via `Renegotiate`. It's an SFU offer like a subscribe, so it respects the negotiation-order
+  rule; it needs `startReceiving()` first. Then open `server-events` as a negotiated channel.
+- Channels are negotiated (`{ negotiated: true, id: channelId, ordered: true }`), reliable and ordered, binary as
+  ArrayBuffers. **16 KiB messages**: 64 KiB stalls on Cloudflare although the SDP says `max-message-size` 65536.
+- Measured on the home stack: ~6–8 Mbps per transfer, fan-out to every subscriber works. The api closes channels
+  after 5 minutes; ≤ 4 published / 8 received per participant.
+
 ## Cost (free tier)
 SFU and TURN share 1,000 GB/month of egress (traffic *from* Cloudflare). A 4K camera ≈ 3.6 GB per viewer-hour,
-1080p about a third. The usage guard is still to be built — keep the Cloudflare billing notification on.
+1080p about a third; file downloads count too (one copy per recipient). The usage guard (`docs/plans/2026-10-09-usage-guard-design.md`)
+estimates usage from browser reports (media and data channel bytes) and Cloudflare's analytics.
 
 ## Debugging
 - In the call: More → **Connection** (`connection-health.ts`, every 2 s from `getStats`) shows the route (direct

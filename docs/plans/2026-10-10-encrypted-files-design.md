@@ -1,5 +1,5 @@
 # Encrypted files and images in chat — design
-Status: approved · Date: 2026-10-10
+Status: implemented · Date: 2026-10-10
 
 ## Problem
 Chat (#15) carries text, emoji and links only. People want to drop a screenshot, a photo or a PDF into a call.

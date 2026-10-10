@@ -27,7 +27,7 @@
 
 | Service | Role | Sees |
 |---|---|---|
-| `api` (.NET 10, SignalR) | rooms, **lobby and admission** (verifies host proofs, tickets and host-control signatures), presence, **SFU proxy** (relays SDP, checks every track belongs to the caller's room), ICE config, **key-envelope and knock relay** (to the recipient only, within the room), **encrypted chat relay** (to the room's other members) | metadata, SDP (client IPs), public keys, signatures, opaque envelopes, knocks and chat events — never names or chat text |
+| `api` (.NET 10, SignalR) | rooms, **lobby and admission** (verifies host proofs, tickets and host-control signatures), presence, **SFU proxy** (relays SDP, checks every track and data channel belongs to the caller's room), ICE config, **key-envelope and knock relay** (to the recipient only, within the room), **encrypted chat relay** (to the room's other members) | metadata, SDP (client IPs), public keys, signatures, opaque envelopes, knocks and chat events, data channels opening and closing — never names, chat text or files |
 | Cloudflare Realtime SFU | forwards media between browsers, simulcast layer selection | end-to-end encrypted frames (codec payload header in the clear), metadata |
 | Cloudflare TURN | fallback relay for client networks that block direct UDP | DTLS-SRTP packets |
 | `web` | static Angular app (ng-zorro UI, icons bundled — no runtime CDN fetches) + security headers; `/source` redirects to the running commit's code (AGPL §13, `SOURCE_URL` + commit baked in at build) | nothing sensitive |
@@ -178,9 +178,25 @@ emoji reactions, browser memory only (gone when you leave; newcomers see only wh
 - Events that beat their sender's key wait up to 10 s. Links are plain anchors to `http(s)` URLs; nothing is fetched.
   Reactions must use an emoji from the app's own set (`core/chat/emoji.ts`).
 
+### Files and images
+Design: [`plans/2026-10-10-encrypted-files-design.md`](plans/2026-10-10-encrypted-files-design.md). Up to 100 MB per
+file, never stored anywhere: the file stays in the sender's tab and goes over **Cloudflare SFU data channels**, not the
+api or the tunnel.
+- Sharing sends a **card** as a chat event (signed, chat-encrypted): name, size, type, a tiny preview for images, the
+  SHA-256 content hash and a random **per-file AES-GCM key**. JPEG/PNG/WebP lose their metadata (GPS, camera, times)
+  first, without re-encoding; the orientation is kept (`core/files/image-metadata.ts`).
+- Others ask for it with an encrypted `file-request`; the sender gathers requests for 1 s, publishes a randomly named
+  data channel (`PublishDataChannel`), announces it in an encrypted `file-channel`, and streams 16 KiB chunks once —
+  the SFU fans them out. Frames are AES-GCM with AAD = room, file id, chunk index and chunk count
+  (`cipheroom/file-chunk/v1`); receivers check every chunk, then the whole file against the card's hash. Missing
+  chunks are asked for again; images ≤ 5 MB download by themselves.
+- The api only resolves who may subscribe to whose channel (same room, owner-prefixed SFU names), caps channels per
+  participant (4 published, 8 received) and closes each after 5 minutes. The usage guard counts data channel bytes.
+
 ### Known limits
 - Metadata (who, when, IPs, bandwidth, who publishes which tracks, frame sizes and timing, the RTP audio-level
-  header) is visible to the api and Cloudflare; for chat, the api sees who sent an event, when, and its size bucket.
+  header) is visible to the api and Cloudflare; for chat, the api sees who sent an event, when, and its size bucket;
+  for files, who opened a data channel and who subscribed to it (Cloudflare also sees the bytes, so roughly the size).
   Size-based layer requests also show which camera a viewer watches large (pin or active speaker).
 - A malicious server can drop envelopes, knocks or admissions, or hide a leave or a removal from some members
   (calls break, someone waits forever, or a leaver keeps getting keys until the next rotation) — visible as "who's
