@@ -117,6 +117,13 @@ public sealed record TrackRefDto(string? ParticipantId, string? Source);
 
 public sealed record AnswerDto(string AnswerSdp);
 
+/// <param name="OfferSdp">SFU offer adding the data channel transport; answer it with Renegotiate.</param>
+/// <param name="ServerEventsChannelId">Negotiated id of the SFU's own channel the transport is built on.</param>
+public sealed record DataTransportDto(string OfferSdp, int ServerEventsChannelId);
+
+/// <param name="ChannelId">Negotiated id for <c>createDataChannel(name, { negotiated: true, id })</c>.</param>
+public sealed record DataChannelDto(int ChannelId);
+
 /// <param name="Mid">Receiving transceiver on the caller's peer connection.</param>
 public sealed record SubscribedTrackDto(string ParticipantId, string Source, string Mid);
 

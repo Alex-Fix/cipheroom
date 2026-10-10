@@ -11,6 +11,8 @@ import {
   AuthorityDto,
   CallStatsDto,
   ClientEvents,
+  DataChannelDto,
+  DataTransportDto,
   HostProofDto,
   HubMethods,
   IdentityDto,
@@ -155,6 +157,26 @@ export class SignalingService {
 
   async unpublishTracks(sources: TrackSource[]): Promise<void> {
     await this.invoke(HubMethods.UnpublishTracks, sources);
+  }
+
+  /** Once per media session, before the first data channel: the SFU's offer adding the data transport. */
+  async openDataTransport(): Promise<DataTransportDto> {
+    return this.invoke<DataTransportDto>(HubMethods.OpenDataTransport);
+  }
+
+  /** Publishes a data channel under our random `name` (22 base64url characters). */
+  async publishDataChannel(name: string): Promise<DataChannelDto> {
+    return this.invoke<DataChannelDto>(HubMethods.PublishDataChannel, name);
+  }
+
+  /** Receives `participantId`'s data channel `name`. */
+  async subscribeDataChannel(participantId: string, name: string): Promise<DataChannelDto> {
+    return this.invoke<DataChannelDto>(HubMethods.SubscribeDataChannel, participantId, name);
+  }
+
+  /** Closes our own channel (`participantId` omitted) or our subscription to `participantId`'s. */
+  async closeDataChannel(name: string, participantId?: string): Promise<void> {
+    await this.invoke(HubMethods.CloseDataChannel, name, participantId ?? null);
   }
 
   async unsubscribeTracks(mids: string[]): Promise<void> {
