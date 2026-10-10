@@ -35,6 +35,21 @@ public sealed class CloudflareSfuClient(HttpClient http)
             JsonContent.Create(request, CloudflareJsonContext.Default.RenegotiateRequest),
             CloudflareJsonContext.Default.RenegotiateResponse, cancellationToken);
 
+    public Task<EstablishDataTransportResponse> EstablishDataTransportAsync(string sessionId, EstablishDataTransportRequest request, CancellationToken cancellationToken) =>
+        SendAsync(HttpMethod.Post, $"sessions/{Escape(sessionId)}/datachannels/establish",
+            JsonContent.Create(request, CloudflareJsonContext.Default.EstablishDataTransportRequest),
+            CloudflareJsonContext.Default.EstablishDataTransportResponse, cancellationToken);
+
+    public Task<DataChannelsResponse> NewDataChannelsAsync(string sessionId, DataChannelsRequest request, CancellationToken cancellationToken) =>
+        SendAsync(HttpMethod.Post, $"sessions/{Escape(sessionId)}/datachannels/new",
+            JsonContent.Create(request, CloudflareJsonContext.Default.DataChannelsRequest),
+            CloudflareJsonContext.Default.DataChannelsResponse, cancellationToken);
+
+    public Task<DataChannelsResponse> CloseDataChannelsAsync(string sessionId, DataChannelsRequest request, CancellationToken cancellationToken) =>
+        SendAsync(HttpMethod.Put, $"sessions/{Escape(sessionId)}/datachannels/close",
+            JsonContent.Create(request, CloudflareJsonContext.Default.DataChannelsRequest),
+            CloudflareJsonContext.Default.DataChannelsResponse, cancellationToken);
+
     private async Task<T> SendAsync<T>(HttpMethod method, string path, HttpContent? content, JsonTypeInfo<T> type, CancellationToken cancellationToken)
         where T : ISfuResponse
     {
@@ -112,5 +127,30 @@ public sealed record TracksResponse(
 
 public sealed record RenegotiateResponse(
     SessionDescription? SessionDescription = null,
+    string? ErrorCode = null,
+    string? ErrorDescription = null) : ISfuResponse;
+
+/// <summary>Data channel object used by requests and responses; unused fields stay null and are omitted.</summary>
+public sealed record SfuDataChannel(
+    string? Location = null,
+    string? SessionId = null,
+    string? DataChannelName = null,
+    int? Id = null,
+    string? ErrorCode = null,
+    string? ErrorDescription = null);
+
+public sealed record DataChannelsRequest(IReadOnlyList<SfuDataChannel> DataChannels);
+
+public sealed record DataChannelsResponse(
+    IReadOnlyList<SfuDataChannel>? DataChannels = null,
+    string? ErrorCode = null,
+    string? ErrorDescription = null) : ISfuResponse;
+
+public sealed record EstablishDataTransportRequest(SfuDataChannel DataChannel);
+
+public sealed record EstablishDataTransportResponse(
+    SessionDescription? SessionDescription = null,
+    bool RequiresImmediateRenegotiation = false,
+    SfuDataChannel? DataChannel = null,
     string? ErrorCode = null,
     string? ErrorDescription = null) : ISfuResponse;

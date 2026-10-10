@@ -162,6 +162,61 @@ public sealed class CloudflareSfuTests
         Assert.Single(handler.Requests);
     }
 
+    [Fact]
+    public async Task Data_transport_pulls_server_events_and_returns_the_sfu_offer()
+    {
+        var handler = new StubHandler(HttpStatusCode.OK,
+            """{"requiresImmediateRenegotiation":true,"dataChannel":{"dataChannelName":"server-events","id":0},"sessionDescription":{"type":"offer","sdp":"v=0 data offer"}}""");
+
+        var transport = await Sfu(handler).EstablishDataTransportAsync("s1", _ct);
+
+        Assert.Equal(new SfuDataTransport("v=0 data offer", 0), transport);
+        var request = Assert.Single(handler.Requests);
+        Assert.Equal((HttpMethod.Post, Base + "sessions/s1/datachannels/establish"), (request.Method, request.Uri));
+        Assert.Equal("""{"dataChannel":{"location":"remote","dataChannelName":"server-events"}}""", request.Body);
+    }
+
+    [Fact]
+    public async Task Publishing_a_data_channel_returns_its_id()
+    {
+        var handler = new StubHandler(HttpStatusCode.OK, """{"dataChannels":[{"location":"local","dataChannelName":"p-abc","id":3}]}""");
+
+        Assert.Equal(3, await Sfu(handler).PublishDataChannelAsync("s1", "p-abc", _ct));
+        var request = Assert.Single(handler.Requests);
+        Assert.Equal((HttpMethod.Post, Base + "sessions/s1/datachannels/new"), (request.Method, request.Uri));
+        Assert.Equal("""{"dataChannels":[{"location":"local","dataChannelName":"p-abc"}]}""", request.Body);
+    }
+
+    [Fact]
+    public async Task Subscribing_a_data_channel_names_the_publisher_session()
+    {
+        var handler = new StubHandler(HttpStatusCode.OK, """{"dataChannels":[{"location":"remote","sessionId":"pub","dataChannelName":"p-abc","id":4}]}""");
+
+        Assert.Equal(4, await Sfu(handler).SubscribeDataChannelAsync("s2", "pub", "p-abc", _ct));
+        Assert.Equal("""{"dataChannels":[{"location":"remote","sessionId":"pub","dataChannelName":"p-abc"}]}""", Assert.Single(handler.Requests).Body);
+    }
+
+    [Fact]
+    public async Task A_data_channel_error_fails_the_call()
+    {
+        var handler = new StubHandler(HttpStatusCode.OK, """{"dataChannels":[{"dataChannelName":"p-abc","errorCode":"not_found"}]}""");
+
+        var error = await Assert.ThrowsAsync<MediaServerException>(() => Sfu(handler).SubscribeDataChannelAsync("s2", "pub", "p-abc", _ct));
+        Assert.Equal("not_found", Assert.IsType<CloudflareSfuException>(error.InnerException).ErrorCode);
+    }
+
+    [Fact]
+    public async Task Data_channels_are_closed_by_id()
+    {
+        var handler = new StubHandler(HttpStatusCode.OK, """{"dataChannels":[{"id":3},{"id":4}]}""");
+
+        await Sfu(handler).CloseDataChannelsAsync("s1", [3, 4], _ct);
+
+        var request = Assert.Single(handler.Requests);
+        Assert.Equal((HttpMethod.Put, Base + "sessions/s1/datachannels/close"), (request.Method, request.Uri));
+        Assert.Equal("""{"dataChannels":[{"id":3},{"id":4}]}""", request.Body);
+    }
+
     private static ISfu Sfu(StubHandler handler) => SfuWithServices(handler).Sfu;
 
     private static (ISfu Sfu, ServiceProvider Provider) SfuWithServices(StubHandler handler)

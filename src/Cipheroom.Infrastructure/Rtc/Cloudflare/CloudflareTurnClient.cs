@@ -45,4 +45,8 @@ public sealed record CloudflareIceServer(string[] Urls, string? Username, string
 [JsonSerializable(typeof(CloseTracksRequest))]
 [JsonSerializable(typeof(RenegotiateRequest))]
 [JsonSerializable(typeof(RenegotiateResponse))]
+[JsonSerializable(typeof(DataChannelsRequest))]
+[JsonSerializable(typeof(DataChannelsResponse))]
+[JsonSerializable(typeof(EstablishDataTransportRequest))]
+[JsonSerializable(typeof(EstablishDataTransportResponse))]
 internal sealed partial class CloudflareJsonContext : JsonSerializerContext;
