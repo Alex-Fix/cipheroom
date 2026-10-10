@@ -1,3 +1,4 @@
+import { CallView, SelfView } from '../../../core/settings/call-view';
 import { ChangeDetectionStrategy, Component, input, output } from '@angular/core';
 import { NzDropdownModule } from 'ng-zorro-antd/dropdown';
 import { NzIconModule } from 'ng-zorro-antd/icon';
@@ -48,6 +49,8 @@ export class CallControls {
   readonly videoBlockedReason = input<string | undefined>(undefined);
   /** Chat messages that arrived while the chat panel was closed. */
   readonly unreadChats = input(0);
+  readonly view = input<CallView>('grid');
+  readonly selfView = input<SelfView>('tile');
 
   readonly toggleMic = output();
   readonly toggleCamera = output();
@@ -57,8 +60,19 @@ export class CallControls {
   readonly selectQuality = output<VideoQuality>();
   readonly selectCodec = output<VideoCodec>();
   readonly openChat = output();
+  readonly selectView = output<CallView>();
+  readonly selectSelfView = output<SelfView>();
   readonly leave = output();
 
+  protected readonly views: { value: CallView; label: string }[] = [
+    { value: 'grid', label: 'Grid' },
+    { value: 'speaker', label: 'Speaker' },
+  ];
+  protected readonly selfViews: { value: SelfView; label: string }[] = [
+    { value: 'tile', label: 'In layout' },
+    { value: 'float', label: 'Floating' },
+    { value: 'hidden', label: 'Hidden' },
+  ];
   protected readonly qualityLabels = QUALITY_LABELS;
   protected readonly codecNames = CODEC_NAMES;
 }

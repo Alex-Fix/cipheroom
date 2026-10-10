@@ -7,6 +7,7 @@ import { CallTile } from './call-tile';
 function tile(overrides: Partial<Tile> = {}): Tile {
   return {
     key: 'alex:camera',
+    participantId: 'p1',
     name: 'Alex Papish',
     displayName: 'Alex Papish',
     isLocal: false,

@@ -76,10 +76,38 @@
 
     <app-usage-banner [usage]="usage()" />
 
-    <section class="grid" [attr.data-count]="media.tiles().length">
-      @for (tile of media.tiles(); track tile.key) {
-        <app-call-tile [tile]="tile" (appElementSize)="media.setTileSize(tile.key, $event)" />
-      }
+    <section
+      class="stage"
+      [class.scrolls]="layout().height > box().h"
+      (appBoxSize)="box.set($event)"
+    >
+      <div class="canvas" [style.height.px]="layout().height">
+        <!-- One container for every tile: moving between stage, strip and grid never re-mounts a video. -->
+        @for (tile of media.tiles(); track tile.key) {
+          @let p = placement(tile.key);
+          <app-call-tile
+            [tile]="tile"
+            [attr.data-role]="p.role"
+            [style.transform]="'translate(' + p.rect.x + 'px, ' + p.rect.y + 'px)'"
+            [style.width.px]="p.rect.w"
+            [style.height.px]="p.rect.h"
+            (appElementSize)="media.setTileSize(tile.key, $event)"
+          />
+        }
+        @if (layout().overflow; as more) {
+          <button
+            type="button"
+            class="more-tiles"
+            [style.transform]="'translate(' + more.rect.x + 'px, ' + more.rect.y + 'px)'"
+            [style.width.px]="more.rect.w"
+            [style.height.px]="more.rect.h"
+            [attr.aria-label]="'Show all — ' + more.count + ' more'"
+            (click)="selectView('grid')"
+          >
+            +{{ more.count }}
+          </button>
+        }
+      </div>
     </section>
 
     <app-call-controls
@@ -98,6 +126,8 @@
       [codec]="media.videoCodec()"
       [sendingCodec]="media.sendingCodec()"
       [unreadChats]="chat.unread()"
+      [view]="view()"
+      [selfView]="viewSettings().selfView"
       (toggleMic)="toggleDevice('microphone', !media.micEnabled())"
       (toggleCamera)="toggleDevice('camera', !media.cameraEnabled())"
       (toggleScreenShare)="toggleDevice('screen', !media.screenShareEnabled())"
@@ -106,6 +136,8 @@
       (selectQuality)="setQuality($event)"
       (selectCodec)="setCodec($event)"
       (openChat)="showParticipants.set(false); showChat.set(true)"
+      (selectView)="selectView($event)"
+      (selectSelfView)="selectSelfView($event)"
       (leave)="leave()"
     />
   }

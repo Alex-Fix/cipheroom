@@ -32,7 +32,17 @@ import { CallHeader } from './call-header/call-header';
 import { callStatus } from './call-status';
 import { CallTile } from './call-tile/call-tile';
 import { Device, deviceErrorMessage } from './device-error';
+import { BoxSizeDirective } from '../../shared/box-size.directive';
 import { ElementSizeDirective } from '../../shared/element-size.directive';
+import {
+  CallView,
+  CallViewSettings,
+  SelfView,
+  loadCallView,
+  saveCallView,
+} from '../../core/settings/call-view';
+import { Placement, callLayout } from './layout/call-layout';
+import { StageSpeaker } from './layout/stage-speaker';
 import { LobbyScreen, LobbyScreenState } from './lobby-screen/lobby-screen';
 import { UsageBanner } from './usage-banner/usage-banner';
 import { isCallsPaused, resetDate, videoBlockedReason } from './usage-text';
@@ -46,6 +56,7 @@ import { ParticipantAction, ParticipantsPanel } from './participants-panel/parti
 @Component({
   selector: 'app-room',
   imports: [
+    BoxSizeDirective,
     CallControls,
     CallHeader,
     CallTile,
@@ -80,6 +91,39 @@ export class Room implements OnInit, OnDestroy {
   protected readonly error = signal<string | undefined>(undefined);
   protected readonly showParticipants = signal(false);
   protected readonly showChat = signal(false);
+
+  // Video layout (docs/plans/2026-10-10-video-layouts-design.md): this browser's choice, nothing goes to the server.
+  protected readonly viewSettings = signal<CallViewSettings>(loadCallView());
+  /** Pinned tile key, for this call only. */
+  protected readonly pin = signal<string | undefined>(undefined);
+  /** A remote screen share that switched us from Grid to Speaker; cleared when it ends or we pick a view. */
+  private readonly shareOverride = signal<string | undefined>(undefined);
+  protected readonly view = computed<CallView>(() =>
+    this.shareOverride() ? 'speaker' : this.viewSettings().view,
+  );
+  /** The stage's content box (CSS px). */
+  protected readonly box = signal({ w: 0, h: 0 });
+  private readonly stageSpeaker = new StageSpeaker();
+  private readonly speaker = signal<string | undefined>(undefined);
+  private readonly recentSpeakers = signal<readonly string[]>([], {
+    equal: (a, b) => a.length === b.length && a.every((x, i) => x === b[i]),
+  });
+  private speakerTimer?: ReturnType<typeof setInterval>;
+  private knownShares = new Set<string>();
+  protected readonly layout = computed(() => {
+    const settings = this.viewSettings();
+    return callLayout({
+      tiles: this.media.tiles(),
+      view: this.view(),
+      selfView: settings.selfView,
+      corner: settings.corner,
+      collapsed: settings.collapsed,
+      pin: this.pin(),
+      speaker: this.speaker(),
+      recent: this.recentSpeakers(),
+      box: this.box(),
+    });
+  });
   /** "Bob joined" / "Bob left". Rendered by interpolation only — names never go through nz-message (HTML). */
   protected readonly notices = signal<{ id: number; text: string }[]>([]);
   protected readonly manualCopy = signal(false);
@@ -162,6 +206,22 @@ export class Room implements OnInit, OnDestroy {
         });
       }
       this.baseline = participants;
+    });
+
+    // Video layout: remember choices; drop a pin whose tile is gone; a new remote screen share takes the stage.
+    effect(() => saveCallView(this.viewSettings()));
+    effect(() => {
+      const tiles = this.media.tiles();
+      untracked(() => {
+        const pin = this.pin();
+        if (pin && !tiles.some((t) => t.key === pin)) this.pin.set(undefined);
+        const shares = new Set(tiles.filter((t) => t.isScreen && !t.isLocal).map((t) => t.key));
+        const started = [...shares].find((key) => !this.knownShares.has(key));
+        if (started && this.viewSettings().view === 'grid') this.shareOverride.set(started);
+        const override = this.shareOverride();
+        if (override && !shares.has(override)) this.shareOverride.set(undefined);
+        this.knownShares = shares;
+      });
     });
 
     // Chat: opening it reads everything; a message while it's closed shows as a notice (interpolation only).
@@ -247,7 +307,33 @@ export class Room implements OnInit, OnDestroy {
     });
   }
 
+  /** Where a tile goes; tiles the layout doesn't know yet stay hidden for a moment. */
+  protected placement(key: string): Placement {
+    return this.layout().placements.get(key) ?? HIDDEN_PLACEMENT;
+  }
+
+  protected selectView(view: CallView): void {
+    this.shareOverride.set(undefined);
+    this.pin.set(undefined);
+    this.viewSettings.update((s) => ({ ...s, view }));
+  }
+
+  protected selectSelfView(selfView: SelfView): void {
+    this.viewSettings.update((s) => ({ ...s, selfView, collapsed: false }));
+  }
+
+  /** Who Speaker view follows: remote people speaking, fed to the hysteresis every SPEAKER_TICK_MS. */
+  private trackSpeakers(): void {
+    const tiles = this.media.tiles();
+    const remote = tiles.filter((t) => !t.isLocal && !t.isScreen);
+    this.stageSpeaker.forget(new Set(remote.map((t) => t.participantId)));
+    const speaking = new Set(remote.filter((t) => t.isSpeaking).map((t) => t.participantId));
+    this.speaker.set(this.stageSpeaker.update(speaking, Date.now()));
+    this.recentSpeakers.set([...this.stageSpeaker.recent()]);
+  }
+
   async ngOnInit(): Promise<void> {
+    this.speakerTimer = setInterval(() => this.trackSpeakers(), SPEAKER_TICK_MS);
     this.theme.setForcedDark(true);
     if (!loadDisplayName()) {
       void this.router.navigate(['/'], { queryParams: { room: this.roomId() } });
@@ -258,6 +344,7 @@ export class Room implements OnInit, OnDestroy {
 
   async ngOnDestroy(): Promise<void> {
     this.theme.setForcedDark(false);
+    clearInterval(this.speakerTimer);
     this.flushJoins();
     await this.teardown();
   }
@@ -564,5 +651,8 @@ const MAX_REJOINS = 3;
 /** The server's cooldown after being turned away (Room.DenyCooldown) plus a little. */
 const ASK_AGAIN_DELAY_MS = 31_000;
 const REJOIN_DELAY_MS = 1000;
+/** How often Speaker view re-checks who is speaking (MediaService measures every 250 ms). */
+const SPEAKER_TICK_MS = 250;
+const HIDDEN_PLACEMENT: Placement = { role: 'hidden', rect: { x: 0, y: 0, w: 0, h: 0 } };
 /** How long a join announcement waits for the newcomer's name. */
 const NAME_WAIT_MS = 5000;

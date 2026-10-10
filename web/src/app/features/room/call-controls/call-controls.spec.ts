@@ -17,6 +17,8 @@ interface State {
   codec?: string;
   sendingCodec?: string;
   videoBlockedReason?: string;
+  view?: string;
+  selfView?: string;
 }
 
 function render(state: State) {
@@ -160,6 +162,35 @@ describe('CallControls', () => {
     expect(items.map((i) => i.getAttribute('aria-checked'))).toEqual(['true', 'false']);
     items[1].click();
     expect(select).toHaveBeenCalledWith('b');
+  });
+
+  it('offers the views and self-view modes, checks the current ones and emits choices', async () => {
+    const { fixture, button } = render({ ...allOn, view: 'speaker', selfView: 'float' });
+    const views: string[] = [];
+    const selfViews: string[] = [];
+    fixture.componentInstance.selectView.subscribe((v) => views.push(v));
+    fixture.componentInstance.selectSelfView.subscribe((v) => selfViews.push(v));
+
+    await openMore(fixture, button('more')!);
+    const viewItems = [...document.body.querySelectorAll<HTMLElement>('.view-item')];
+    const selfItems = [...document.body.querySelectorAll<HTMLElement>('.self-view-item')];
+    expect(viewItems.map((i) => i.textContent!.trim())).toEqual(['Grid', 'Speaker']);
+    expect(viewItems.map((i) => i.getAttribute('aria-checked'))).toEqual(['false', 'true']);
+    expect(selfItems.map((i) => i.textContent!.trim())).toEqual([
+      'In layout',
+      'Floating',
+      'Hidden',
+    ]);
+    expect(selfItems.map((i) => i.getAttribute('aria-checked'))).toEqual([
+      'false',
+      'true',
+      'false',
+    ]);
+
+    viewItems[0].click();
+    selfItems[2].click();
+    expect(views).toEqual(['grid']);
+    expect(selfViews).toEqual(['hidden']);
   });
 
   it('hides the camera picker with a single camera', async () => {

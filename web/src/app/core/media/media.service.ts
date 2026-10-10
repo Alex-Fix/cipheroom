@@ -192,6 +192,7 @@ export class MediaService implements OnDestroy {
     const tiles: Tile[] = [
       {
         key: `${self.id}:camera`,
+        participantId: self.id,
         name,
         displayName: self.displayName,
         isLocal: true,
@@ -882,6 +883,7 @@ function remoteTiles(
   const tiles: Tile[] = [
     {
       key: `${p.id}:camera`,
+      participantId: p.id,
       name,
       displayName: name,
       isLocal: false,
@@ -910,6 +912,7 @@ function screenTile(
 ): Tile {
   return {
     key: `${id}:screen`,
+    participantId: id,
     name,
     displayName,
     isLocal,

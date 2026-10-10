@@ -154,11 +154,13 @@ describe('callLayout', () => {
       expect(roles(l)['me:camera']).toBe('stage');
     });
 
-    it('a remote screen share takes the stage, even in Grid', () => {
-      const l = layout({ tiles: [cam('me', true), cam('bob'), screen('bob')], speaker: 'bob' });
-      expect(l.mode).toBe('speaker');
+    it('a remote screen share takes the stage in Speaker view, ahead of the speaker', () => {
+      const tiles = [cam('me', true), cam('bob'), screen('bob'), cam('carol')];
+      const l = layout({ view: 'speaker', tiles, speaker: 'carol' });
       expect(roles(l)['bob:screen']).toBe('stage');
       expect(roles(l)['bob:camera']).toBe('strip');
+      // Someone who picked Grid during the share gets it as a grid tile.
+      expect(roles(layout({ tiles }))['bob:screen']).toBe('grid');
     });
 
     it('our own screen share doesn’t take our stage (it would show itself)', () => {
@@ -189,6 +191,18 @@ describe('callLayout', () => {
         x: FLOAT_MARGIN,
         y: FLOAT_MARGIN,
       });
+    });
+
+    it('keeps the bubble over the stage in Speaker view, clear of the strip', () => {
+      const l = layout({
+        view: 'speaker',
+        selfView: 'float',
+        corner: 'bottom-right',
+        tiles: [cam('me', true), cam('bob'), cam('carol')],
+      });
+      const bubble = l.placements.get('me:camera')!.rect;
+      const strip = l.placements.get('carol:camera')!.rect;
+      expect(bubble.y + bubble.h).toBeLessThanOrEqual(strip.y - GAP);
     });
 
     it('hides it, keeping the element mounted', () => {

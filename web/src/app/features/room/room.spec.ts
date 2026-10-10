@@ -14,7 +14,8 @@ import {
 } from '../../core/lobby/lobby.service';
 import { SafetyCode } from '../../core/crypto/safety-code';
 import { MediaService } from '../../core/media/media.service';
-import { CallParticipant, MediaState } from '../../core/media/media.types';
+import { CallParticipant, MediaState, Tile } from '../../core/media/media.types';
+import { CALL_VIEW_KEY } from '../../core/settings/call-view';
 import { SignalingService } from '../../core/signaling/signaling.service';
 import { UsageDto } from '../../core/signaling/signaling.types';
 import { APP_ICONS } from '../../core/ui/icons';
@@ -25,7 +26,7 @@ function fakeMedia() {
   const media = {
     // Like the real service right after connect(): a fresh peer connection counts as connected.
     state: signal<MediaState>('connected'),
-    tiles: signal([]),
+    tiles: signal<Tile[]>([]),
     participants: signal<CallParticipant[]>([]),
     micEnabled: signal(false),
     cameraEnabled: signal(false),
@@ -388,6 +389,84 @@ describe('Room', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  describe('video layout', () => {
+    const tile = (id: string, opts: Partial<Tile> = {}): Tile => ({
+      key: `${id}:${opts.isScreen ? 'screen' : 'camera'}`,
+      participantId: id,
+      name: id,
+      displayName: id,
+      isLocal: false,
+      isScreen: false,
+      isSpeaking: false,
+      micMuted: false,
+      mirror: false,
+      securing: false,
+      ...opts,
+    });
+    const roles = (el: HTMLElement) =>
+      Object.fromEntries(
+        [...el.querySelectorAll<HTMLElement>('.canvas > app-call-tile')].map((t) => [
+          t.querySelector('.name')!.textContent!.trim(),
+          t.dataset['role'],
+        ]),
+      );
+
+    async function inCall() {
+      localStorage.removeItem(CALL_VIEW_KEY);
+      const ctx = await setup({
+        tweak: (lk) => lk.tiles.set([tile('me', { isLocal: true }), tile('bob'), tile('carol')]),
+      });
+      // jsdom has no ResizeObserver: give the stage a size.
+      (ctx.fixture.componentInstance as unknown as { box: { set(b: object): void } }).box.set({
+        w: 1200,
+        h: 700,
+      });
+      ctx.fixture.detectChanges();
+      return ctx;
+    }
+
+    it('lays everyone out in the chosen view and remembers it', async () => {
+      const { el, fixture } = await inCall();
+      expect(roles(el)).toEqual({ me: 'grid', bob: 'grid', carol: 'grid' });
+
+      const controls = fixture.debugElement.query(
+        (d) => d.name === 'app-call-controls',
+      ).componentInstance;
+      controls.selectView.emit('speaker');
+      controls.selectSelfView.emit('float');
+      fixture.detectChanges();
+
+      expect(roles(el)).toEqual({ me: 'float', bob: 'stage', carol: 'strip' });
+      expect(JSON.parse(localStorage.getItem(CALL_VIEW_KEY)!)).toMatchObject({
+        view: 'speaker',
+        selfView: 'float',
+      });
+    });
+
+    it('a new screen share takes the stage from Grid, and Grid comes back when it ends', async () => {
+      const { el, fixture, media } = await inCall();
+      media.tiles.update((t) => [...t, tile('carol', { isScreen: true, name: 'carol screen' })]);
+      fixture.detectChanges();
+      expect(roles(el)['carol screen']).toBe('stage');
+
+      media.tiles.update((t) => t.filter((x) => !x.isScreen));
+      fixture.detectChanges();
+      expect(roles(el)).toEqual({ me: 'grid', bob: 'grid', carol: 'grid' });
+    });
+
+    it('picking Grid during a share is honoured', async () => {
+      const { el, fixture, media } = await inCall();
+      media.tiles.update((t) => [...t, tile('carol', { isScreen: true, name: 'carol screen' })]);
+      fixture.detectChanges();
+      const controls = fixture.debugElement.query(
+        (d) => d.name === 'app-call-controls',
+      ).componentInstance;
+      controls.selectView.emit('grid');
+      fixture.detectChanges();
+      expect(roles(el)['carol screen']).toBe('grid');
+    });
   });
 
   describe('chat', () => {

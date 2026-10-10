@@ -75,7 +75,8 @@ export function callLayout(input: LayoutInput): CallLayout {
   const alone = !tiles.some((t) => !t.isLocal);
   const pin = tiles.find((t) => t.key === input.pin);
   const remoteShare = [...tiles].reverse().find((t) => t.isScreen && !t.isLocal);
-  const mode = input.view === 'speaker' || pin || remoteShare ? 'speaker' : 'grid';
+  // A pin always shows on the stage; a screen share does in Speaker view (Room switches to it when a share starts).
+  const mode = input.view === 'speaker' || pin ? 'speaker' : 'grid';
 
   // Our own camera leaves the layout when floating or hidden — unless it's pinned, or nobody else is here.
   const selfOut = !!self && !alone && pin !== self && input.selfView !== 'tile';
@@ -109,6 +110,13 @@ export function callLayout(input: LayoutInput): CallLayout {
   const thumbW = Math.round(thumbH * RATIO);
   const stageH = box.h - thumbH - GAP;
   placements.set(stage.key, { role: 'stage', rect: { x: 0, y: 0, w: box.w, h: stageH } });
+  // The floating self-view stays over the stage, never over the strip.
+  if (self && placements.get(self.key)?.role === 'float') {
+    placements.set(self.key, {
+      role: 'float',
+      rect: floatRect({ ...input, box: { w: box.w, h: stageH } }),
+    });
+  }
 
   const fit = Math.max(1, Math.floor((box.w + GAP) / (thumbW + GAP)));
   const shown = others.length <= fit ? others : others.slice(0, fit - 1);

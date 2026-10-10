@@ -85,6 +85,47 @@
 </button>
 <nz-dropdown-menu #moreMenu="nzDropdownMenu">
   <ul nz-menu>
+    <li nz-menu-group nzTitle="View">
+      <ul>
+        @for (v of views; track v.value) {
+          <li
+            nz-menu-item
+            class="view-item"
+            [attr.aria-checked]="v.value === view()"
+            role="menuitemradio"
+            (click)="selectView.emit(v.value)"
+          >
+            <span class="check" aria-hidden="true">
+              @if (v.value === view()) {
+                <nz-icon nzType="check" />
+              }
+            </span>
+            {{ v.label }}
+          </li>
+        }
+      </ul>
+    </li>
+    <li nz-menu-group nzTitle="Self view">
+      <ul>
+        @for (v of selfViews; track v.value) {
+          <li
+            nz-menu-item
+            class="self-view-item"
+            [attr.aria-checked]="v.value === selfView()"
+            role="menuitemradio"
+            (click)="selectSelfView.emit(v.value)"
+          >
+            <span class="check" aria-hidden="true">
+              @if (v.value === selfView()) {
+                <nz-icon nzType="check" />
+              }
+            </span>
+            {{ v.label }}
+          </li>
+        }
+      </ul>
+    </li>
+    <li nz-menu-divider></li>
     @if (cameras().length > 1) {
       <li nz-menu-group nzTitle="Camera">
         <ul>
