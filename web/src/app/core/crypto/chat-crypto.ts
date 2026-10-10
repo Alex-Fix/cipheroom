@@ -1,4 +1,5 @@
 import { fields, fromBase64Url, parseFields, toBase64Url, utf8 } from './encoding';
+import { FileEvent, isFileEvent } from './file-events';
 import { Identity, SIGNATURE_BYTES } from './identity';
 import { KEYRING_SIZE, SENDER_KEY_BYTES } from './keyring';
 import { sign, verify } from './statements';
@@ -32,7 +33,8 @@ const MAX_EMOJI_LENGTH = 32;
 
 export type ChatEvent =
   | { v: 1; seq: number; type: 'message'; id: string; text: string }
-  | { v: 1; seq: number; type: 'reaction'; target: string; emoji: string; on: boolean };
+  | { v: 1; seq: number; type: 'reaction'; target: string; emoji: string; on: boolean }
+  | FileEvent;
 
 /** What CryptoService hands on: an event whose author signed it. */
 export interface ReceivedChatEvent {
@@ -193,7 +195,7 @@ export function isChatEvent(value: unknown): value is ChatEvent {
       typeof e['on'] === 'boolean'
     );
   }
-  return false;
+  return isFileEvent(e);
 }
 
 /** uint32 length ‖ content ‖ zeros, to the smallest bucket that fits. */

@@ -2,6 +2,7 @@ import { Injectable, OnDestroy, computed, inject, signal } from '@angular/core';
 import { ChatEventBody, CryptoService } from '../crypto/crypto.service';
 import { cleanChatText, newChatId } from '../crypto/chat-crypto';
 import type { ReceivedChatEvent } from '../crypto/chat-crypto';
+import type { FileCard } from '../crypto/file-events';
 import { SignalingService } from '../signaling/signaling.service';
 import { isReactionEmoji } from './emoji';
 import { TextSegment, linkify } from './links';
@@ -34,6 +35,8 @@ export interface ChatMessage {
   at: number;
   status: ChatStatus;
   reactions: ReactionView[];
+  /** A shared file instead of text (FileTransferService has its state); `text` is empty. */
+  fileId?: string;
 }
 
 /** "Bob joined" / "Bob left": where a newcomer's history starts. */
@@ -68,6 +71,8 @@ export class ChatService implements OnDestroy {
   /** Sends go out one at a time: sequence numbers must reach others in order. */
   private outbox: Promise<unknown> = Promise.resolve();
   private readonly unsubscribe: () => void;
+  /** Our own file cards, to resend on retry. */
+  private readonly cards = new Map<string, Omit<FileCard, 'v' | 'seq'>>();
 
   /** Messages can be sent (we hold a chat key). */
   readonly ready = this.crypto.chatReady;
@@ -134,6 +139,39 @@ export class ChatService implements OnDestroy {
     );
   }
 
+  /**
+   * Shares a file card (the file's key included — it's encrypted like any chat event). The card appears in our chat
+   * at once; it is sent like a message (failed cards can be retried).
+   */
+  shareFile(card: Omit<FileCard, 'v' | 'seq'>): void {
+    const self = this.crypto.identityPub();
+    if (!self) return;
+    const entry: MessageEntry = {
+      kind: 'message',
+      id: card.id,
+      authorPub: self,
+      authorName: 'You',
+      own: true,
+      text: '',
+      segments: [],
+      at: Date.now(),
+      status: 'sending',
+      reactors: new Map(),
+      fileId: card.id,
+    };
+    this.cards.set(card.id, card);
+    this.append(entry);
+    void this.deliver(entry);
+  }
+
+  /**
+   * Sends any chat event through the same queue as messages (sequence numbers must reach others in order). File
+   * transfers use it for requests and channel announcements.
+   */
+  sendEvent(body: ChatEventBody): Promise<void> {
+    return this.enqueue(body);
+  }
+
   notice(text: string): void {
     this.append({ kind: 'notice', id: newChatId(), text, at: Date.now() });
   }
@@ -141,7 +179,8 @@ export class ChatService implements OnDestroy {
   private async deliver(entry: MessageEntry): Promise<void> {
     this.update(entry.id, (e) => ({ ...e, status: 'sending' }));
     try {
-      await this.enqueue({ type: 'message', id: entry.id, text: entry.text });
+      const card = entry.fileId ? this.cards.get(entry.fileId) : undefined;
+      await this.enqueue(card ?? { type: 'message', id: entry.id, text: entry.text });
       this.update(entry.id, (e) => ({ ...e, status: 'sent' }));
     } catch {
       this.update(entry.id, (e) => ({ ...e, status: 'failed' }));
@@ -164,18 +203,21 @@ export class ChatService implements OnDestroy {
       }
       return;
     }
+    if (event.type !== 'message' && event.type !== 'file') return; // transfer coordination: FileTransferService
     if (this.entries().some((e) => e.id === event.id)) return; // a resent copy
+    const text = event.type === 'message' ? event.text : '';
     const entry: MessageEntry = {
       kind: 'message',
       id: event.id,
       authorPub,
       authorName: name,
       own: false,
-      text: event.text,
-      segments: linkify(event.text),
+      text,
+      segments: linkify(text),
       at: Date.now(),
       status: 'sent',
       reactors: new Map(),
+      ...(event.type === 'file' ? { fileId: event.id } : {}),
     };
     this.append(entry);
     this.latest.set(toMessage(entry, this.crypto.identityPub()));
