@@ -43,6 +43,12 @@ To try it out, pin a level with `{"UsageGuard": {"ForceLevel": "Saving"}}` (or `
 `artifacts/dev-settings.json` while `scripts/dev.sh` runs — Development only, applied live; `{}` puts it back.
 Keep a Cloudflare billing notification on as a second net. Don't add paid services or rented VMs without approval.
 
+## Source link (AGPL §13)
+The app links to `/source`; nginx redirects it to `SOURCE_URL` (`deploy/.env`, default the GitHub repo) +
+`/tree/<commit>`, both baked into the web image at build (`web/Dockerfile` validates them). `scripts/up.sh` passes the
+commit only when web/, src/, deploy/ and the build props match it (untracked files included), and warns if that commit
+isn't pushed. Forks running modified code must push it and set `SOURCE_URL` to their repository.
+
 ## Commands
 - `scripts/secrets.sh` — create `deploy/.env` from example, list required values that are still empty
 - `scripts/up.sh [--tunnel] [--observability]` (also removes containers of services that were dropped; refuses

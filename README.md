@@ -131,7 +131,7 @@ is ~3.6 GB per viewer-hour against the 1 TB/month free tier. The usage guard enf
 - [x] Observability: traces, logs, metrics, call-quality reports, Grafana dashboards (self-hosted, optional)
 - [x] Usage guard for the Cloudflare Realtime free tier (SFU + TURN): saving → audio-only → paused
 - [ ] Connection diagnostics panel (hidden since the SFU switch)
-- [ ] "Source" link in the UI (AGPL §13)
+- [x] "Source code" link in the UI (AGPL §13) — opens the exact commit that is running (`SOURCE_URL` for forks)
 - [ ] MLS-based group keys for large rooms
 
 ## Project layout
