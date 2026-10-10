@@ -21,13 +21,16 @@ import { CryptoService } from '../../core/crypto/crypto.service';
 import { LobbyClosedError, LobbyService } from '../../core/lobby/lobby.service';
 import { MediaService, UNNAMED } from '../../core/media/media.service';
 import { VideoCodec } from '../../core/media/codecs';
+import { reportText } from '../../core/media/connection-health';
 import { CallParticipant } from '../../core/media/media.types';
+import { callPlatform } from '../../core/media/platform';
 import { VideoQuality } from '../../core/media/quality';
 import { SignalingService } from '../../core/signaling/signaling.service';
 import { ThemeService } from '../../core/ui/theme.service';
 import { loadDisplayName } from '../../core/settings/display-name';
 import { CallControls } from './call-controls/call-controls';
 import { ChatPanel } from './chat-panel/chat-panel';
+import { ConnectionDrawer } from './connection-drawer/connection-drawer';
 import { chatPreview } from './chat-preview';
 import { CallHeader } from './call-header/call-header';
 import { callStatus } from './call-status';
@@ -64,6 +67,7 @@ import { ParticipantAction, ParticipantsPanel } from './participants-panel/parti
     CallHeader,
     CallTile,
     ChatPanel,
+    ConnectionDrawer,
     CornerDragDirective,
     ElementSizeDirective,
     LobbyScreen,
@@ -96,6 +100,9 @@ export class Room implements OnInit, OnDestroy {
   protected readonly error = signal<string | undefined>(undefined);
   protected readonly showParticipants = signal(false);
   protected readonly showChat = signal(false);
+  /** The Connection drawer, and its report as text when the clipboard was blocked. */
+  protected readonly showConnection = signal(false);
+  protected readonly manualReport = signal<string | undefined>(undefined);
 
   // Video layout (docs/plans/2026-10-10-video-layouts-design.md): this browser's choice, nothing goes to the server.
   protected readonly viewSettings = signal<CallViewSettings>(loadCallView());
@@ -450,6 +457,30 @@ export class Room implements OnInit, OnDestroy {
       this.message.success('Invite link copied');
     } catch {
       this.manualCopy.set(true);
+    }
+  }
+
+  protected openConnection(): void {
+    this.showParticipants.set(false);
+    this.showChat.set(false);
+    this.showConnection.set(true);
+  }
+
+  /** Numbers only (see reportText): no addresses, names or ids. Nothing is sent anywhere. */
+  protected async copyReport(): Promise<void> {
+    const report = this.media.connection();
+    if (!report) return;
+    const text = reportText(
+      report,
+      callPlatform(navigator.userAgent ?? '', navigator.maxTouchPoints ?? 0),
+    );
+    try {
+      // navigator.clipboard is undefined on plain-HTTP LAN origins.
+      await navigator.clipboard.writeText(text);
+      this.manualReport.set(undefined);
+      this.message.success('Report copied');
+    } catch {
+      this.manualReport.set(text);
     }
   }
 

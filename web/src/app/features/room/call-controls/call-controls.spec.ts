@@ -203,6 +203,17 @@ describe('CallControls', () => {
     expect(link.rel).toBe('noopener noreferrer');
   });
 
+  it('opens the Connection drawer from the menu', async () => {
+    const { fixture, button } = render(allOn);
+    let opened = 0;
+    fixture.componentInstance.openConnection.subscribe(() => opened++);
+    await openMore(fixture, button('more')!);
+
+    document.body.querySelector<HTMLElement>('.connection-item')!.click();
+
+    expect(opened).toBe(1);
+  });
+
   it('hides the camera picker with a single camera', async () => {
     const { fixture, button } = render({ ...allOn, cameras: [{ id: 'a', label: 'Only' }] });
     await openMore(fixture, button('more')!);

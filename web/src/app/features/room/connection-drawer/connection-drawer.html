@@ -1,0 +1,99 @@
+<nz-drawer
+  [nzVisible]="open()"
+  nzTitle="Connection"
+  nzPlacement="right"
+  [nzWidth]="360"
+  (nzOnClose)="closed.emit()"
+>
+  <ng-container *nzDrawerContent>
+    <section class="verdict" [attr.data-verdict]="report()?.verdict ?? 'unknown'" role="status">
+      <nz-icon class="verdict-icon" [nzType]="icon()" />
+      <div>
+        <h3>{{ headline() }}</h3>
+        @for (reason of report()?.reasons ?? []; track reason) {
+          <p class="reason">{{ reason }}</p>
+        }
+      </div>
+    </section>
+
+    @if (report(); as r) {
+      <h4>Route</h4>
+      <dl class="rows">
+        <dt>Path</dt>
+        <dd>
+          {{ r.route ? routeText(r.route) : '—' }}
+          @if (r.route?.remoteAddress; as address) {
+            <div class="detail mono">{{ address }}</div>
+          }
+        </dd>
+        <dt>Round trip</dt>
+        <dd>{{ ms(r.route?.rttMs) }}</dd>
+        <dt>Relay forced</dt>
+        <dd>{{ r.forceRelay ? 'Yes, by the server' : 'No' }}</dd>
+      </dl>
+
+      <h4>Network</h4>
+      <dl class="rows">
+        <dt>Upload</dt>
+        <dd>
+          {{ kbps(r.network.uploadKbps) }}
+          <div class="detail">loss {{ percent(r.network.uploadLossPercent) }}</div>
+        </dd>
+        <dt>Download</dt>
+        <dd>
+          {{ kbps(r.network.downloadKbps) }}
+          <div class="detail">loss {{ percent(r.network.downloadLossPercent) }}</div>
+        </dd>
+        <dt>Jitter</dt>
+        <dd>{{ ms(r.network.jitterMs) }}</dd>
+      </dl>
+
+      <h4>Sending</h4>
+      <dl class="rows">
+        @for (s of r.sending; track s.source) {
+          <dt>{{ sourceText(s.source) }}</dt>
+          <dd class="stream">
+            {{ streamText(s) }}
+            @if (s.source !== 'microphone' && s.status === 'on') {
+              <div class="detail">Limited by {{ limitationText(s.limitation) }}</div>
+            }
+          </dd>
+        }
+      </dl>
+
+      <h4>Encryption</h4>
+      <dl class="rows">
+        <dt>Keys</dt>
+        <dd>{{ keysText(r.encryption) }}</dd>
+        <dt>Key epoch</dt>
+        <dd>{{ r.encryption.epoch ?? '—' }}</dd>
+        <dt>Frames</dt>
+        <dd>
+          {{ r.encryption.totals.framesEncrypted }} encrypted,
+          {{ r.encryption.totals.framesDecrypted }} decrypted
+          <div class="detail" [class.warn]="r.encryption.totals.framesFailed > 0">
+            {{ r.encryption.totals.framesFailed }} failed,
+            {{ r.encryption.totals.framesMissingKey }} missing key
+          </div>
+        </dd>
+        @for (d of dropped(); track d.reason) {
+          <dt>Dropped envelopes</dt>
+          <dd class="warn">{{ d.count }} ({{ d.reason }})</dd>
+        }
+      </dl>
+
+      <button nz-button nzBlock nzShape="round" class="copy" (click)="copy.emit()">
+        <nz-icon nzType="copy" /> Copy report
+      </button>
+      @if (manualText(); as text) {
+        <label class="manual">
+          <span>Copy this text:</span>
+          <textarea #manualBox readonly rows="8" [value]="text"></textarea>
+        </label>
+      }
+      <p class="note">
+        The report has numbers only — no addresses, names or room id. Nothing here is sent anywhere.
+      </p>
+    }
+  </ng-container>
+</nz-drawer>

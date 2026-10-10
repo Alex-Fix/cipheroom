@@ -279,6 +279,11 @@ export function limitationText(limitation: Limitation | undefined): string {
         : '—';
 }
 
+/** Whose media keys we hold. */
+export function keysText(e: EncryptionHealth): string {
+  return e.participants ? `from ${e.secured} of ${e.participants} people` : 'no one else here yet';
+}
+
 /** Dropped-envelope reasons, readable. */
 export function dropText(reason: string): string {
   return reason.replace(/-/g, ' ');
@@ -298,13 +303,13 @@ export function reportText(report: ConnectionReport, platform: CallPlatform): st
     '',
     'Route',
     `  ${report.route ? routeText(report.route) : '—'}`,
-    `  Round trip: ${ms(report.route?.rttMs)}`,
+    `  Round trip: ${msText(report.route?.rttMs)}`,
     `  Relay forced by server: ${report.forceRelay ? 'yes' : 'no'}`,
     '',
     'Network',
-    `  Upload: ${kbps(n.uploadKbps)}, loss ${percent(n.uploadLossPercent)}`,
-    `  Download: ${kbps(n.downloadKbps)}, loss ${percent(n.downloadLossPercent)}`,
-    `  Jitter: ${ms(n.jitterMs)}`,
+    `  Upload: ${kbpsText(n.uploadKbps)}, loss ${percentText(n.uploadLossPercent)}`,
+    `  Download: ${kbpsText(n.downloadKbps)}, loss ${percentText(n.downloadLossPercent)}`,
+    `  Jitter: ${msText(n.jitterMs)}`,
     '',
     'Sending',
     ...report.sending.map(
@@ -316,7 +321,7 @@ export function reportText(report: ConnectionReport, platform: CallPlatform): st
     ),
     '',
     'Encryption',
-    `  Keys from ${e.secured} of ${e.participants} people`,
+    `  Keys: ${keysText(e)}`,
     `  Key epoch: ${e.epoch ?? '—'}`,
     `  Frames: ${e.totals.framesEncrypted} encrypted, ${e.totals.framesDecrypted} decrypted, ` +
       `${e.totals.framesFailed} failed, ${e.totals.framesMissingKey} missing key`,
@@ -490,14 +495,14 @@ function upper(value: string | undefined): string | undefined {
   return value?.toUpperCase();
 }
 
-function kbps(value: number | undefined): string {
+export function kbpsText(value: number | undefined): string {
   return value !== undefined ? `${value} kbps` : '—';
 }
 
-function percent(value: number | undefined): string {
+export function percentText(value: number | undefined): string {
   return value !== undefined ? `${value}%` : '—';
 }
 
-function ms(value: number | undefined): string {
+export function msText(value: number | undefined): string {
   return value !== undefined ? `${value} ms` : '—';
 }

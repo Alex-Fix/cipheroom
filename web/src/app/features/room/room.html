@@ -17,7 +17,7 @@
     (copyLink)="copyLink()"
     (manualCopyClosed)="manualCopy.set(false)"
     (rejoin)="retry()"
-    (showParticipants)="showChat.set(false); showParticipants.set(true)"
+    (showParticipants)="showChat.set(false); showConnection.set(false); showParticipants.set(true)"
   />
 
   <div class="notices" aria-live="polite">
@@ -145,9 +145,10 @@
       (selectCamera)="switchCamera($event)"
       (selectQuality)="setQuality($event)"
       (selectCodec)="setCodec($event)"
-      (openChat)="showParticipants.set(false); showChat.set(true)"
+      (openChat)="showParticipants.set(false); showConnection.set(false); showChat.set(true)"
       (selectView)="selectView($event)"
       (selectSelfView)="selectSelfView($event)"
+      (openConnection)="openConnection()"
       (leave)="leave()"
     />
   }
@@ -165,6 +166,14 @@
     (deny)="deny($event)"
     (admitAll)="admitAll()"
     (act)="act($event)"
+  />
+
+  <app-connection-drawer
+    [open]="showConnection()"
+    [report]="media.connection()"
+    [manualText]="manualReport()"
+    (closed)="showConnection.set(false); manualReport.set(undefined)"
+    (copy)="copyReport()"
   />
 
   <app-chat-panel

@@ -354,7 +354,7 @@ describe('reportText', () => {
     expect(text).toContain(
       'Camera: VP9 · 1080p @ 30 fps · 2620 kbps · layers f h q · limited by —',
     );
-    expect(text).toContain('Keys from 2 of 2 people');
+    expect(text).toContain('Keys: from 2 of 2 people');
     expect(text).toContain('Dropped envelopes (stale epoch): 1');
     expect(text).not.toContain('198.51.100.1');
     expect(text).not.toMatch(/\d+\.\d+\.\d+\.\d+/);
