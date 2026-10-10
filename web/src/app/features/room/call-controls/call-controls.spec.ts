@@ -193,6 +193,16 @@ describe('CallControls', () => {
     expect(selfViews).toEqual(['hidden']);
   });
 
+  it('links the source of the running version from the menu (AGPL-3.0 §13)', async () => {
+    const { fixture, button } = render(allOn);
+    await openMore(fixture, button('more')!);
+    const link = document.body.querySelector<HTMLAnchorElement>('.source-item a')!;
+    expect(link.textContent!.trim()).toBe('Source code');
+    expect(link.getAttribute('href')).toBe('/source');
+    expect(link.target).toBe('_blank');
+    expect(link.rel).toBe('noopener noreferrer');
+  });
+
   it('hides the camera picker with a single camera', async () => {
     const { fixture, button } = render({ ...allOn, cameras: [{ id: 'a', label: 'Only' }] });
     await openMore(fixture, button('more')!);

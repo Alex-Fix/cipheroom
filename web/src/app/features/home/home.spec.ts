@@ -70,6 +70,15 @@ describe('Home', () => {
   beforeEach(() => vi.stubGlobal('RTCRtpScriptTransform', class {}));
   afterEach(() => vi.unstubAllGlobals());
 
+  it('offers the source of the running version (AGPL-3.0 §13)', async () => {
+    const { el } = await setup({ name: 'Alex' });
+    const link = el.querySelector<HTMLAnchorElement>('.license a')!;
+    expect(el.querySelector('.license')!.textContent).toContain('AGPL-3.0');
+    expect(link.getAttribute('href')).toBe('/source');
+    expect(link.target).toBe('_blank');
+    expect(link.rel).toBe('noopener noreferrer');
+  });
+
   it('tells browsers that can’t encrypt calls they can’t join, and disables everything', async () => {
     vi.stubGlobal('RTCRtpScriptTransform', undefined);
     vi.stubGlobal('RTCRtpSender', class {});
