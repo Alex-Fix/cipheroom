@@ -405,21 +405,21 @@ export class MediaService implements OnDestroy {
    */
   async publishChannel(name: string): Promise<RTCDataChannel> {
     await this.ensureDataTransport();
-    const { channelId } = await this.queue.run(() => this.signaling.publishDataChannel(name));
+    const { channelId } = await this.queue.runFirst(() => this.signaling.publishDataChannel(name));
     return opened(this.negotiatedChannel(name, channelId));
   }
 
   /** Receives `participantId`'s data channel `name`; resolves once it's open. */
   async subscribeChannel(participantId: string, name: string): Promise<RTCDataChannel> {
     await this.ensureDataTransport();
-    const { channelId } = await this.queue.run(() => this.signaling.subscribeDataChannel(participantId, name));
+    const { channelId } = await this.queue.runFirst(() => this.signaling.subscribeDataChannel(participantId, name));
     return opened(this.negotiatedChannel(name, channelId));
   }
 
   /** Closes a channel from publishChannel (`participantId` omitted) or subscribeChannel. */
   async closeChannel(channel: RTCDataChannel, name: string, participantId?: string): Promise<void> {
     channel.close();
-    if (this.pc) await this.queue.run(() => this.signaling.closeDataChannel(name, participantId));
+    if (this.pc) await this.queue.runFirst(() => this.signaling.closeDataChannel(name, participantId));
   }
 
   /** Must be called from a user gesture when the browser blocked autoplay. */
@@ -783,8 +783,9 @@ export class MediaService implements OnDestroy {
   private ensureDataTransport(): Promise<void> {
     if (!this.receiving()) return Promise.reject(new Error('Data channels need receiving to have started.'));
     let established = false;
+    // runFirst: someone is waiting on this file; video subscriptions queued behind it (or retrying) can wait.
     this.dataTransport ??= this.queue
-      .run(async () => {
+      .runFirst(async () => {
         const pc = this.requirePc();
         const transport = await this.signaling.openDataTransport();
         // From here on the SFU has set up the transport and won't again on this session: if anything below fails,

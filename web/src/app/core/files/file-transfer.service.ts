@@ -34,8 +34,12 @@ export const MAX_DOWNLOADS = 3;
 export const MAX_DOWNLOADED_BYTES = 500 * 1024 * 1024;
 /** The sender gathers requests this long, so one stream serves everyone who asked (the SFU fans it out). */
 export const BATCH_MS = 1000;
-/** The sender starts streaming once every recipient is ready, or after this long without the slow ones. */
-export const READY_WAIT_MS = 3000;
+/**
+ * The sender starts streaming once every recipient is ready, or after this long with those who are (a recipient's
+ * first transfer sets up its data transport, which can wait behind a slow video subscription). With nobody ready by
+ * then the stream is skipped: recipients ask again.
+ */
+export const READY_WAIT_MS = 20_000;
 /** A download with no new chunk for this long asks again for what's missing… */
 export const STALL_MS = 5000;
 /** …this many times before it shows Retry. */
@@ -316,7 +320,8 @@ export class FileTransferService implements OnDestroy {
       const ranges = mergeRanges(to.flatMap((id) => batch.requesters.get(id)!)).slice(0, MAX_RANGES);
       const ready = this.awaitReady(name, to);
       await this.chat.sendEvent({ type: 'file-channel', file: batch.fileId, channel: name, to, ranges });
-      await ready;
+      // Nobody ready in time: skip the stream rather than send it to no one (they ask again when they can).
+      if ((await ready) === 0) return;
       await this.pump(offer, channel, ranges);
       await this.sleep(CLOSE_DELAY_MS);
     } finally {
@@ -325,15 +330,16 @@ export class FileTransferService implements OnDestroy {
     }
   }
 
-  private awaitReady(channelName: string, to: string[]): Promise<void> {
+  /** Resolves with how many recipients are ready: all of them, or those ready after READY_WAIT_MS. */
+  private awaitReady(channelName: string, to: string[]): Promise<number> {
     return new Promise((resolve) => {
+      const waiting = new Set(to);
       const timer = setTimeout(done, READY_WAIT_MS);
       this.timers.add(timer);
-      const entry = { waiting: new Set(to), done };
-      this.readiness.set(channelName, entry);
+      this.readiness.set(channelName, { waiting, done });
       function done() {
         clearTimeout(timer);
-        resolve();
+        resolve(to.length - waiting.size);
       }
     });
   }

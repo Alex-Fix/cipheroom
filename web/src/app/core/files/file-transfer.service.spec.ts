@@ -24,6 +24,8 @@ const ROOM = 'room-1';
 class FakeSfu {
   readonly published = new Map<string, FakeChannel[]>();
   publishCount = 0;
+  /** How long a subscriber's channel takes to open (its data transport waiting behind other negotiations). */
+  subscribeDelayMs = 0;
   /** Return true to drop a frame on its way to a subscriber. */
   drop: (index: number, subscriber: string) => boolean = () => false;
 
@@ -40,6 +42,7 @@ class FakeSfu {
         }, self) as unknown as RTCDataChannel;
       },
       subscribeChannel: async (_publisher: string, name: string) => {
+        if (this.subscribeDelayMs) await new Promise((r) => setTimeout(r, this.subscribeDelayMs));
         const channel = new FakeChannel(() => undefined, self);
         this.published.get(name)?.push(channel);
         return channel as unknown as RTCDataChannel;
@@ -210,6 +213,22 @@ describe('FileTransferService', () => {
     expect(await contents(file(bob))).toEqual(data);
     const requests = bob.sent.filter((e) => e.type === 'file-request');
     expect(requests[1]).toMatchObject({ ranges: [[2, 3]] });
+  });
+
+  it('waits for a recipient who is slow to get ready instead of streaming to no one', async () => {
+    const hana = person('aaaaaaaaaaaaaaaa');
+    const bob = person('bbbbbbbbbbbbbbbb');
+    sfu.subscribeDelayMs = 10_000;
+    const data = bytes(2 * CHUNK_BYTES);
+
+    hana.files.share([new File([data], 'a.bin')]);
+    await settle(() => !!bob.files.files().size);
+    bob.files.download(file(bob).id);
+    await settle(() => file(bob).state === 'done', 30_000);
+
+    expect(await contents(file(bob))).toEqual(data);
+    expect(bob.sent.filter((e) => e.type === 'file-request')).toHaveLength(1);
+    expect(sfu.publishCount).toBe(1);
   });
 
   it('gives up after repeated stalls and offers Retry', async () => {
