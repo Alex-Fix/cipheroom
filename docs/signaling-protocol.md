@@ -134,7 +134,8 @@ keys and transfer coordination travel only inside `SendChat` events; the api see
 else.
 
 - `OpenDataTransport` (once, after our own tracks are published): the SFU's offer adds the data channel transport;
-  answer it with `Renegotiate`, then open `serverEventsChannelId` as a negotiated channel (`server-events`). Creates
+  answer it with `Renegotiate`. The SFU then opens its `server-events` channel in-band (stream `serverEventsChannelId`);
+  clients must not create it themselves (it would collide). Creates
   the media session if needed.
 - `PublishDataChannel(name)`: `name` is the client's random channel name; the SFU name is `{participantId}-{name}`, so
   nobody can publish into someone else's channel. `SubscribeDataChannel(participantId, name)`: the server resolves

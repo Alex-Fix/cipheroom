@@ -116,8 +116,6 @@ export class MediaService implements OnDestroy {
   private readonly placeholders = new Map<TrackSource, MediaStreamTrack>();
   /** Data channel transport (files): set up on first use, once per connection. */
   private dataTransport?: Promise<void>;
-  /** The SFU's own channel the transport is built on; kept open, its messages ignored. */
-  private serverEvents?: RTCDataChannel;
 
   private readonly self = signal<Self | undefined>(undefined);
   /** Pulling others' tracks starts only after our own publishes (see class docs). */
@@ -447,8 +445,6 @@ export class MediaService implements OnDestroy {
     this.layers.clear();
     this.restartAttempts = 0;
     document.removeEventListener('visibilitychange', this.onVisibilityChange);
-    this.serverEvents?.close();
-    this.serverEvents = undefined;
     this.dataTransport = undefined;
     this.pc?.close();
     this.pc = undefined;
@@ -799,8 +795,9 @@ export class MediaService implements OnDestroy {
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
         await this.signaling.renegotiate(answer.sdp!);
-        // Negotiated channels on an existing application section need no further SDP.
-        this.serverEvents = pc.createDataChannel('server-events', { negotiated: true, id: transport.serverEventsChannelId });
+        // The SFU opens its own `server-events` channel in-band (stream transport.serverEventsChannelId): the browser
+        // creates it by itself, and we ignore it. Creating it here too would collide (OperationError). Our file
+        // channels are negotiated on the existing application section and need no further SDP.
       })
       .catch((error: unknown) => {
         if (!established) this.dataTransport = undefined; // e.g. the hub call failed: asking again is fine

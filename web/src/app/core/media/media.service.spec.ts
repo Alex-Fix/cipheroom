@@ -1088,8 +1088,8 @@ describe('MediaService', () => {
       expect(signaling.openDataTransport).toHaveBeenCalledTimes(1);
       expect(pc.remoteDescriptions).toContainEqual({ type: 'offer', sdp: 'v=0 data offer' });
       expect(signaling.renegotiate).toHaveBeenCalledWith('v=0 answer');
+      // server-events is opened in-band by the SFU: never created by us (it would collide).
       expect(pc.dataChannels.map((c) => [c.label, c.init])).toEqual([
-        ['server-events', { negotiated: true, id: 0 }],
         ['AAAAAAAAAAAAAAAAAAAAAA', { negotiated: true, id: 3, ordered: true }],
         ['BBBBBBBBBBBBBBBBBBBBBB', { negotiated: true, id: 4, ordered: true }],
       ]);

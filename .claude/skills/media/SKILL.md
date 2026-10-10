@@ -79,7 +79,8 @@ Design: `docs/plans/2026-10-10-encrypted-files-design.md`. `MediaService.publish
 `closeChannel` (used only by `FileTransferService`):
 - The transport is added lazily on first use: `OpenDataTransport` → the SFU's offer (pulling its `server-events`
   channel) → our answer via `Renegotiate`. It's an SFU offer like a subscribe, so it respects the negotiation-order
-  rule; it needs `startReceiving()` first. Then open `server-events` as a negotiated channel.
+  rule; it needs `startReceiving()` first. The SFU opens its `server-events` channel in-band on stream 0 — never
+  create it yourself (a negotiated id 0 collides: `OperationError`, seen on WebKit and Chrome).
 - Channels are negotiated (`{ negotiated: true, id: channelId, ordered: true }`), reliable and ordered, binary as
   ArrayBuffers. **16 KiB messages**: 64 KiB stalls on Cloudflare although the SDP says `max-message-size` 65536.
 - Measured on the home stack: ~6–8 Mbps per transfer, fan-out to every subscriber works. The api closes channels

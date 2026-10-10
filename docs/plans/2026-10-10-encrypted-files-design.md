@@ -70,8 +70,8 @@ Browser:
   download concurrency, 500 MB completed-file memory cap (oldest evicted back to "Download again").
 - `MediaService` — small data-channel API: `publishChannel(name)`, `subscribeChannel(participantId, name)`,
   `closeChannel(channel, name, participantId?)`. On first use it sets up the data transport by answering an SFU offer
-  (`OpenDataTransport` → `Renegotiate`, like a subscribe — so no new local offer after receiving started) and opens
-  the SFU's `server-events` channel; a rejoin starts over. Components never touch the peer connection.
+  (`OpenDataTransport` → `Renegotiate`, like a subscribe — so no new local offer after receiving started) (the SFU
+  opens its `server-events` channel in-band; we never create it — it would collide); a rejoin starts over. Components never touch the peer connection.
 - `ChatService` — new event kinds inside the existing opaque chat events (relay unchanged): `file` (card),
   `file-request`, `file-channel`, `file-ready`, `file-missing`, `file-gone`.
 - `features/room/chat-panel/` — attach button + drop zone; new `file-card/` and `image-lightbox/` components.
