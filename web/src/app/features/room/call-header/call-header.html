@@ -36,6 +36,20 @@
       <span class="state-text">{{ statusText() }}</span>
     </span>
 
+    @if (poorConnection() && status() === 'connected') {
+      <button
+        type="button"
+        class="poor"
+        nz-tooltip
+        nzTooltipTitle="Show connection details"
+        aria-label="Poor connection — show details"
+        (click)="showConnection.emit()"
+      >
+        <nz-icon nzType="exclamation-circle" />
+        <span class="label">Poor connection</span>
+      </button>
+    }
+
     @if (status() === 'disconnected') {
       <button
         nz-button
