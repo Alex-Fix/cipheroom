@@ -21,7 +21,8 @@ web/
     core/                app-wide singletons and providers — never import from features/
       signaling/         signaling.service.ts, signaling.types.ts   (SignalR wrapper, typed)
       media/             media.service.ts (one RTCPeerConnection to the SFU → signals; see `media`) + pure helpers:
-                         serial-queue, subscriptions, layers, quality, speaking, audio-playback, cameras, ice-path
+                         serial-queue, subscriptions, layers, quality, speaking, audio-playback, cameras, ice-path,
+                         connection-health (Connection drawer report + verdict)
       settings/          display-name.ts, video-quality.ts          (browser-local preferences)
       ui/                icons.ts (static ng-zorro icon registry), theme.service.ts (OS appearance / forced dark)
       crypto/            identity, sender keys, frame-crypto worker, safety code, chat crypto (`e2ee-media`)
@@ -33,7 +34,7 @@ web/
       room/              room.ts .html .less .spec.ts (container), call-status.ts, participant-changes.ts,
                          device-error.ts, and one folder per child component:
         call-header/  call-tile/  call-controls/  participants-panel/  chat-panel/  emoji-picker/
-        diagnostics-drawer/ (hidden for now)
+        connection-drawer/ (Connection: verdict, route, network, sending, encryption, copy report)
         layout/       call-layout.ts (pure: tile roles + rects), stage-speaker.ts (active-speaker hysteresis);
                       corner-drag.directive.ts (floating self-view)
   src/styles.less        global tokens/styles;  src/theme/  ng-zorro light/dark themes

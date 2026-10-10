@@ -11,9 +11,9 @@ Design: `docs/plans/2026-10-07-cloudflare-sfu-design.md`. Protocol: `docs/signal
 ## Boundaries
 - **Frontend** `web/src/app/core/media/`: `MediaService` (provided per room route) owns the single
   `RTCPeerConnection` and exposes signals (`tiles`, `participants`, `state`, device flags, `cameras`,
-  `videoQuality`, `availableQualities`, `canPlaybackAudio`, `diagnostics`). Components never touch the peer
+  `videoQuality`, `availableQualities`, `canPlaybackAudio`, `connection`, `poorConnection`). Components never touch the peer
   connection, tracks' senders or keys. Pure helpers next to it: `serial-queue`, `subscriptions`, `layers`,
-  `quality`, `speaking`, `audio-playback`, `cameras`, `ice-path` — each with a spec.
+  `quality`, `speaking`, `audio-playback`, `cameras`, `ice-path`, `connection-health` — each with a spec.
 - **Backend**: the api proxies every SFU call — clients never see the app secret, Cloudflare session ids or track
   names. Port `ISfu` (Application) ← `CloudflareSfu` adapter ← typed `CloudflareSfuClient` (Infrastructure). Room
   rules (one track per source, server-generated names, pulls only within the room) live in the `Room` aggregate.
@@ -79,6 +79,9 @@ SFU and TURN share 1,000 GB/month of egress (traffic *from* Cloudflare). A 4K ca
 1080p about a third. The usage guard is still to be built — keep the Cloudflare billing notification on.
 
 ## Debugging
+- In the call: More → **Connection** (`connection-health.ts`, every 2 s from `getStats`) shows the route (direct
+  or TURN over UDP/TCP/TLS), round trip, loss each way, what each source sends (codec, size, layers) and what limits
+  it (`qualityLimitationReason`; not on Firefox), plus E2EE counts. "Copy report" gives a numbers-only text to paste.
 - api log (`scripts/logs.sh api`): failed SFU calls are logged as `{HubMethod}: media server request failed` with
   Cloudflare's status and error code (never SDP).
 - Browser: `[cipheroom] camera failed …` in the console has the real device / negotiation error (Safari: Web

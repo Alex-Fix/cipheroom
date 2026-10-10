@@ -55,7 +55,7 @@ touch the peer connection.
 | Verdict | When | Text |
 |---|---|---|
 | `unknown` | Not connected / no selected candidate pair / reconnecting | "Connecting…" / "Reconnecting…" |
-| `poor` | Loss ≥ 5% either way, or RTT ≥ 300 ms, or camera/screen limited by `bandwidth`/`cpu` and sending below the chosen quality | "Poor connection" + reasons ("8% packet loss", "slow upload — sending 360p instead of 1080p") |
+| `poor` | Loss ≥ 5% either way (over ≥ 50 packets), or RTT ≥ 300 ms, or the camera limited by `bandwidth`/`cpu` and sending below the chosen quality (screen shares ramp up slowly and often report `bandwidth` while fine, so only the camera counts) | "Poor connection" + reasons ("8% packet loss", "slow upload — sending 360p instead of 1080p") |
 | `relay` | Through TURN, otherwise fine | "Connected through a relay (TLS)" — neutral note |
 | `good` | Otherwise | "Good connection" |
 
@@ -72,7 +72,8 @@ constants, to be tuned after a mobile-data test.
    audio-only/paused.
 5. **Encryption** — "Keys from N of M people" (`secured`), key epoch, frames encrypted / decrypted / failed / missing
    key, dropped envelopes by reason (only when non-zero).
-6. **Copy report** — app commit, browser/OS family (`callPlatform`), sections 1–5 as text. Toast "Copied".
+6. **Copy report** — browser/OS family (`callPlatform`), sections 1–5 as text. Toast "Report copied". (The app
+   doesn't know its commit — only nginx's `/source` does — so the report leaves it out.)
 
 ### Components and boundaries
 - `core/media/connection-health.ts` — pure: `connectionReport(prev, next, context)` → `ConnectionReport`
