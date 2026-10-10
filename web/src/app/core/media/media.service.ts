@@ -4,7 +4,15 @@ import { MediaKind } from '../crypto/frame-codec';
 import { FrameCrypto } from '../crypto/frame-transforms';
 import { Camera, CameraFacing, cameraFacing, hasRearCamera } from './cameras';
 import { StatsSnapshot, callStats, statsSnapshot } from './call-stats';
-import { StatsLike, selectedIcePath } from './ice-path';
+import {
+  ConnectionReport,
+  HealthContext,
+  HealthSnapshot,
+  PoorStreak,
+  connectionReport,
+  healthSnapshot,
+} from './connection-health';
+import { StatsLike } from './ice-path';
 import { callPlatform } from './platform';
 import { loadVideoCodec, saveVideoCodec } from '../settings/video-codec';
 import { loadVideoQuality, saveVideoQuality } from '../settings/video-quality';
@@ -29,13 +37,14 @@ import {
   simulcastScalabilityMode,
 } from './codecs';
 import { receiveLayer } from './layers';
-import { CallParticipant, Diagnostics, MediaState, Tile } from './media.types';
+import { CallParticipant, MediaState, Tile } from './media.types';
 import {
   VideoQuality,
   cameraEncodings,
   captureConstraints,
   supportedQualities,
   closestQuality,
+  qualityHeight,
 } from './quality';
 import { SerialQueue } from './serial-queue';
 import { SpeakingDetector, sameMembers } from './speaking';
@@ -84,6 +93,10 @@ export class MediaService implements OnDestroy {
   private statsTicks = 0;
   /** Baseline for the next call-quality report (ReportCallStats). */
   private lastReport?: { snapshot: StatsSnapshot; e2ee: E2eeStatsDto };
+  /** Previous reading for the Connection drawer, and the chip's streak. */
+  private health?: HealthSnapshot;
+  private readonly poorStreak = new PoorStreak();
+  private forceRelay = false;
   private recoveryTimer?: ReturnType<typeof setTimeout>;
   private restartAttempts = 0;
   private resyncTimer?: ReturnType<typeof setTimeout>;
@@ -116,7 +129,10 @@ export class MediaService implements OnDestroy {
   readonly cameraEnabled = signal(false);
   readonly screenShareEnabled = signal(false);
   readonly canPlaybackAudio = computed(() => !this.audioPlayback.blocked());
-  readonly diagnostics = signal<Diagnostics>({ forceRelay: false });
+  /** Our own link to the SFU, every 2 s (docs/plans/2026-10-10-connection-diagnostics-design.md). */
+  readonly connection = signal<ConnectionReport | undefined>(undefined);
+  /** The connection has been poor for a while (the header's chip). */
+  readonly poorConnection = signal(false);
 
   /** Local video inputs. Labels only appear once camera permission is granted. Never leave the browser. */
   readonly cameras = signal<Camera[]>([]);
@@ -274,7 +290,7 @@ export class MediaService implements OnDestroy {
     pc.onconnectionstatechange = () => this.onConnectionStateChange(pc);
     document.addEventListener('visibilitychange', this.onVisibilityChange);
 
-    this.diagnostics.set({ forceRelay: config.forceRelay });
+    this.forceRelay = config.forceRelay;
     this.state.set(mediaState(pc.connectionState));
     this.sendingCodec.set(this.codecFor(this.videoCodec()));
     this.self.set(self);
@@ -389,6 +405,10 @@ export class MediaService implements OnDestroy {
     clearInterval(this.statsTimer);
     this.lastReport = undefined;
     this.statsTicks = 0;
+    this.health = undefined;
+    this.poorStreak.update('unknown');
+    this.connection.set(undefined);
+    this.poorConnection.set(false);
     clearTimeout(this.recoveryTimer);
     clearTimeout(this.resyncTimer);
     this.resyncTimer = undefined;
@@ -787,13 +807,51 @@ export class MediaService implements OnDestroy {
     );
     this.speaking.set(this.speakingDetector.update(levels, Date.now()));
 
-    if (this.statsTicks++ % DIAGNOSTICS_EVERY_TICKS === 0) {
-      // One peer connection carries both directions.
-      const path = selectedIcePath(report);
-      this.diagnostics.update((d) => ({ ...d, publisher: path, subscriber: path }));
-    }
+    if (this.statsTicks++ % CONNECTION_EVERY_TICKS === 0) this.updateConnection(report);
     // Baseline on the first tick, then one report per interval.
     if (this.statsTicks % REPORT_EVERY_TICKS === 1) this.reportCallStats(report);
+  }
+
+  private updateConnection(report: StatsLike): void {
+    const next = healthSnapshot(report, performance.now());
+    const prev = this.health;
+    this.health = next;
+    // Undefined after a long gap (throttled tab): keep the last report, start over from this reading.
+    const connection = connectionReport(prev, next, this.healthContext());
+    if (!connection) return;
+    this.connection.set(connection);
+    this.poorConnection.set(this.poorStreak.update(connection.verdict));
+  }
+
+  private healthContext(): HealthContext {
+    const sources = new Map<string, TrackSource>();
+    this.senders.forEach((transceiver, source) => {
+      if (transceiver.mid) sources.set(transceiver.mid, source);
+    });
+    const others = this.signaling.participants();
+    const secured = this.crypto.secured();
+    const dropped = Object.fromEntries(
+      Object.entries(this.crypto.droppedEnvelopes()).filter(([, count]) => !!count),
+    );
+    return {
+      state: this.state(),
+      forceRelay: this.forceRelay,
+      sources,
+      enabled: {
+        microphone: this.micEnabled(),
+        camera: this.cameraEnabled(),
+        screen: this.screenShareEnabled(),
+      },
+      videoAllowed: this.videoAllowed(),
+      targetHeight: qualityHeight(this.effectiveQuality()),
+      encryption: {
+        secured: others.filter((p) => secured.has(p.id)).length,
+        participants: others.length,
+        epoch: this.crypto.keyEpoch(),
+        totals: this.crypto.telemetry(),
+        dropped,
+      },
+    };
   }
 
   /**
@@ -816,7 +874,8 @@ export class MediaService implements OnDestroy {
 }
 
 const STATS_INTERVAL_MS = 250;
-const DIAGNOSTICS_EVERY_TICKS = 8;
+/** 8 × 250 ms: the Connection drawer refreshes every 2 s. */
+const CONNECTION_EVERY_TICKS = 8;
 /** 60 × 250 ms = one call-quality report every 15 s. */
 const REPORT_EVERY_TICKS = 60;
 const LAYER_DEBOUNCE_MS = 500;
