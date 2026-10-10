@@ -78,6 +78,7 @@
                     [attr.aria-pressed]="r.mine"
                     nz-tooltip
                     [nzTooltipTitle]="r.names.join(', ')"
+                    [nzTooltipPlacement]="item.own ? tipOwn : tipOthers"
                     (click)="react.emit({ id: item.id, emoji: r.emoji })"
                   >
                     {{ r.emoji }} <span class="count">{{ r.count }}</span>

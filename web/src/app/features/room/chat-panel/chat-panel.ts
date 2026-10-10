@@ -57,6 +57,9 @@ export class ChatPanel {
 
   protected readonly maxLength = MAX_CHAT_TEXT;
   protected readonly quickReactions = QUICK_REACTIONS;
+  /** "Who reacted" opens towards the middle: chips sit at the screen's edge on phones. */
+  protected readonly tipOthers = ['topLeft', 'bottomLeft'];
+  protected readonly tipOwn = ['topRight', 'bottomRight'];
   protected readonly draft = signal('');
   protected readonly pickerOpen = signal(false);
   /** The message whose reaction picker is open. */
