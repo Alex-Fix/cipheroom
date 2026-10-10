@@ -126,8 +126,27 @@
       </ul>
     }
 
+    <h2 class="section">Your identity</h2>
+    <app-identity-card
+      [status]="deviceKeys.status()"
+      [busy]="settingUp()"
+      (setUp)="setUpIdentity()"
+      (startOver)="startOver()"
+    />
+
+    @if (contactList().length) {
+      <h2 class="section">People you've met</h2>
+      <app-contacts-list
+        [contacts]="contactList()"
+        [persistent]="contacts.persistent()"
+        (unverify)="unverify($event)"
+        (forget)="forgetContact($event)"
+        (forgetAll)="forgetAllContacts()"
+      />
+    }
+
     <button nz-button nzType="link" class="import" type="button" (click)="importing.set(true)">
-      <nz-icon nzType="upload" /> Import a host key backup
+      <nz-icon nzType="upload" /> Import a backup
     </button>
   </div>
 
@@ -139,7 +158,8 @@
   </p>
 
   <app-backup-dialog
-    [open]="!!backupFor()"
+    [open]="!!backupFor() || identityBackup()"
+    [kind]="backupKind()"
     [busy]="backingUp()"
     [saved]="backupSaved()"
     (save)="saveBackup($event)"

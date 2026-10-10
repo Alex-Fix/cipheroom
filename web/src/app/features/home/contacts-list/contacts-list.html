@@ -1,0 +1,56 @@
+<ul class="list" aria-label="Contacts">
+  @for (c of sorted(); track c.devicePub) {
+    <li class="contact">
+      <span class="who">
+        <span class="name">
+          {{ c.name }}
+          @if (c.verified) {
+            <span class="verified" role="img" aria-label="Verified"
+              ><nz-icon nzType="check"
+            /></span>
+          }
+        </span>
+        <span class="meta">
+          @if (c.previousName) {
+            previously {{ c.previousName }} ·
+          }
+          {{ c.calls === 1 ? '1 call' : c.calls + ' calls' }} · last
+          {{ c.lastSeen | date: 'mediumDate' }}
+        </span>
+      </span>
+      @if (c.verified) {
+        <button
+          nz-button
+          nzType="text"
+          nzSize="small"
+          class="unverify"
+          [attr.aria-label]="'Remove verification of ' + c.name"
+          (click)="unverify.emit(c.devicePub)"
+        >
+          Unverify
+        </button>
+      }
+      <button
+        nz-button
+        nzType="text"
+        nzShape="circle"
+        nz-tooltip
+        nzTooltipTitle="Forget"
+        class="forget"
+        [attr.aria-label]="'Forget ' + c.name"
+        (click)="forget.emit(c.devicePub)"
+      >
+        <nz-icon nzType="delete" />
+      </button>
+    </li>
+  }
+</ul>
+<p class="footnote">
+  Kept in this browser only.
+  @if (!persistent()) {
+    This browser can't store them: they're gone when you close it.
+  }
+  <button nz-button nzType="link" nzSize="small" class="forget-all" (click)="forgetAll.emit()">
+    Forget everyone
+  </button>
+</p>

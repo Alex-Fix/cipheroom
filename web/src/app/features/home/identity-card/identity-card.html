@@ -1,0 +1,29 @@
+@switch (status()) {
+  @case ('ready') {
+    <p class="state ready">
+      <nz-icon nzType="check" /> People you call can recognise you in later calls.
+    </p>
+    <button nz-button nzType="link" class="start-over" (click)="startOver.emit()">
+      Start Over
+    </button>
+  }
+  @case ('none') {
+    <p class="state">
+      Set up an identity so people you call recognise you next time — and get warned if someone else
+      uses your name. You'll make a backup once.
+    </p>
+    <button
+      nz-button
+      nzType="default"
+      nzShape="round"
+      class="set-up"
+      [nzLoading]="busy()"
+      (click)="setUp.emit()"
+    >
+      Set Up
+    </button>
+  }
+  @case ('unavailable') {
+    <p class="state">This browser can't keep an identity (private mode?). You can still join.</p>
+  }
+}

@@ -6,6 +6,9 @@ import { NzMessageService } from 'ng-zorro-antd/message';
 import { NzModalService } from 'ng-zorro-antd/modal';
 import { BackupError } from '../../core/crypto/host-key-backup';
 import { HostKeysService, Meeting } from '../../core/crypto/host-keys.service';
+import { DeviceIdentityStatus, DeviceKeysService } from '../../core/crypto/device-keys.service';
+import { CONTACT_STORE, MemoryContactStore } from '../../core/contacts/contact-store';
+import { ContactsService } from '../../core/contacts/contacts.service';
 import { DISPLAY_NAME_KEY } from '../../core/settings/display-name';
 import { APP_ICONS } from '../../core/ui/icons';
 import { Home } from './home';
@@ -25,15 +28,30 @@ function fakeHostKeys() {
   };
 }
 
+function fakeDeviceKeys() {
+  return {
+    status: signal<DeviceIdentityStatus>('none'),
+    refresh: vi.fn().mockResolvedValue(undefined),
+    setUp: vi.fn().mockResolvedValue(undefined),
+    backup: vi.fn().mockResolvedValue({ fileName: 'cipheroom-identity-abc.key', contents: '{}' }),
+    discardPendingBackup: vi.fn(),
+    restore: vi.fn().mockResolvedValue(undefined),
+    remove: vi.fn().mockResolvedValue(undefined),
+  };
+}
+
 async function setup({ name = '', room }: { name?: string; room?: string } = {}) {
   localStorage.setItem(DISPLAY_NAME_KEY, name);
   const hostKeys = fakeHostKeys();
+  const deviceKeys = fakeDeviceKeys();
   TestBed.configureTestingModule({
     imports: [Home],
     providers: [
       provideRouter([]),
       provideNzIcons(APP_ICONS),
       { provide: HostKeysService, useValue: hostKeys },
+      { provide: DeviceKeysService, useValue: deviceKeys },
+      { provide: CONTACT_STORE, useValue: new MemoryContactStore() },
       { provide: NzMessageService, useValue: { error: vi.fn(), success: vi.fn() } },
       {
         provide: ActivatedRoute,
@@ -58,7 +76,7 @@ async function setup({ name = '', room }: { name?: string; room?: string } = {})
     await fixture.whenStable();
   };
   const button = (selector: string) => el.querySelector<HTMLButtonElement>(selector)!;
-  return { fixture, el, navigate, type, button, hostKeys, modal };
+  return { fixture, el, navigate, type, button, hostKeys, deviceKeys, modal };
 }
 
 describe('Home', () => {
@@ -168,5 +186,50 @@ describe('Home', () => {
     dialog.triggerEventHandler('unlock', { contents: '<script>', passphrase: 'x' });
     await fixture.whenStable();
     expect(dialog.componentInstance.error()).toBe('Wrong passphrase, or the file was changed.');
+  });
+
+  describe('identity and contacts', () => {
+    it('sets up an identity and offers its one-time backup, then stays on the home page', async () => {
+      const { fixture, el, deviceKeys, navigate } = await setup({ name: 'Alex' });
+      el.querySelector<HTMLButtonElement>('app-identity-card .set-up')!.click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(deviceKeys.setUp).toHaveBeenCalled();
+      const dialog = fixture.debugElement.query((d) => d.name === 'app-backup-dialog');
+      expect(dialog.componentInstance.open()).toBe(true);
+      expect(dialog.componentInstance.kind()).toBe('identity');
+
+      dialog.triggerEventHandler('save', 'correct horse battery staple');
+      await fixture.whenStable();
+      expect(deviceKeys.backup).toHaveBeenCalledWith('correct horse battery staple');
+      dialog.triggerEventHandler('done');
+      fixture.detectChanges();
+      expect(deviceKeys.discardPendingBackup).toHaveBeenCalled();
+      expect(dialog.componentInstance.open()).toBe(false);
+      expect(navigate).not.toHaveBeenCalled();
+    });
+
+    it('imports an identity backup as an identity, a host key backup as a meeting', async () => {
+      const { fixture, hostKeys, deviceKeys } = await setup({ name: 'Alex' });
+      const dialog = fixture.debugElement.query((d) => d.name === 'app-import-dialog');
+      const device = JSON.stringify({ kind: 'cipheroom-device-key' });
+      dialog.triggerEventHandler('unlock', { contents: device, passphrase: 'p' });
+      await fixture.whenStable();
+      expect(deviceKeys.restore).toHaveBeenCalledWith(device, 'p');
+      expect(hostKeys.import).not.toHaveBeenCalled();
+
+      const host = JSON.stringify({ kind: 'cipheroom-host-key' });
+      dialog.triggerEventHandler('unlock', { contents: host, passphrase: 'p' });
+      await fixture.whenStable();
+      expect(hostKeys.import).toHaveBeenCalledWith(host, 'p');
+    });
+
+    it('lists people met before, once there are any', async () => {
+      const { fixture, el } = await setup({ name: 'Alex' });
+      expect(el.querySelector('app-contacts-list')).toBeNull();
+      await TestBed.inject(ContactsService).remember('bob-key', 'Bob', 'call-1');
+      fixture.detectChanges();
+      expect(el.querySelector('app-contacts-list .name')!.textContent!.trim()).toBe('Bob');
+    });
   });
 });

@@ -10,21 +10,14 @@
 >
   <ng-container *nzModalContent>
     @if (saved()) {
-      <p class="lead">
-        <nz-icon nzType="check" class="ok" /> Keep the file and your passphrase somewhere safe —
-        anyone with both can host this meeting.
-      </p>
+      <p class="lead"><nz-icon nzType="check" class="ok" /> {{ text().saved }}</p>
     } @else {
       <!-- The form stays mounted while asking "skip?", so going back keeps what was typed. -->
       @if (confirmingSkip()) {
-        <p class="lead">
-          Without a backup you can't host this meeting from another browser, or after this browser's
-          data is cleared. You can't make one later.
-        </p>
+        <p class="lead">{{ text().skip }}</p>
       }
       <p class="lead" [hidden]="confirmingSkip()">
-        This browser is the host of your new meeting. To host it from another device, or if this
-        browser's data is cleared, you'll need a backup. <strong>You can only make it now.</strong>
+        {{ text().lead }} <strong>You can only make it now.</strong>
       </p>
       <form class="form" [hidden]="confirmingSkip()" (ngSubmit)="submit()">
         <label for="passphrase">Passphrase</label>

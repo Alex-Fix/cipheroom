@@ -1,6 +1,6 @@
 <nz-modal
   [nzVisible]="open()"
-  nzTitle="Import a host key"
+  nzTitle="Import a backup"
   [nzCentered]="true"
   [nzWidth]="440"
   [nzMaskClosable]="false"
@@ -10,7 +10,8 @@
   <ng-container *nzModalContent>
     <form class="form" (ngSubmit)="submit()">
       <p class="lead">
-        Host a meeting from this browser using the backup you saved when you created it.
+        Restore a meeting you host, or your identity, from the backup file you saved when you
+        created it.
       </p>
       <label for="backup-file">Backup file</label>
       <!-- Re-created on every opening, so no file from before stays picked. -->
