@@ -127,3 +127,40 @@ describe('CallTile pin', () => {
     expect(el.classList).not.toContain('revealed');
   });
 });
+
+describe('CallTile floating self-view', () => {
+  function renderFloat(collapsed: boolean) {
+    TestBed.configureTestingModule({ imports: [CallTile], providers: [provideNzIcons(APP_ICONS)] });
+    const fixture = TestBed.createComponent(CallTile);
+    fixture.componentRef.setInput(
+      'tile',
+      tile({ isLocal: true, name: 'Alex (you)', micMuted: true }),
+    );
+    fixture.componentRef.setInput('floating', true);
+    fixture.componentRef.setInput('canPin', false);
+    fixture.componentRef.setInput('collapsed', collapsed);
+    fixture.detectChanges();
+    const toggles: number[] = [];
+    fixture.componentInstance.toggleCollapse.subscribe(() => toggles.push(1));
+    return { el: fixture.nativeElement as HTMLElement, toggles };
+  }
+
+  it('can be minimized', () => {
+    const { el, toggles } = renderFloat(false);
+    const button = el.querySelector<HTMLButtonElement>('.collapse')!;
+    expect(button.getAttribute('aria-label')).toBe('Minimize my video');
+    button.click();
+    expect(toggles).toHaveLength(1);
+    expect(el.querySelector('.pin')).toBeNull();
+  });
+
+  it('collapsed: a pill with our mic state and no video, and a button to bring it back', () => {
+    const { el, toggles } = renderFloat(true);
+    expect(el.classList).toContain('pill');
+    expect(el.querySelector('video, .monogram')).toBeNull();
+    expect(el.querySelector('.pill-label')!.textContent!.trim()).toBe('You');
+    expect(el.querySelector('.pill-label nz-icon')).not.toBeNull();
+    el.querySelector<HTMLButtonElement>('.collapse[aria-label="Show my video"]')!.click();
+    expect(toggles).toHaveLength(1);
+  });
+});

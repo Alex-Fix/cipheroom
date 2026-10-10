@@ -1,35 +1,64 @@
 @let t = tile();
-<!-- Securing: their key hasn't arrived, frames are being dropped — show the monogram, not a frozen frame. -->
-@if (t.video && !t.securing) {
-  <video [appTrack]="t.video" autoplay playsinline [muted]="true" [class.mirror]="t.mirror"></video>
-} @else {
-  <div class="monogram" aria-hidden="true">{{ initials() }}</div>
-}
-@if (t.securing) {
-  <div class="securing" role="status"><nz-icon nzType="lock" /> Securing…</div>
-}
-@if (t.audio) {
-  <audio [appTrack]="t.audio" autoplay></audio>
-}
-<div class="caption">
-  @if (t.isScreen) {
-    <span class="screen-tag">Screen</span>
-  } @else if (t.micMuted) {
-    <span class="mic-off" role="img" aria-label="Microphone off"
-      ><nz-icon nzType="audio-muted"
-    /></span>
-  }
-  <span class="name">{{ t.name }}</span>
-</div>
-@if (canPin()) {
-  <button
-    type="button"
-    class="pin"
-    [class.on]="pinned()"
-    [attr.aria-pressed]="pinned()"
-    [attr.aria-label]="pinned() ? 'Unpin ' + t.name : 'Pin ' + t.name"
-    (click)="togglePin($event)"
-  >
-    <nz-icon nzType="pushpin" />
+@if (floating() && collapsed()) {
+  <!-- The collapsed self-view: a pill with our mic state; tap the button to bring the video back. -->
+  <span class="pill-label">
+    @if (t.micMuted) {
+      <nz-icon nzType="audio-muted" />
+    }
+    You
+  </span>
+  <button type="button" class="collapse" aria-label="Show my video" (click)="collapse($event)">
+    <nz-icon nzType="arrows-alt" />
   </button>
+} @else {
+  <!-- Securing: their key hasn't arrived, frames are being dropped — show the monogram, not a frozen frame. -->
+  @if (t.video && !t.securing) {
+    <video
+      [appTrack]="t.video"
+      autoplay
+      playsinline
+      [muted]="true"
+      [class.mirror]="t.mirror"
+    ></video>
+  } @else {
+    <div class="monogram" aria-hidden="true">{{ initials() }}</div>
+  }
+  @if (t.securing) {
+    <div class="securing" role="status"><nz-icon nzType="lock" /> Securing…</div>
+  }
+  @if (t.audio) {
+    <audio [appTrack]="t.audio" autoplay></audio>
+  }
+  <div class="caption">
+    @if (t.isScreen) {
+      <span class="screen-tag">Screen</span>
+    } @else if (t.micMuted) {
+      <span class="mic-off" role="img" aria-label="Microphone off"
+        ><nz-icon nzType="audio-muted"
+      /></span>
+    }
+    <span class="name">{{ t.name }}</span>
+  </div>
+  @if (canPin()) {
+    <button
+      type="button"
+      class="pin"
+      [class.on]="pinned()"
+      [attr.aria-pressed]="pinned()"
+      [attr.aria-label]="pinned() ? 'Unpin ' + t.name : 'Pin ' + t.name"
+      (click)="togglePin($event)"
+    >
+      <nz-icon nzType="pushpin" />
+    </button>
+  }
+  @if (floating()) {
+    <button
+      type="button"
+      class="collapse"
+      aria-label="Minimize my video"
+      (click)="collapse($event)"
+    >
+      <nz-icon nzType="shrink" />
+    </button>
+  }
 }

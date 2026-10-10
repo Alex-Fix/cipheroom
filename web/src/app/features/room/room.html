@@ -80,6 +80,7 @@
       class="stage"
       [class.scrolls]="layout().height > box().h"
       (appBoxSize)="box.set($event)"
+      (scroll)="scrollTop.set($any($event.target).scrollTop)"
     >
       <div class="canvas" [style.height.px]="layout().height">
         <!-- One container for every tile: moving between stage, strip and grid never re-mounts a video. -->
@@ -88,12 +89,17 @@
           <app-call-tile
             [tile]="tile"
             [attr.data-role]="p.role"
-            [style.transform]="'translate(' + p.rect.x + 'px, ' + p.rect.y + 'px)'"
+            [style.transform]="transformOf(p)"
             [style.width.px]="p.rect.w"
             [style.height.px]="p.rect.h"
             [pinned]="pin() === tile.key"
             [canPin]="p.role !== 'hidden' && p.role !== 'float'"
             (pin)="togglePin(tile.key)"
+            [floating]="p.role === 'float'"
+            [collapsed]="viewSettings().collapsed"
+            (toggleCollapse)="toggleCollapsed()"
+            [appCornerDrag]="p.role === 'float'"
+            (cornerDrop)="setCorner($event)"
             (appElementSize)="media.setTileSize(tile.key, $event)"
           />
         }

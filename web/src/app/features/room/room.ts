@@ -33,10 +33,12 @@ import { callStatus } from './call-status';
 import { CallTile } from './call-tile/call-tile';
 import { Device, deviceErrorMessage } from './device-error';
 import { BoxSizeDirective } from '../../shared/box-size.directive';
+import { CornerDragDirective } from './corner-drag.directive';
 import { ElementSizeDirective } from '../../shared/element-size.directive';
 import {
   CallView,
   CallViewSettings,
+  Corner,
   SelfView,
   loadCallView,
   saveCallView,
@@ -61,6 +63,7 @@ import { ParticipantAction, ParticipantsPanel } from './participants-panel/parti
     CallHeader,
     CallTile,
     ChatPanel,
+    CornerDragDirective,
     ElementSizeDirective,
     LobbyScreen,
     NzButtonModule,
@@ -103,6 +106,8 @@ export class Room implements OnInit, OnDestroy {
   );
   /** The stage's content box (CSS px). */
   protected readonly box = signal({ w: 0, h: 0 });
+  /** How far a long grid is scrolled: the floating self-view stays put on screen. */
+  protected readonly scrollTop = signal(0);
   private readonly stageSpeaker = new StageSpeaker();
   private readonly speaker = signal<string | undefined>(undefined);
   private readonly recentSpeakers = signal<readonly string[]>([], {
@@ -321,6 +326,19 @@ export class Room implements OnInit, OnDestroy {
   /** Pin a tile to the stage (Speaker view until unpinned), or unpin it. */
   protected togglePin(key: string): void {
     this.pin.update((pinned) => (pinned === key ? undefined : key));
+  }
+
+  protected transformOf(p: Placement): string {
+    const y = p.rect.y + (p.role === 'float' ? this.scrollTop() : 0);
+    return `translate(${p.rect.x}px, ${y}px)`;
+  }
+
+  protected toggleCollapsed(): void {
+    this.viewSettings.update((s) => ({ ...s, collapsed: !s.collapsed }));
+  }
+
+  protected setCorner(corner: Corner): void {
+    this.viewSettings.update((s) => ({ ...s, corner }));
   }
 
   protected selectSelfView(selfView: SelfView): void {

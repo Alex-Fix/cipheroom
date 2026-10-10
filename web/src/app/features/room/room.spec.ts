@@ -20,6 +20,7 @@ import { SignalingService } from '../../core/signaling/signaling.service';
 import { UsageDto } from '../../core/signaling/signaling.types';
 import { APP_ICONS } from '../../core/ui/icons';
 import { DISPLAY_NAME_KEY } from '../../core/settings/display-name';
+import { CornerDragDirective } from './corner-drag.directive';
 import { Room } from './room';
 
 function fakeMedia() {
@@ -484,6 +485,30 @@ describe('Room', () => {
       media.tiles.update((t) => t.filter((x) => x.participantId !== 'bob'));
       fixture.detectChanges();
       expect(roles(el)).toEqual({ me: 'grid', carol: 'grid' });
+    });
+
+    it('minimizes the floating self-view and remembers where it was dropped', async () => {
+      const { fixture } = await inCall();
+      const controls = fixture.debugElement.query(
+        (d) => d.name === 'app-call-controls',
+      ).componentInstance;
+      controls.selectSelfView.emit('float');
+      fixture.detectChanges();
+      const self = fixture.debugElement
+        .queryAll((d) => d.name === 'app-call-tile')
+        .find((d) => d.componentInstance.tile().isLocal)!;
+
+      self.componentInstance.toggleCollapse.emit();
+      self.injector.get(CornerDragDirective).cornerDrop.emit('top-left');
+      fixture.detectChanges();
+
+      expect(self.nativeElement.classList).toContain('pill');
+      expect(self.nativeElement.dataset['role']).toBe('float');
+      expect(JSON.parse(localStorage.getItem(CALL_VIEW_KEY)!)).toMatchObject({
+        selfView: 'float',
+        collapsed: true,
+        corner: 'top-left',
+      });
     });
 
     it('picking Grid during a share is honoured', async () => {

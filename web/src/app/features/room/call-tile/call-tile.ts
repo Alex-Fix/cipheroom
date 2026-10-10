@@ -26,6 +26,7 @@ import { TrackDirective } from '../../../shared/track.directive';
     '[class.speaking]': 'tile().isSpeaking',
     '[class.screen]': 'tile().isScreen',
     '[class.revealed]': 'revealed()',
+    '[class.pill]': 'floating() && collapsed()',
     '(click)': 'reveal()',
   },
   templateUrl: './call-tile.html',
@@ -37,6 +38,10 @@ export class CallTile {
   /** Hidden and floating tiles don't offer pinning. */
   readonly canPin = input(true);
   readonly pin = output();
+  /** The floating self-view: offers collapsing to a pill (and back). */
+  readonly floating = input(false);
+  readonly collapsed = input(false);
+  readonly toggleCollapse = output();
 
   /** Touch: the tile's buttons are showing after a tap. */
   protected readonly revealed = signal(false);
@@ -50,6 +55,11 @@ export class CallTile {
     clearTimeout(this.revealTimer);
     this.revealed.set(true);
     this.revealTimer = setTimeout(() => this.revealed.set(false), REVEAL_MS);
+  }
+
+  protected collapse(event: Event): void {
+    event.stopPropagation();
+    this.toggleCollapse.emit();
   }
 
   protected togglePin(event: Event): void {

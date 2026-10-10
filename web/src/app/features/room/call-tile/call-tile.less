@@ -158,3 +158,62 @@ video.mirror {
     height: 40px;
   }
 }
+
+// Floating self-view: minimize (top-left), and the collapsed pill.
+.collapse {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgb(0 0 0 / 0.5);
+  color: #fff;
+  font-size: 15px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 150ms ease-out;
+
+  &:focus-visible {
+    opacity: 1;
+  }
+}
+
+@media (hover: hover) {
+  :host(:hover) .collapse {
+    opacity: 1;
+  }
+}
+
+:host(.revealed) .collapse {
+  opacity: 1;
+}
+
+:host(.pill) {
+  border-radius: 999px;
+  cursor: grab;
+
+  .collapse {
+    position: static;
+    opacity: 1;
+    background: transparent;
+  }
+}
+
+.pill-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-left: 14px;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+:host(.pill) {
+  grid-template-columns: 1fr auto;
+}
