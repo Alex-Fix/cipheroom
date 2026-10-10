@@ -76,6 +76,7 @@ sig  = Ed25519(sender identity, fields("cipheroom/env-sig/v1", aad, eph, iv, ct)
 - [ ] Private keys created with `extractable: false`.
 - [ ] Can't join/publish if E2EE setup fails — no silent unencrypted fallback.
 - [ ] Every envelope signature verified before use; identities that don't verify get no keys and are flagged.
+- [ ] Removals are sticky: a verified revocation stays in force for the whole call, whatever later authorities say.
 - [ ] Keys only for admitted participants (host attestation or ticket from a host/co-host, not revoked); every new
       signed statement has its own `cipheroom/<name>/v1` label, includes the room id, and is added to the shared
       vectors so the api and browser encode the same bytes.

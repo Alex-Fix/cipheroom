@@ -123,7 +123,9 @@ fallback.
 - The api verifies each statement before acting on it (Ed25519 on BouncyCastle) — that keeps strangers away from the
   SFU and the participant list. **Clients verify everything again** (`statements.ts`): a participant only gets our
   keys if their identity verifies *and* the host key attests them or they hold a ticket from a host or co-host, and
-  they weren't removed. Someone a malicious server slips into the call gets no keys.
+  they weren't removed. Someone a malicious server slips into the call gets no keys. A removal a browser has
+  verified is kept for the rest of the call: a later authority without it (an api restart, or a server lying by
+  omission) never lets that identity back in.
 - Statements name per-call identities, so none can be replayed into a later call.
 
 ### Names
@@ -174,7 +176,8 @@ emoji reactions, browser memory only (gone when you leave; newcomers see only wh
   Size-based layer requests also show which camera a viewer watches large (pin or active speaker).
 - A malicious server can drop envelopes, knocks or admissions, or hide a leave or a removal from some members
   (calls break, someone waits forever, or a leaver keeps getting keys until the next rotation) — visible as "who's
-  in the call", never a decryption. It can't admit anyone, appoint a host or forge a removal or "end".
+  in the call", never a decryption. It can't admit anyone, appoint a host or forge a removal or "end", nor undo a
+  removal a member has already seen.
 - The server learns which random participant ids are host / co-host, and lobby timing and size — never names.
 - A co-host's tickets stay valid after that co-host is removed (their earlier admissions don't break); a removed
   co-host colluding with a malicious server could admit someone the call would see in the list.
