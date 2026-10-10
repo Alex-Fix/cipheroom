@@ -25,6 +25,18 @@ else
   export OTEL_EXPORTER_OTLP_ENDPOINT=
 fi
 
+# AGPL §13: the "Source code" link opens the commit the images are built from — only when nothing that goes into them
+# (web/, src/, deploy/, build props) differs from it, untracked files included; otherwise the link opens the repository.
+if [[ -z "$(git -C "$ROOT" status --porcelain -- web src deploy global.json 'Directory.*.props' 2>/dev/null)" ]]; then
+  SOURCE_COMMIT="$(git -C "$ROOT" rev-parse HEAD)"
+  [[ -n "$(git -C "$ROOT" branch -r --contains HEAD 2>/dev/null)" ]] \
+    || warn "commit $(git -C "$ROOT" rev-parse --short HEAD) isn't pushed yet: the Source link 404s until it is"
+else
+  SOURCE_COMMIT=
+  warn "uncommitted changes: the Source link will point to the repository, not a commit"
+fi
+export SOURCE_COMMIT
+
 # --remove-orphans: containers of services that were removed from the compose file (e.g. the old livekit) go too.
 "${COMPOSE[@]}" up -d --build --remove-orphans
 "${COMPOSE[@]}" ps

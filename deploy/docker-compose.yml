@@ -38,6 +38,9 @@ services:
     build:
       context: ..
       dockerfile: web/Dockerfile
+      args:
+        SOURCE_URL: ${SOURCE_URL:-https://github.com/Alex-Fix/cipheroom}
+        SOURCE_COMMIT: ${SOURCE_COMMIT:-}
     ports:
       - "127.0.0.1:${WEB_PORT:-8080}:8080"
     depends_on:
