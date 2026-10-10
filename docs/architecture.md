@@ -30,7 +30,7 @@
 | `api` (.NET 10, SignalR) | rooms, **lobby and admission** (verifies host proofs, tickets and host-control signatures), presence, **SFU proxy** (relays SDP, checks every track belongs to the caller's room), ICE config, **key-envelope and knock relay** (to the recipient only, within the room), **encrypted chat relay** (to the room's other members) | metadata, SDP (client IPs), public keys, signatures, opaque envelopes, knocks and chat events — never names or chat text |
 | Cloudflare Realtime SFU | forwards media between browsers, simulcast layer selection | end-to-end encrypted frames (codec payload header in the clear), metadata |
 | Cloudflare TURN | fallback relay for client networks that block direct UDP | DTLS-SRTP packets |
-| `web` | static Angular app (ng-zorro UI, icons bundled — no runtime CDN fetches) + security headers | nothing sensitive |
+| `web` | static Angular app (ng-zorro UI, icons bundled — no runtime CDN fetches) + security headers; `/source` redirects to the running commit's code (AGPL §13, `SOURCE_URL` + commit baked in at build) | nothing sensitive |
 | `cloudflared` | one public HTTPS hostname → `web` (which proxies `/api`, `/hubs` to the api, `/grafana/` to Grafana) | TLS-terminated HTTP/WS |
 | Observability (profile `observability`) | otel-collector → Prometheus / Loki / Tempo, Grafana at `/grafana/` behind its own hardened login, node-exporter, cAdvisor — [`observability.md`](observability.md) | pseudonymous metadata: hashed room ids, random participant ids, call timing, call-quality numbers (7 days) |
 

@@ -114,6 +114,20 @@
   }
 }
 
+// The narrowest phones (320 px): six buttons still fit (6 × 44 + 5 × 6 + 12 = 306 px); 44 px is Apple's minimum target.
+@media (max-width: 359px) {
+  :host {
+    gap: 6px;
+    padding: 6px;
+  }
+
+  .control {
+    width: 44px;
+    height: 44px;
+    font-size: 19px;
+  }
+}
+
 // ⋯ menu camera, quality and codec pickers (rendered in an overlay, so styles must reach outside the host).
 ::ng-deep .view-item .check,
 ::ng-deep .self-view-item .check,
