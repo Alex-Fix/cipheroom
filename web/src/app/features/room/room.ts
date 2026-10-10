@@ -318,6 +318,11 @@ export class Room implements OnInit, OnDestroy {
     this.viewSettings.update((s) => ({ ...s, view }));
   }
 
+  /** Pin a tile to the stage (Speaker view until unpinned), or unpin it. */
+  protected togglePin(key: string): void {
+    this.pin.update((pinned) => (pinned === key ? undefined : key));
+  }
+
   protected selectSelfView(selfView: SelfView): void {
     this.viewSettings.update((s) => ({ ...s, selfView, collapsed: false }));
   }

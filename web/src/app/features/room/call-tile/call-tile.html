@@ -21,3 +21,15 @@
   }
   <span class="name">{{ t.name }}</span>
 </div>
+@if (canPin()) {
+  <button
+    type="button"
+    class="pin"
+    [class.on]="pinned()"
+    [attr.aria-pressed]="pinned()"
+    [attr.aria-label]="pinned() ? 'Unpin ' + t.name : 'Pin ' + t.name"
+    (click)="togglePin($event)"
+  >
+    <nz-icon nzType="pushpin" />
+  </button>
+}

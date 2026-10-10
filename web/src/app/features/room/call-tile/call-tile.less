@@ -112,3 +112,49 @@ video.mirror {
   font-weight: 600;
   white-space: nowrap;
 }
+
+// Pin: shown on hover (mouse), after a tap (touch), and always while pinned.
+.pin {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgb(0 0 0 / 0.5);
+  color: #fff;
+  font-size: 15px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 150ms ease-out;
+
+  &.on {
+    background: var(--accent);
+    opacity: 1;
+  }
+
+  &:focus-visible {
+    opacity: 1;
+  }
+}
+
+@media (hover: hover) {
+  :host(:hover) .pin {
+    opacity: 1;
+  }
+}
+
+:host(.revealed) .pin {
+  opacity: 1;
+}
+
+@media (pointer: coarse) {
+  .pin {
+    width: 40px;
+    height: 40px;
+  }
+}

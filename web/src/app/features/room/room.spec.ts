@@ -456,6 +456,36 @@ describe('Room', () => {
       expect(roles(el)).toEqual({ me: 'grid', bob: 'grid', carol: 'grid' });
     });
 
+    it('pins a tile to the stage and returns to Grid when unpinned', async () => {
+      const { el, fixture } = await inCall();
+      const pinOf = (name: string) =>
+        [...el.querySelectorAll<HTMLElement>('.canvas > app-call-tile')]
+          .find((t) => t.querySelector('.name')!.textContent!.trim() === name)!
+          .querySelector<HTMLButtonElement>('.pin')!;
+
+      pinOf('me').click();
+      fixture.detectChanges();
+      expect(roles(el)).toEqual({ me: 'stage', bob: 'strip', carol: 'strip' });
+
+      pinOf('me').click();
+      fixture.detectChanges();
+      expect(roles(el)).toEqual({ me: 'grid', bob: 'grid', carol: 'grid' });
+    });
+
+    it('drops the pin when that person leaves', async () => {
+      const { el, fixture, media } = await inCall();
+      fixture.debugElement
+        .queryAll((d) => d.name === 'app-call-tile')
+        .find((d) => d.componentInstance.tile().key === 'bob:camera')!
+        .componentInstance.pin.emit();
+      fixture.detectChanges();
+      expect(roles(el)['bob']).toBe('stage');
+
+      media.tiles.update((t) => t.filter((x) => x.participantId !== 'bob'));
+      fixture.detectChanges();
+      expect(roles(el)).toEqual({ me: 'grid', carol: 'grid' });
+    });
+
     it('picking Grid during a share is honoured', async () => {
       const { el, fixture, media } = await inCall();
       media.tiles.update((t) => [...t, tile('carol', { isScreen: true, name: 'carol screen' })]);

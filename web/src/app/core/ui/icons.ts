@@ -30,6 +30,7 @@ import {
   MessageOutline,
   SmileOutline,
   SendOutline,
+  PushpinOutline,
 } from '@ant-design/icons-angular/icons';
 import { IconDefinition } from '@ant-design/icons-angular';
 
@@ -70,4 +71,5 @@ export const APP_ICONS: IconDefinition[] = [
   MessageOutline,
   SmileOutline,
   SendOutline,
+  PushpinOutline,
 ];

@@ -91,6 +91,9 @@
             [style.transform]="'translate(' + p.rect.x + 'px, ' + p.rect.y + 'px)'"
             [style.width.px]="p.rect.w"
             [style.height.px]="p.rect.h"
+            [pinned]="pin() === tile.key"
+            [canPin]="p.role !== 'hidden' && p.role !== 'float'"
+            (pin)="togglePin(tile.key)"
             (appElementSize)="media.setTileSize(tile.key, $event)"
           />
         }
