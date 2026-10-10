@@ -292,8 +292,10 @@ export class FileTransferService implements OnDestroy {
     this.uploading = true;
     try {
       await this.serve(batch);
-    } catch {
-      // The channel failed or closed: recipients ask again for what they're missing.
+    } catch (error) {
+      // The channel failed or closed: recipients ask again for what they're missing. The cause, for debugging
+      // (never file names or contents):
+      console.warn('[cipheroom] file transfer failed', error instanceof Error ? error.message : error);
     } finally {
       this.uploading = false;
       this.patch(batch.fileId, { progress: 0 });

@@ -11,11 +11,12 @@ public sealed class GetRtcConfigQueryTests
 {
     private readonly IRoomStore _rooms = Substitute.For<IRoomStore>();
     private readonly IIceServerProvider _ice = Substitute.For<IIceServerProvider>();
+    private readonly ISfu _sfu = Substitute.For<ISfu>();
 
     [Fact]
     public async Task Requires_joining_first()
     {
-        var handler = new GetRtcConfigQueryHandler(_rooms, _ice);
+        var handler = new GetRtcConfigQueryHandler(_rooms, _ice, _sfu);
 
         var error = await Assert.ThrowsAsync<NotFoundException>(async () =>
             await handler.Handle(new GetRtcConfigQuery("conn"), TestContext.Current.CancellationToken));
@@ -31,10 +32,40 @@ public sealed class GetRtcConfigQueryTests
         var self = rooms.Join("conn");
         IceServer[] servers = [new(["turn:x"], "u", "p")];
         _ice.GetAsync(self.Id, Arg.Any<CancellationToken>()).Returns(new IceConfig(servers, ForceRelay: true));
+        _sfu.CreateSessionAsync(Arg.Any<CancellationToken>()).Returns("sess-1");
 
-        var result = await new GetRtcConfigQueryHandler(rooms, _ice)
+        var result = await new GetRtcConfigQueryHandler(rooms, _ice, _sfu)
             .Handle(new GetRtcConfigQuery("conn"), TestContext.Current.CancellationToken);
 
         Assert.Equal(new RtcConfigResult(servers, true), result);
+    }
+
+    [Fact]
+    public async Task Creates_the_media_session_ahead_of_the_first_publish()
+    {
+        var rooms = new FakeRoomStore();
+        rooms.Join("conn");
+        _ice.GetAsync(Arg.Any<ParticipantId>(), Arg.Any<CancellationToken>()).Returns(new IceConfig([], ForceRelay: false));
+        _sfu.CreateSessionAsync(Arg.Any<CancellationToken>()).Returns("sess-1");
+
+        await new GetRtcConfigQueryHandler(rooms, _ice, _sfu).Handle(new GetRtcConfigQuery("conn"), TestContext.Current.CancellationToken);
+        await new GetRtcConfigQueryHandler(rooms, _ice, _sfu).Handle(new GetRtcConfigQuery("conn"), TestContext.Current.CancellationToken);
+
+        Assert.Equal("sess-1", rooms.FindByConnection("conn")!.SfuSessionId);
+        await _sfu.Received(1).CreateSessionAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task A_media_server_failure_still_returns_the_ice_servers()
+    {
+        var rooms = new FakeRoomStore();
+        rooms.Join("conn");
+        _ice.GetAsync(Arg.Any<ParticipantId>(), Arg.Any<CancellationToken>()).Returns(new IceConfig([], ForceRelay: false));
+        _sfu.CreateSessionAsync(Arg.Any<CancellationToken>()).Returns(Task.FromException<string>(new MediaServerException()));
+
+        var result = await new GetRtcConfigQueryHandler(rooms, _ice, _sfu).Handle(new GetRtcConfigQuery("conn"), TestContext.Current.CancellationToken);
+
+        Assert.Empty(result.IceServers);
+        Assert.Null(rooms.FindByConnection("conn")!.SfuSessionId);
     }
 }

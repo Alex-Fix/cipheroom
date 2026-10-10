@@ -4,6 +4,7 @@ using System.Net;
 using System.Text;
 using Cipheroom.Api.Hubs.Contracts;
 using Cipheroom.Api.Telemetry;
+using Cipheroom.Application.Common.Interfaces;
 using Cipheroom.Application.Common.Telemetry;
 using Microsoft.AspNetCore.Http.Connections;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -182,6 +183,7 @@ public sealed class TelemetryTests(WebApplicationFactory<Program> factory) : ICl
             {
                 s.AddLogging(l => l.AddFakeLogging());
                 s.ConfigureOpenTelemetryTracerProvider(t => t.AddInMemoryExporter(_spans));
+                s.AddSingleton<ISfu>(new MediaHubTests.FakeSfu()); // only TURN talks HTTP here
             }));
 
     private static async Task<HubConnection> ConnectAsync(WebApplicationFactory<Program> host)
