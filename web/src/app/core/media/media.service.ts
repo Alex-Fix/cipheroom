@@ -786,10 +786,15 @@ export class MediaService implements OnDestroy {
 
   private ensureDataTransport(): Promise<void> {
     if (!this.receiving()) return Promise.reject(new Error('Data channels need receiving to have started.'));
+    let established = false;
     this.dataTransport ??= this.queue
       .run(async () => {
         const pc = this.requirePc();
         const transport = await this.signaling.openDataTransport();
+        // From here on the SFU has set up the transport and won't again on this session: if anything below fails,
+        // the failure stands until we reconnect (a new session). Cloudflare also keeps waiting for an answer to its
+        // offer then, refusing other negotiations — retrying couldn't help.
+        established = true;
         await pc.setRemoteDescription({ type: 'offer', sdp: transport.offerSdp });
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
@@ -798,7 +803,7 @@ export class MediaService implements OnDestroy {
         this.serverEvents = pc.createDataChannel('server-events', { negotiated: true, id: transport.serverEventsChannelId });
       })
       .catch((error: unknown) => {
-        this.dataTransport = undefined;
+        if (!established) this.dataTransport = undefined; // e.g. the hub call failed: asking again is fine
         throw error;
       });
     return this.dataTransport;

@@ -1101,7 +1101,7 @@ describe('MediaService', () => {
       expect(signaling.closeDataChannel).toHaveBeenCalledWith('BBBBBBBBBBBBBBBBBBBBBB', 'bob');
     });
 
-    it('retries the transport after a failure', async () => {
+    it('asks for the transport again when the request itself failed', async () => {
       const { media, signaling } = setup();
       signaling.openDataTransport.mockRejectedValueOnce(new Error('Media server unavailable.'));
 
@@ -1109,6 +1109,17 @@ describe('MediaService', () => {
       await media.publishChannel('AAAAAAAAAAAAAAAAAAAAAA');
 
       expect(signaling.openDataTransport).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not ask again once the SFU set the transport up but our answer was refused (until we reconnect)', async () => {
+      const { media, signaling } = setup();
+      signaling.renegotiate.mockRejectedValueOnce(new Error('Media server unavailable.'));
+
+      await expect(media.publishChannel('AAAAAAAAAAAAAAAAAAAAAA')).rejects.toThrow();
+      await expect(media.subscribeChannel('bob', 'BBBBBBBBBBBBBBBBBBBBBB')).rejects.toThrow();
+
+      expect(signaling.openDataTransport).toHaveBeenCalledTimes(1);
+      expect(signaling.publishDataChannel).not.toHaveBeenCalled();
     });
   });
 });

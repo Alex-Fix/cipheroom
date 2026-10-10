@@ -1,6 +1,7 @@
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
+using System.Text.RegularExpressions;
 
 namespace Cipheroom.Infrastructure.Rtc.Cloudflare;
 
@@ -62,7 +63,7 @@ public sealed class CloudflareSfuClient(HttpClient http)
             ? await ReadAsync(response, type, cancellationToken)
             : default;
         if (!response.IsSuccessStatusCode || body is null || body.ErrorCode is not null)
-            throw new CloudflareSfuException((int)response.StatusCode, body?.ErrorCode);
+            throw new CloudflareSfuException((int)response.StatusCode, body?.ErrorCode, body?.ErrorDescription);
 
         return body;
     }
@@ -82,18 +83,57 @@ public sealed class CloudflareSfuClient(HttpClient http)
     private static string Escape(string sessionId) => Uri.EscapeDataString(sessionId);
 }
 
-/// <summary>A failed SFU call. Carries only the status and Cloudflare's error code — never request content.</summary>
-public sealed class CloudflareSfuException(int statusCode, string? errorCode)
-    : Exception($"Cloudflare SFU request failed: HTTP {statusCode} {errorCode}".TrimEnd())
+/// <summary>
+/// A failed SFU call. Carries the status, Cloudflare's error code and its error description made safe to log
+/// (<see cref="SafeReason"/>) — never request content.
+/// </summary>
+public sealed partial class CloudflareSfuException(int statusCode, string? errorCode, string? errorDescription = null)
+    : Exception($"Cloudflare SFU request failed: HTTP {statusCode} {errorCode}".TrimEnd()
+        + (SafeReason(errorDescription) is { } reason ? $" ({reason})" : ""))
 {
+    public const int MaxReasonLength = 200;
+
     public int StatusCode { get; } = statusCode;
 
     public string? ErrorCode { get; } = errorCode;
+
+    /// <summary>
+    /// Cloudflare's description with anything that could carry SDP or addresses removed: SDP-looking lines
+    /// (<c>a=</c>, <c>m=</c>, <c>c=</c>, <c>o=</c>, …), IPv4 and IPv6 addresses; at most <see cref="MaxReasonLength"/>
+    /// characters. Null when nothing is left.
+    /// </summary>
+    public static string? SafeReason(string? description)
+    {
+        if (string.IsNullOrWhiteSpace(description))
+            return null;
+        var lines = description.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)
+            .Where(l => !SdpLine().IsMatch(l.Trim()));
+        var text = Ipv6().Replace(Ipv4().Replace(string.Join(' ', lines), "[ip]"), "[ip]");
+        text = SdpField().Replace(text, "[sdp]").Trim();
+        if (text.Length == 0)
+            return null;
+        return text.Length <= MaxReasonLength ? text : text[..MaxReasonLength] + "…";
+    }
+
+    [GeneratedRegex(@"^[a-z]=")]
+    private static partial Regex SdpLine();
+
+    // An SDP line quoted inside a sentence ("... a=candidate:1 1 udp ...") up to the next quote or the end.
+    [GeneratedRegex(@"\b[acmo]=[^""']*")]
+    private static partial Regex SdpField();
+
+    [GeneratedRegex(@"\b\d{1,3}(\.\d{1,3}){3}\b")]
+    private static partial Regex Ipv4();
+
+    [GeneratedRegex(@"\b[0-9a-fA-F]{1,4}(:[0-9a-fA-F]{0,4}){2,7}\b")]
+    private static partial Regex Ipv6();
 }
 
 public interface ISfuResponse
 {
     string? ErrorCode { get; }
+
+    string? ErrorDescription { get; }
 }
 
 public sealed record SessionDescription(string Type, string Sdp);

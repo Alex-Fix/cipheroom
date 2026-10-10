@@ -217,6 +217,31 @@ public sealed class CloudflareSfuTests
         Assert.Equal("""{"dataChannels":[{"id":3},{"id":4}]}""", request.Body);
     }
 
+    [Fact]
+    public async Task Cloudflare_s_reason_is_kept_in_the_error_without_sdp_or_addresses()
+    {
+        var handler = new StubHandler(HttpStatusCode.BadRequest,
+            """{"errorCode":"invalid_session_description","errorDescription":"Failed to set remote answer sdp: Called in wrong state: stable\na=candidate:1 1 udp 2122260223 192.168.1.20 54321 typ host\nfrom 2001:db8::1"}""");
+
+        var error = await Assert.ThrowsAsync<MediaServerException>(() => Sfu(handler).RenegotiateAsync("s1", "v=0 answer", _ct));
+
+        var message = error.InnerException!.Message;
+        Assert.Equal("Cloudflare SFU request failed: HTTP 400 invalid_session_description (Failed to set remote answer sdp: Called in wrong state: stable from [ip])", message);
+    }
+
+    [Theory]
+    [InlineData(null, null)]
+    [InlineData("  ", null)]
+    [InlineData("a=fingerprint:sha-256 AB:CD", null)]
+    [InlineData("bad offer, line 'm=video 9 UDP/TLS/RTP/SAVPF 96' rejected", "bad offer, line '[sdp]' rejected")]
+    [InlineData("peer 10.0.0.7 unreachable", "peer [ip] unreachable")]
+    public void Reasons_are_made_safe_to_log(string? description, string? expected) =>
+        Assert.Equal(expected, CloudflareSfuException.SafeReason(description));
+
+    [Fact]
+    public void Long_reasons_are_cut() =>
+        Assert.Equal(CloudflareSfuException.MaxReasonLength + 1, CloudflareSfuException.SafeReason(new string('x', 500))!.Length);
+
     private static ISfu Sfu(StubHandler handler) => SfuWithServices(handler).Sfu;
 
     private static (ISfu Sfu, ServiceProvider Provider) SfuWithServices(StubHandler handler)

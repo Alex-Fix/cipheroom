@@ -237,6 +237,6 @@ echo input. Mapped centrally by `HubExceptionFilter`; pinned by `Cipheroom.Api.F
 | `Track already published.` | `PublishTracks` for a source that is already published (or listed twice) |
 | `Unknown track.` | Track not published in the caller's room (incl. own tracks), mute of an unpublished source, layer for a non-camera track |
 | `No media session.` | `Renegotiate` / `RestartIce` before publishing or subscribing |
-| `Media server unavailable.` | Cloudflare refused or failed the request (cause logged as status / error code only) |
+| `Media server unavailable.` | Cloudflare refused or failed the request (cause logged as status, error code and Cloudflare's reason with SDP lines and IP addresses removed) |
 | `Too many requests.` | More than 20 calls in a burst / 5 per second on one connection (`RateLimiting:Hub`) |
 | `Something went wrong.` | Any unexpected server error (details only in the server log) |

@@ -95,7 +95,10 @@ estimates usage from browser reports (media and data channel bytes) and Cloudfla
   or TURN over UDP/TCP/TLS), round trip, loss each way, what each source sends (codec, size, layers) and what limits
   it (`qualityLimitationReason`; not on Firefox), plus E2EE counts. "Copy report" gives a numbers-only text to paste.
 - api log (`scripts/logs.sh api`): failed SFU calls are logged as `{HubMethod}: media server request failed` with
-  Cloudflare's status and error code (never SDP).
+  Cloudflare's status, error code and reason (SDP lines and addresses stripped). A refused answer
+  (`invalid_session_description` on Renegotiate) wedges the session: Cloudflare then answers every other negotiation
+  with `406 sessionDescription.type=answer is expected` and won't set up a second data transport — only a new session
+  (rejoin) recovers.
 - Browser: `[cipheroom] camera failed …` in the console has the real device / negotiation error (Safari: Web
   Inspector over USB for iPhones). `chrome://webrtc-internals` for ICE and codecs.
 - Two-browser checks without devices: headless Chrome (`--use-fake-device-for-media-stream`) or Playwright WebKit
