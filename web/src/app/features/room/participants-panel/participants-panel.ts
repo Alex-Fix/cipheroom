@@ -4,12 +4,13 @@ import { NzDrawerModule } from 'ng-zorro-antd/drawer';
 import { NzDropdownModule } from 'ng-zorro-antd/dropdown';
 import { NzIconModule } from 'ng-zorro-antd/icon';
 import { NzMenuModule } from 'ng-zorro-antd/menu';
+import { Trust } from '../../../core/contacts/contacts';
 import { CallParticipant } from '../../../core/media/media.types';
 import { PendingGuest } from '../../../core/lobby/lobby.service';
 import { initials } from '../../../shared/initials';
 
 /** Something a host or co-host does to one participant. */
-export type ParticipantAction = 'make-cohost' | 'ask-to-mute' | 'remove';
+export type ParticipantAction = 'make-cohost' | 'ask-to-mute' | 'remove' | 'verify' | 'unverify';
 
 /**
  * Everyone in the media room, and — for hosts and co-hosts — the lobby. Part of the ghost-participant defence
@@ -32,6 +33,10 @@ export class ParticipantsPanel {
   readonly canAdmit = input(false);
   /** We may also make co-hosts and remove co-hosts. */
   readonly isHost = input(false);
+  /** How much we know each participant (contacts, by participant id). */
+  readonly trust = input<ReadonlyMap<string, Trust>>(new Map());
+  /** Participants with a device key: they can be marked as verified. */
+  readonly verifiable = input<ReadonlySet<string>>(new Set());
 
   readonly closed = output();
   readonly admit = output<string>();
@@ -54,6 +59,14 @@ export class ParticipantsPanel {
 
   protected monogram(name: string): string {
     return initials(name);
+  }
+
+  protected trustOf(p: CallParticipant): Trust | undefined {
+    return p.isLocal ? undefined : this.trust().get(p.identity);
+  }
+
+  protected canVerify(p: CallParticipant): boolean {
+    return !p.isLocal && this.verifiable().has(p.identity);
   }
 
   /** Co-hosts manage guests only; hosts manage everyone but themselves. */

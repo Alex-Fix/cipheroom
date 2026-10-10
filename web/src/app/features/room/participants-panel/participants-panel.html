@@ -49,13 +49,29 @@
       @for (p of sorted(); track p.identity) {
         <li class="person" [class.speaking]="p.isSpeaking">
           <span class="monogram" aria-hidden="true">{{ monogram(p.name) }}</span>
-          <span class="name">
-            {{ p.name }}
-            @if (p.isLocal) {
-              <span class="you">(You)</span>
-            }
-            @if (roleLabel[p.role]; as role) {
-              <span class="role">{{ role }}</span>
+          <span class="who">
+            <span class="name">
+              {{ p.name }}
+              @if (p.isLocal) {
+                <span class="you">(You)</span>
+              }
+              @if (roleLabel[p.role]; as role) {
+                <span class="role">{{ role }}</span>
+              }
+            </span>
+            @switch (trustOf(p)) {
+              @case ('verified') {
+                <span class="trust verified"><nz-icon nzType="check" /> Verified</span>
+              }
+              @case ('known') {
+                <span class="trust known">Met before</span>
+              }
+              @case ('mismatch') {
+                <span class="trust mismatch" role="alert">
+                  <nz-icon nzType="exclamation-circle" /> Not the {{ p.name }} you verified —
+                  compare the safety code
+                </span>
+              }
             }
           </span>
           <span class="status">
@@ -79,7 +95,7 @@
               <nz-icon nzType="video-camera" [class.slashed]="!p.cameraOn" aria-hidden="true" />
             </span>
           </span>
-          @if (canManage(p)) {
+          @if (canManage(p) || canVerify(p)) {
             <button
               type="button"
               class="more"
@@ -87,38 +103,59 @@
               nzTrigger="click"
               nzPlacement="bottomRight"
               [nzDropdownMenu]="menu"
-              [attr.aria-label]="'Manage ' + p.name"
+              [attr.aria-label]="(canManage(p) ? 'Manage ' : 'Options for ') + p.name"
             >
               <nz-icon nzType="more" />
             </button>
             <nz-dropdown-menu #menu="nzDropdownMenu">
               <ul nz-menu>
-                @if (isHost() && p.role === 'guest') {
+                @if (canVerify(p)) {
+                  @if (trustOf(p) === 'verified') {
+                    <li
+                      nz-menu-item
+                      class="unverify"
+                      (click)="act.emit({ action: 'unverify', participantId: p.identity })"
+                    >
+                      Remove verification
+                    </li>
+                  } @else {
+                    <li
+                      nz-menu-item
+                      class="verify"
+                      (click)="act.emit({ action: 'verify', participantId: p.identity })"
+                    >
+                      <nz-icon nzType="check" /> Mark as verified
+                    </li>
+                  }
+                }
+                @if (canManage(p)) {
+                  @if (isHost() && p.role === 'guest') {
+                    <li
+                      nz-menu-item
+                      class="make-cohost"
+                      (click)="act.emit({ action: 'make-cohost', participantId: p.identity })"
+                    >
+                      <nz-icon nzType="crown" /> Make co-host
+                    </li>
+                  }
+                  @if (!p.micMuted) {
+                    <li
+                      nz-menu-item
+                      class="ask-to-mute"
+                      (click)="act.emit({ action: 'ask-to-mute', participantId: p.identity })"
+                    >
+                      <nz-icon nzType="audio-muted" /> Ask to mute
+                    </li>
+                  }
                   <li
                     nz-menu-item
-                    class="make-cohost"
-                    (click)="act.emit({ action: 'make-cohost', participantId: p.identity })"
+                    nzDanger
+                    class="remove"
+                    (click)="act.emit({ action: 'remove', participantId: p.identity })"
                   >
-                    <nz-icon nzType="crown" /> Make co-host
+                    <nz-icon nzType="user-delete" /> Remove from call
                   </li>
                 }
-                @if (!p.micMuted) {
-                  <li
-                    nz-menu-item
-                    class="ask-to-mute"
-                    (click)="act.emit({ action: 'ask-to-mute', participantId: p.identity })"
-                  >
-                    <nz-icon nzType="audio-muted" /> Ask to mute
-                  </li>
-                }
-                <li
-                  nz-menu-item
-                  nzDanger
-                  class="remove"
-                  (click)="act.emit({ action: 'remove', participantId: p.identity })"
-                >
-                  <nz-icon nzType="user-delete" /> Remove from call
-                </li>
               </ul>
             </nz-dropdown-menu>
           }
