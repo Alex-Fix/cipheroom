@@ -73,11 +73,14 @@ export class CallHeader {
   /** Only the host changes settings. */
   readonly isHost = input(false);
   readonly autoAdmit = input(false);
+  /** Our connection has been poor for a while: show a chip that opens the Connection drawer. */
+  readonly poorConnection = input(false);
 
   readonly copyLink = output();
   readonly manualCopyClosed = output();
   readonly rejoin = output();
   readonly showParticipants = output();
+  readonly showConnection = output();
   readonly setAutoAdmit = output<boolean>();
   readonly endCall = output();
 

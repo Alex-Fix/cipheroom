@@ -128,6 +128,8 @@ function fakeCrypto() {
     isHost: signal(false),
     canAdmit: signal(false),
     roleOf: () => 'guest' as const,
+    droppedEnvelopes: signal<Record<string, number>>({}),
+    keyEpoch: () => 2,
     telemetry: vi.fn(() => ({
       framesEncrypted: 0,
       framesDecrypted: 0,
@@ -783,26 +785,27 @@ describe('MediaService', () => {
           ],
         ]);
       });
-      crypto.telemetry
-        .mockReturnValueOnce({
-          framesEncrypted: 0,
-          framesDecrypted: 0,
-          framesFailed: 0,
-          framesMissingKey: 0,
-          envelopesDropped: 0,
-          securingSeconds: 0,
-        })
-        .mockReturnValueOnce({
-          framesEncrypted: 500,
-          framesDecrypted: 900,
-          framesFailed: 0,
-          framesMissingKey: 3,
-          envelopesDropped: 0,
-          securingSeconds: 0.5,
-        });
+      // The Connection drawer reads the totals too: answer by time, not by call order.
+      const zero = {
+        framesEncrypted: 0,
+        framesDecrypted: 0,
+        framesFailed: 0,
+        framesMissingKey: 0,
+        envelopesDropped: 0,
+        securingSeconds: 0,
+      };
+      let e2ee = zero;
+      crypto.telemetry.mockImplementation(() => e2ee);
 
       await vi.advanceTimersByTimeAsync(250 * 2); // baseline
       expect(signaling.reportCallStats).not.toHaveBeenCalled();
+      e2ee = {
+        ...zero,
+        framesEncrypted: 500,
+        framesDecrypted: 900,
+        framesMissingKey: 3,
+        securingSeconds: 0.5,
+      };
       await vi.advanceTimersByTimeAsync(250 * 60); // one interval later
 
       expect(signaling.reportCallStats).toHaveBeenCalledOnce();
@@ -821,6 +824,79 @@ describe('MediaService', () => {
       await media.disconnect();
       await vi.advanceTimersByTimeAsync(250 * 200);
       expect(signaling.reportCallStats).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('connection health', () => {
+    beforeEach(() => vi.useFakeTimers());
+    afterEach(() => vi.useRealTimers());
+
+    function lossyStats(pc: FakePeerConnection) {
+      let received = 0;
+      vi.spyOn(pc, 'getStats').mockImplementation(async () => {
+        received += 100;
+        return new Map<string, object>([
+          ['T', { id: 'T', type: 'transport', selectedCandidatePairId: 'P' }],
+          [
+            'P',
+            {
+              id: 'P',
+              type: 'candidate-pair',
+              localCandidateId: 'L',
+              remoteCandidateId: 'R',
+              currentRoundTripTime: 0.04,
+            },
+          ],
+          ['L', { id: 'L', type: 'local-candidate', candidateType: 'host', protocol: 'udp' }],
+          ['R', { id: 'R', type: 'remote-candidate', candidateType: 'host', protocol: 'udp' }],
+          [
+            'in-v',
+            {
+              id: 'in-v',
+              type: 'inbound-rtp',
+              kind: 'video',
+              bytesReceived: received * 1000,
+              packetsReceived: received,
+              packetsLost: received / 10, // ~9% loss
+            },
+          ],
+        ]);
+      });
+    }
+
+    it('reports every 2 s and shows the chip after ~10 s of a poor connection', async () => {
+      const { media, pc } = setup();
+      pc.setConnectionState('connected');
+      lossyStats(pc);
+
+      await vi.advanceTimersByTimeAsync(250 * 8 * 2);
+      expect(media.connection()).toMatchObject({
+        verdict: 'poor',
+        reasons: ['9.1% packet loss receiving'],
+        forceRelay: false,
+        encryption: { secured: 0, participants: 0, epoch: 2 },
+      });
+      expect(media.poorConnection()).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(250 * 8 * 4);
+      expect(media.poorConnection()).toBe(true);
+
+      pc.setConnectionState('disconnected');
+      await vi.advanceTimersByTimeAsync(250 * 8);
+      expect(media.connection()?.verdict).toBe('unknown');
+      expect(media.poorConnection()).toBe(false);
+    });
+
+    it('clears when the call ends', async () => {
+      const { media, pc } = setup();
+      pc.setConnectionState('connected');
+      lossyStats(pc);
+      await vi.advanceTimersByTimeAsync(250 * 8 * 6);
+
+      await media.disconnect();
+
+      expect(media.connection()).toBeUndefined();
+      expect(media.poorConnection()).toBe(false);
     });
   });
 

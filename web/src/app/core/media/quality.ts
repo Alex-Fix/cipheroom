@@ -28,6 +28,11 @@ export function captureConstraints(quality: VideoQuality): MediaTrackConstraints
   };
 }
 
+/** Height (shorter side) of a quality: 1080 for 1080p. */
+export function qualityHeight(quality: VideoQuality): number {
+  return SIZES[quality].height;
+}
+
 /**
  * Qualities worth offering for a camera: 4K and 1080p only if it can capture them, 720p always. Before a camera has
  * run (capabilities unknown): the default and 720p.

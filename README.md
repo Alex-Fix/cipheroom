@@ -19,6 +19,9 @@ want private calls without trusting a vendor, and it runs on a home computer wit
 - 🎥 Group video and audio calls through [Cloudflare Realtime SFU](https://developers.cloudflare.com/realtime/sfu/)
   (simulcast; Full HD by default, 4K or 720p selectable; each tile receives the size it needs)
 - 🖥️ Screen sharing, camera switching (front/rear on phones), active-speaker highlight, automatic reconnect
+- 📶 Connection diagnostics: see whether your own link is the problem — route (direct or via a relay), round trip,
+  loss, what you send and what limits it, encryption health; copy a numbers-only report to share. Computed in your
+  browser, nothing is sent
 - 🪟 Video layouts: Grid or Speaker view, pin anyone (or yourself, or a screen) to the stage, a floating self-view
   you can drag to any corner or minimize; small tiles receive smaller video, saving traffic
 - 🏠 Runs at home behind NAT or CGNAT: nothing at home needs to be reachable — ingress via Cloudflare Tunnel, media
@@ -131,7 +134,8 @@ is ~3.6 GB per viewer-hour against the 1 TB/month free tier. The usage guard enf
 - [x] End-to-end encrypted chat: text, emoji reactions, links (no previews); memory only
 - [x] Observability: traces, logs, metrics, call-quality reports, Grafana dashboards (self-hosted, optional)
 - [x] Usage guard for the Cloudflare Realtime free tier (SFU + TURN): saving → audio-only → paused
-- [ ] Connection diagnostics panel (hidden since the SFU switch)
+- [x] Connection diagnostics: a Connection drawer with a verdict, route, network numbers, what you send, encryption
+  health and a copyable report; a "Poor connection" hint in the header
 - [x] "Source code" link in the UI (AGPL §13) — opens the exact commit that is running (`SOURCE_URL` for forks)
 - [ ] MLS-based group keys for large rooms
 - [ ] End-to-end encrypted files and images in chat

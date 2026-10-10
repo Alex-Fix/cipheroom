@@ -1,0 +1,119 @@
+.verdict {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--fill);
+
+  h3 {
+    margin: 0;
+    font-size: 17px; // HIG Headline
+    font-weight: 600;
+    color: var(--label);
+  }
+
+  .reason {
+    margin: 4px 0 0;
+    font-size: 13px;
+    color: var(--label-secondary);
+  }
+
+  .verdict-icon {
+    margin-top: 3px;
+    font-size: 18px;
+    color: var(--label-secondary);
+  }
+
+  &[data-verdict='good'] .verdict-icon {
+    color: var(--green);
+  }
+
+  &[data-verdict='poor'] .verdict-icon {
+    color: var(--orange);
+  }
+
+  &[data-verdict='relay'] .verdict-icon {
+    color: var(--accent);
+  }
+}
+
+h4 {
+  margin: 20px 0 8px;
+  font-size: 13px; // HIG Footnote
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--label-secondary);
+}
+
+.rows {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 10px 16px;
+  margin: 0;
+}
+
+dt {
+  color: var(--label-secondary);
+}
+
+dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.detail {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--label-secondary);
+}
+
+.warn {
+  color: var(--orange);
+}
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.copy {
+  margin-top: 24px;
+}
+
+.manual {
+  display: block;
+  margin-top: 12px;
+  font-size: 13px;
+  color: var(--label-secondary);
+
+  textarea {
+    display: block;
+    width: 100%;
+    margin-top: 6px;
+    padding: 8px;
+    border: 0.5px solid var(--separator);
+    border-radius: 8px;
+    background: var(--bg-elevated);
+    color: var(--label);
+    font:
+      12px / 1.4 ui-monospace,
+      SFMono-Regular,
+      Menlo,
+      monospace;
+    resize: vertical;
+  }
+}
+
+@media (pointer: coarse) {
+  .manual textarea {
+    font-size: 16px; // iOS zooms into smaller inputs
+  }
+}
+
+.note {
+  margin: 12px 0 0;
+  font-size: 12px;
+  color: var(--label-secondary);
+}

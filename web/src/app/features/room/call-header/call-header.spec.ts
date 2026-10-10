@@ -97,6 +97,26 @@ describe('CallHeader', () => {
     expect(copy).toHaveBeenCalledOnce();
   });
 
+  it('shows a poor-connection chip that opens the Connection drawer', () => {
+    const { fixture, el } = render('connected', { poorConnection: true });
+    let opened = 0;
+    fixture.componentInstance.showConnection.subscribe(() => opened++);
+
+    const chip = el.querySelector<HTMLButtonElement>('button.poor')!;
+    expect(chip.getAttribute('aria-label')).toBe('Poor connection — show details');
+    chip.click();
+
+    expect(opened).toBe(1);
+  });
+
+  it('shows no poor-connection chip while fine or not connected', () => {
+    expect(render('connected').el.querySelector('button.poor')).toBeNull();
+    TestBed.resetTestingModule();
+    expect(
+      render('reconnecting', { poorConnection: true }).el.querySelector('button.poor'),
+    ).toBeNull();
+  });
+
   it('opens the people list from the count', () => {
     const { fixture, el } = render('connected');
     const show = vi.fn();

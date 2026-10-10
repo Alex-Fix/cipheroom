@@ -441,6 +441,12 @@ export class CryptoService implements OnDestroy {
    * End-to-end encryption health since this call's encryption started, for call-quality reports: frame counters from
    * the worker, dropped envelopes, and the total time participants spent "Securing…". Counts and seconds only.
    */
+  /** Our current sender key's epoch (a counter, for the Connection drawer); undefined before the first key. */
+  keyEpoch(): number | undefined {
+    const epoch = this.session?.epoch;
+    return epoch !== undefined && epoch >= 0 ? epoch : undefined;
+  }
+
   telemetry(now = Date.now()): E2eeStatsDto {
     const frames = this.session?.frames.latestStats;
     let waiting = 0;

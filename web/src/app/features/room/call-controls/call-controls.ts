@@ -61,6 +61,7 @@ export class CallControls {
   readonly openChat = output();
   readonly selectView = output<CallView>();
   readonly selectSelfView = output<SelfView>();
+  readonly openConnection = output();
   readonly leave = output();
 
   protected readonly views: { value: CallView; label: string }[] = [

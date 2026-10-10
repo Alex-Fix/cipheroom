@@ -1,5 +1,3 @@
-import { IcePath } from './ice-path';
-
 /** Call connection state as the UI shows it. */
 export type MediaState = 'disconnected' | 'connecting' | 'connected' | 'reconnecting';
 
@@ -35,10 +33,4 @@ export interface CallParticipant {
   micMuted: boolean;
   cameraOn: boolean;
   sharingScreen: boolean;
-}
-
-export interface Diagnostics {
-  forceRelay: boolean;
-  publisher?: IcePath;
-  subscriber?: IcePath;
 }
