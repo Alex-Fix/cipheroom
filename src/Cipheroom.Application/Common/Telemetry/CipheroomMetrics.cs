@@ -32,6 +32,7 @@ public sealed class CipheroomMetrics
     private readonly Counter<long> _hubCalls;
     private readonly Counter<long> _rateLimited;
     private readonly Counter<long> _envelopesRelayed;
+    private readonly Counter<long> _chatRelayed;
     private readonly Counter<long> _admissions;
     private readonly Histogram<double> _sfuDuration;
 
@@ -68,6 +69,7 @@ public sealed class CipheroomMetrics
         _hubCalls = meter.CreateCounter<long>("cipheroom.hub.calls", "{call}", "Hub method invocations by method and outcome.");
         _rateLimited = meter.CreateCounter<long>("cipheroom.hub.rate_limited", "{call}", "Hub calls refused by the per-connection rate limit.");
         _envelopesRelayed = meter.CreateCounter<long>("cipheroom.key_envelopes.relayed", "{envelope}", "E2EE key envelopes relayed to recipients.");
+        _chatRelayed = meter.CreateCounter<long>("cipheroom.chat.relayed", "{event}", "Encrypted chat events relayed to a room (messages and reactions alike).");
         _admissions = meter.CreateCounter<long>("cipheroom.admissions", "{event}", "Lobby and host-control events by outcome.");
         _sfuDuration = meter.CreateHistogram<double>(
             "cipheroom.sfu.request.duration",
@@ -142,6 +144,8 @@ public sealed class CipheroomMetrics
     public void RateLimited(string method) => _rateLimited.Add(1, new KeyValuePair<string, object?>("method", method));
 
     public void EnvelopesRelayed(int count) => _envelopesRelayed.Add(count);
+
+    public void ChatRelayed() => _chatRelayed.Add(1);
 
     public void Admission(string outcome) => _admissions.Add(1, new KeyValuePair<string, object?>("outcome", outcome));
 

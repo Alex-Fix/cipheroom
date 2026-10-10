@@ -1,6 +1,7 @@
 :host {
   display: block;
-  max-width: 300px;
+  // The popover adds 16 px padding a side; keep 16 px of screen on each side of it on small phones.
+  max-width: min(300px, calc(100vw - 64px));
 }
 
 .emoji {

@@ -1,4 +1,4 @@
-<div class="room">
+<div class="room" [class.chat-open]="showChat() && !lobbyScreen()">
   <app-call-header
     [roomId]="roomId()"
     [link]="link"
@@ -17,7 +17,7 @@
     (copyLink)="copyLink()"
     (manualCopyClosed)="manualCopy.set(false)"
     (rejoin)="retry()"
-    (showParticipants)="showParticipants.set(true)"
+    (showParticipants)="showChat.set(false); showParticipants.set(true)"
   />
 
   <div class="notices" aria-live="polite">
@@ -97,6 +97,7 @@
       [codecs]="media.availableCodecs"
       [codec]="media.videoCodec()"
       [sendingCodec]="media.sendingCodec()"
+      [unreadChats]="chat.unread()"
       (toggleMic)="toggleDevice('microphone', !media.micEnabled())"
       (toggleCamera)="toggleDevice('camera', !media.cameraEnabled())"
       (toggleScreenShare)="toggleDevice('screen', !media.screenShareEnabled())"
@@ -104,6 +105,7 @@
       (selectCamera)="switchCamera($event)"
       (selectQuality)="setQuality($event)"
       (selectCodec)="setCodec($event)"
+      (openChat)="showParticipants.set(false); showChat.set(true)"
       (leave)="leave()"
     />
   }
@@ -119,5 +121,15 @@
     (deny)="deny($event)"
     (admitAll)="admitAll()"
     (act)="act($event)"
+  />
+
+  <app-chat-panel
+    [open]="showChat() && !lobbyScreen()"
+    [items]="chat.items()"
+    [ready]="chat.ready()"
+    (closed)="showChat.set(false)"
+    (send)="chat.send($event)"
+    (retry)="chat.retry($event)"
+    (react)="chat.react($event.id, $event.emoji)"
   />
 </div>

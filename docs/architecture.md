@@ -5,7 +5,7 @@
 - Self-hosted with `docker compose up` on a home machine: **no public IP**, **zero running cost** (free tiers only, no
   rented VMs). Nothing at home has to be reachable from the internet.
 - Media is end-to-end encrypted: neither our server, Cloudflare's SFU, nor any TURN relay can decrypt it (see
-  "Encryption model"; chat will use the same keys).
+  "Encryption model"); so is in-call chat, with keys derived from the same sender keys.
 - Standards-based (WebRTC, WebCrypto), no closed SDKs. Everything that runs at home is open source; media is
   forwarded by Cloudflare Realtime (hosted, free tier) — see [the SFU design](plans/2026-10-07-cloudflare-sfu-design.md).
 
@@ -27,7 +27,7 @@
 
 | Service | Role | Sees |
 |---|---|---|
-| `api` (.NET 10, SignalR) | rooms, **lobby and admission** (verifies host proofs, tickets and host-control signatures), presence, **SFU proxy** (relays SDP, checks every track belongs to the caller's room), ICE config, **key-envelope and knock relay** (to the recipient only, within the room); later encrypted chat | metadata, SDP (client IPs), public keys, signatures, opaque envelopes and knocks — never names |
+| `api` (.NET 10, SignalR) | rooms, **lobby and admission** (verifies host proofs, tickets and host-control signatures), presence, **SFU proxy** (relays SDP, checks every track belongs to the caller's room), ICE config, **key-envelope and knock relay** (to the recipient only, within the room), **encrypted chat relay** (to the room's other members) | metadata, SDP (client IPs), public keys, signatures, opaque envelopes, knocks and chat events — never names or chat text |
 | Cloudflare Realtime SFU | forwards media between browsers, simulcast layer selection | end-to-end encrypted frames (codec payload header in the clear), metadata |
 | Cloudflare TURN | fallback relay for client networks that block direct UDP | DTLS-SRTP packets |
 | `web` | static Angular app (ng-zorro UI, icons bundled — no runtime CDN fetches) + security headers | nothing sensitive |
@@ -35,7 +35,7 @@
 | Observability (profile `observability`) | otel-collector → Prometheus / Loki / Tempo, Grafana at `/grafana/` behind its own hardened login, node-exporter, cAdvisor — [`observability.md`](observability.md) | pseudonymous metadata: hashed room ids, random participant ids, call timing, call-quality numbers (7 days) |
 
 **One signaling channel:** SignalR (`/hubs/room`) carries everything — rooms, media negotiation (the api relays offers
-and answers to the SFU with its app secret, which never reaches clients), key envelopes and, later, chat. Media
+and answers to the SFU with its app secret, which never reaches clients), key envelopes and encrypted chat. Media
 flows browser ⇄ Cloudflare edge and never passes through the home machine. Protocol:
 [`signaling-protocol.md`](signaling-protocol.md).
 
@@ -157,9 +157,20 @@ Defences:
 For very large rooms / multi-device, swap sender-key distribution for MLS (RFC 9420). Only `CryptoService` changes;
 the frame worker's key interface stays the same.
 
+### Chat
+Design: [`plans/2026-10-09-encrypted-chat-design.md`](plans/2026-10-09-encrypted-chat-design.md). In-call text and
+emoji reactions, browser memory only (gone when you leave; newcomers see only what comes after they joined).
+- Chat key = HKDF(sender key, `cipheroom/chat/v1`), so it rotates with the media key (same epoch, same switch-over).
+- Every event (message or reaction — the server can't tell which) is signed by the author's per-call identity
+  (`cipheroom/chat-sig/v1`), padded to 512 B / 2 / 8 / 16 KB, and AES-GCM encrypted with AAD = room, relayed sender
+  and key index (`cipheroom/chat-aad/v1`). Receivers drop replays (per-author sequence numbers), forgeries (another
+  member holds the same chat key, not the author's identity) and anything from participants without verified keys.
+- Events that beat their sender's key wait up to 10 s. Links are plain anchors to `http(s)` URLs; nothing is fetched.
+  Reactions must use an emoji from the app's own set (`core/chat/emoji.ts`).
+
 ### Known limits
 - Metadata (who, when, IPs, bandwidth, who publishes which tracks, frame sizes and timing, the RTP audio-level
-  header) is visible to the api and Cloudflare.
+  header) is visible to the api and Cloudflare; for chat, the api sees who sent an event, when, and its size bucket.
 - A malicious server can drop envelopes, knocks or admissions, or hide a leave or a removal from some members
   (calls break, someone waits forever, or a leaver keeps getting keys until the next rotation) — visible as "who's
   in the call", never a decryption. It can't admit anyone, appoint a host or forge a removal or "end".

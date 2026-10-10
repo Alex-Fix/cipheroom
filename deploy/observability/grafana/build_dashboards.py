@@ -149,8 +149,9 @@ b.add([
 ], 8)
 b.add([
     series("Rooms and participants", [("sum(cipheroom_rooms_active)", "rooms"), ("sum(cipheroom_participants_active)", "participants")], 12),
-    series("Key envelopes relayed", [(f"sum(rate(cipheroom_key_envelopes_relayed_total[{RI}]))", "envelopes/s")], 12, "short",
-           "E2EE key rotations: one envelope per recipient, on every join and leave."),
+    series("Key envelopes and chat relayed", [(f"sum(rate(cipheroom_key_envelopes_relayed_total[{RI}]))", "envelopes/s"),
+                                              (f"sum(rate(cipheroom_chat_relayed_total[{RI}]))", "chat events/s")], 12, "short",
+           "E2EE key rotations: one envelope per recipient, on every join and leave. Chat: encrypted messages and reactions (one per send)."),
 ], 7)
 b.row("Cloudflare SFU")
 b.add([

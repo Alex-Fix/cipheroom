@@ -6,7 +6,7 @@ description: How to add or change a SignalR app-signaling message in Cipheroom (
 # Changing the signaling protocol
 
 SignalR is the only signaling channel: rooms, media negotiation with the SFU (the api relays SDP to Cloudflare — see
-the `media` skill) and, later, key envelopes and chat. SDP is opaque to the api: validate size/shape, never log it.
+the `media` skill), key envelopes and encrypted chat. SDP is opaque to the api: validate size/shape, never log it.
 
 A protocol change is incomplete unless **all** of these are updated in the same change:
 
@@ -23,7 +23,7 @@ A protocol change is incomplete unless **all** of these are updated in the same 
    `WebApplicationFactory` host, assert relay/broadcast).
 
 ## Server rules
-- Validate inputs: lengths (envelope and knock blobs ≤ 2 KB, chat ciphertext ≤ 64 KB), ids are known members of the
+- Validate inputs: lengths (envelope and knock blobs ≤ 2 KB, chat blobs ≤ 22,528 chars — `ChatRules`), ids are known members of the
   caller's room, caller is admitted (lobby guests get `Not admitted.`), host-only methods check the role, and every
   signed statement is verified (`ISignatureVerifier`) before the server acts on it. Display names never go to the
   server: they travel end-to-end encrypted (knocks, key envelopes). Relaying to an arbitrary connection id outside the room is a bug.

@@ -1,4 +1,12 @@
-import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  ElementRef,
+  computed,
+  inject,
+  input,
+  output,
+} from '@angular/core';
 import { NzButtonModule } from 'ng-zorro-antd/button';
 import { NzDropdownModule } from 'ng-zorro-antd/dropdown';
 import { NzIconModule } from 'ng-zorro-antd/icon';
@@ -39,6 +47,13 @@ const STATUS_TEXT: Record<CallStatus, string> = {
   styleUrl: './call-header.less',
 })
 export class CallHeader {
+  /**
+   * The safety code card opens under the whole header, right-aligned: the badge sits on the right on wide screens, and
+   * on phones (where it starts a row of its own) a card anchored to the small badge would hang off the screen.
+   */
+  protected readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  protected readonly safetyCodePlacement = ['bottomRight', 'bottom', 'bottomLeft'];
+
   readonly roomId = input.required<string>();
   readonly link = input.required<string>();
   readonly status = input.required<CallStatus>();

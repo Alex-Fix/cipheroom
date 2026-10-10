@@ -42,6 +42,19 @@ public sealed class CipheroomMetricsTests
     }
 
     [Fact]
+    public void Relayed_chat_events_are_counted()
+    {
+        var (metrics, factory) = TestMetrics.Create(_rooms);
+        using var chat = new MetricCollector<long>(factory, CipheroomMetrics.MeterName, "cipheroom.chat.relayed");
+
+        metrics.ChatRelayed();
+        metrics.ChatRelayed();
+
+        Assert.Equal(2, chat.GetMeasurementSnapshot().Sum(m => m.Value));
+        Assert.Empty(chat.LastMeasurement!.Tags);
+    }
+
+    [Fact]
     public void Rate_limits_and_relayed_envelopes_are_counted()
     {
         var (metrics, factory) = TestMetrics.Create(_rooms);

@@ -10,6 +10,13 @@
   background: var(--bg);
 }
 
+// Wide screens: the call moves aside for the chat panel (360 px, no mask) instead of being covered by it.
+@media (min-width: 900px) {
+  .room.chat-open {
+    margin-right: 360px;
+  }
+}
+
 .grid {
   flex: 1;
   min-height: 0;

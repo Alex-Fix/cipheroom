@@ -16,6 +16,15 @@ import {
   openEnvelope,
   sealEnvelope,
 } from './envelopes';
+import {
+  ChatError,
+  ChatEvent,
+  ReceivedChatEvent,
+  chatKey,
+  chatKeyIndex,
+  openChat,
+  sealChat,
+} from './chat-crypto';
 import { FRAME_CRYPTO_FACTORY, FrameCrypto, frameTransformApi } from './frame-transforms';
 import {
   Identity,
@@ -26,7 +35,7 @@ import {
 } from './identity';
 import { signHostAttestation } from './host-key';
 import { HOST_KEY_STORE } from './host-key-store';
-import { SENDER_KEY_BYTES } from './keyring';
+import { PREVIOUS_KEY_GRACE_MS, SENDER_KEY_BYTES } from './keyring';
 import { openKnock, sealKnock } from './knock';
 import { cleanName } from './names';
 import { SafetyCode, safetyCode } from './safety-code';
@@ -55,6 +64,16 @@ export const ROTATION_DEBOUNCE_MS = 300;
 export const SWITCH_DELAY_MS = 500;
 /** The server accepts this many envelopes per SendKeyEnvelopes call (KeyRules.MaxEnvelopesPerRequest). */
 export const MAX_ENVELOPES_PER_CALL = 64;
+/** Chat events that arrive before their sender's key (a newcomer's first key races their first message). */
+export const MAX_PENDING_CHAT = 64;
+export const PENDING_CHAT_MS = 10_000;
+
+/** A chat event to send; CryptoService adds the version and our sequence number. */
+export type ChatEventBody =
+  | { type: 'message'; id: string; text: string }
+  | { type: 'reaction'; target: string; emoji: string; on: boolean };
+
+export type ChatEventListener = (received: ReceivedChatEvent) => void;
 
 /** Why an incoming envelope was dropped: counted locally, never sent anywhere. */
 export type EnvelopeDrop = EnvelopeRejection | 'unknown-sender';
@@ -80,6 +99,18 @@ interface Peer {
   lastEpoch?: number;
 }
 
+interface ChatReceiveKey {
+  key: CryptoKey;
+  /** Set once a newer key from the same sender arrived. */
+  expiresAt?: number;
+}
+
+interface PendingChat {
+  fromId: string;
+  blob: string;
+  until: number;
+}
+
 interface Session {
   roomId: string;
   selfId: string;
@@ -93,9 +124,15 @@ interface Session {
   stopped: boolean;
   rotationTimer?: ReturnType<typeof setTimeout>;
   switchTimers: Set<ReturnType<typeof setTimeout>>;
-  /** Rotations run one at a time, in order; so do incoming envelopes. */
+  /** Rotations run one at a time, in order; so do incoming envelopes and chat events. */
   rotations: Promise<void>;
   envelopes: Promise<void>;
+  chats: Promise<void>;
+  /** Our chat key: switches together with our media key. */
+  chatSend?: { keyIndex: number; key: CryptoKey };
+  /** Others' chat keys by participant and key index. */
+  chatReceive: Map<string, Map<number, ChatReceiveKey>>;
+  pendingChat: PendingChat[];
   unsubscribe: () => void;
 }
 
@@ -137,6 +174,10 @@ export class CryptoService implements OnDestroy {
   readonly authority = signal<Authority>(NO_AUTHORITY);
   /** Our identity key for this call (base64url), once created. */
   private readonly selfPub = signal<string | undefined>(undefined);
+  /** Our identity key for this call: how chat tells our own reactions apart (stable across rejoins). */
+  readonly identityPub = this.selfPub.asReadonly();
+  /** We hold a chat key: messages can be sent. */
+  readonly chatReady = signal(false);
   /** We may admit, deny, remove, ask to mute and end the call. */
   readonly canAdmit = computed(() => {
     const pub = this.selfPub();
@@ -152,6 +193,10 @@ export class CryptoService implements OnDestroy {
   private authorityCheck: Promise<Authority> = Promise.resolve(NO_AUTHORITY);
   private muteSeq = 0;
   private readonly lastMuteSeq = new Map<string, number>();
+  /** Our chat sequence number and the newest one seen from each author's identity (replays are dropped). */
+  private chatSeq = 0;
+  private readonly lastChatSeq = new Map<string, number>();
+  private readonly chatListeners = new Set<ChatEventListener>();
 
   /** When we started waiting for each participant's first key (time spent "Securing…", for call-quality reports). */
   private readonly securingSince = new Map<string, number>();
@@ -301,9 +346,20 @@ export class CryptoService implements OnDestroy {
       switchTimers: new Set(),
       rotations: Promise.resolve(),
       envelopes: Promise.resolve(),
-      unsubscribe: this.signaling.onKeyEnvelope((fromId, blob) =>
-        this.onEnvelope(session, fromId, blob),
-      ),
+      chats: Promise.resolve(),
+      chatReceive: new Map(),
+      pendingChat: [],
+      unsubscribe: () => undefined,
+    };
+    const unsubscribeEnvelopes = this.signaling.onKeyEnvelope((fromId, blob) =>
+      this.onEnvelope(session, fromId, blob),
+    );
+    const unsubscribeChat = this.signaling.onChat((fromId, blob) =>
+      this.onChat(session, fromId, blob),
+    );
+    session.unsubscribe = () => {
+      unsubscribeEnvelopes();
+      unsubscribeChat();
     };
     this.session = session;
     this.names.set(new Map([[selfId, session.name]]));
@@ -322,8 +378,12 @@ export class CryptoService implements OnDestroy {
     clearTimeout(session.rotationTimer);
     session.switchTimers.forEach((t) => clearTimeout(t));
     session.frames.terminate();
+    session.chatSend = undefined;
+    session.chatReceive.clear();
+    session.pendingChat = [];
     [...this.securingSince.keys()].forEach((id) => this.stopWaiting(id));
     this.session = undefined;
+    this.chatReady.set(false);
     this.safetyCodeRun++;
     this.safetyCode.set(undefined);
     this.secured.set(new Set());
@@ -333,6 +393,28 @@ export class CryptoService implements OnDestroy {
 
   ngOnDestroy(): void {
     this.stop();
+  }
+
+  /**
+   * One chat event, signed by our identity and encrypted with our current chat key, as the blob for SendChat.
+   * Rejects before our first key (chatReady) — there is no unencrypted chat.
+   */
+  async sealChat(body: ChatEventBody): Promise<string> {
+    const session = this.session;
+    const send = session?.chatSend;
+    if (!session || session.stopped || !send) throw new Error('Chat is not ready.');
+    const event = { v: 1, seq: ++this.chatSeq, ...body } as ChatEvent;
+    return sealChat(
+      { roomId: session.roomId, fromId: session.selfId, keyIndex: send.keyIndex, key: send.key },
+      event,
+      session.identity,
+    );
+  }
+
+  /** Chat events from others that decrypted and whose author's signature checked out. Returns an unsubscribe. */
+  onChatEvent(listener: ChatEventListener): () => void {
+    this.chatListeners.add(listener);
+    return () => this.chatListeners.delete(listener);
   }
 
   /**
@@ -367,6 +449,8 @@ export class CryptoService implements OnDestroy {
       this.identity = createIdentity(roomId);
       this.muteSeq = 0;
       this.lastMuteSeq.clear();
+      this.chatSeq = 0;
+      this.lastChatSeq.clear();
       void this.updateAuthority(this.signaling.authority());
     }
     try {
@@ -432,6 +516,7 @@ export class CryptoService implements OnDestroy {
         if ((await peer.identity) === undefined && this.unverified().has(id)) continue;
         peer.identity = Promise.resolve(undefined);
         session.frames.removeParticipant(id);
+        this.forgetChat(session, id);
         this.stopWaiting(id);
         this.secured.update((ids) => without(ids, id));
         this.unverified.update((ids) => new Set(ids).add(id));
@@ -491,6 +576,7 @@ export class CryptoService implements OnDestroy {
       if (present.has(id)) continue;
       session.peers.delete(id);
       session.frames.removeParticipant(id);
+      this.forgetChat(session, id);
       this.stopWaiting(id);
       this.secured.update((ids) => without(ids, id));
       this.unverified.update((ids) => without(ids, id));
@@ -542,12 +628,17 @@ export class CryptoService implements OnDestroy {
         ),
       })),
     );
+    // Before the buffer goes to the worker, which detaches it.
+    const chat = await chatKey(senderKey);
     if (session.stopped) return;
     session.epoch = epoch;
 
-    // The buffer is transferred to the worker: no copy of the key stays here.
+    // The buffer is transferred to the worker: no copy of the key stays here. Chat switches at the same moment.
     const useKey = () => {
-      if (!session.stopped) session.frames.setSendKey(keyIndex, senderKey.buffer);
+      if (session.stopped) return;
+      session.frames.setSendKey(keyIndex, senderKey.buffer);
+      session.chatSend = { keyIndex, key: chat };
+      this.chatReady.set(true);
     };
     if (first) useKey();
 
@@ -604,10 +695,13 @@ export class CryptoService implements OnDestroy {
         session.identity,
         sender,
       );
+      // Before the sender key goes to the worker, which detaches it.
+      const chat = await chatKey(opened.senderKey);
       // They may have left (or we stopped) while we were opening it.
       if (session.stopped || session.peers.get(fromId) !== peer) return;
       peer.lastEpoch = opened.epoch;
       session.frames.setReceiveKey(fromId, opened.keyIndex, opened.senderKey);
+      this.setChatReceiveKey(session, fromId, opened.keyIndex, chat);
       if (this.names().get(fromId) !== opened.name) {
         this.names.update((names) => new Map(names).set(fromId, opened.name));
       }
@@ -617,6 +711,118 @@ export class CryptoService implements OnDestroy {
       if (!(e instanceof EnvelopeError)) throw e;
       this.drop(e.reason);
     }
+  }
+
+  private setChatReceiveKey(
+    session: Session,
+    fromId: string,
+    keyIndex: number,
+    key: CryptoKey,
+  ): void {
+    const keys = session.chatReceive.get(fromId) ?? new Map<number, ChatReceiveKey>();
+    const expiresAt = Date.now() + PREVIOUS_KEY_GRACE_MS;
+    for (const [index, entry] of keys) if (index !== keyIndex) entry.expiresAt ??= expiresAt;
+    keys.set(keyIndex, { key });
+    session.chatReceive.set(fromId, keys);
+    // Events that came before this key get another go, in the order they arrived.
+    if (session.pendingChat.some((p) => p.fromId === fromId)) {
+      this.enqueueChat(session, () => this.flushPendingChat(session, fromId));
+    }
+  }
+
+  private chatReceiveKey(
+    session: Session,
+    fromId: string,
+    keyIndex: number,
+  ): CryptoKey | undefined {
+    const keys = session.chatReceive.get(fromId);
+    const entry = keys?.get(keyIndex);
+    if (!entry) return undefined;
+    if (entry.expiresAt !== undefined && entry.expiresAt <= Date.now()) {
+      keys!.delete(keyIndex);
+      return undefined;
+    }
+    return entry.key;
+  }
+
+  /** A leaver's or removed participant's chat keys and waiting events are gone at once. */
+  private forgetChat(session: Session, id: string): void {
+    session.chatReceive.delete(id);
+    session.pendingChat = session.pendingChat.filter((p) => p.fromId !== id);
+  }
+
+  private onChat(session: Session, fromId: string, blob: string): void {
+    if (!session.peers.has(fromId)) this.syncPeers(session, this.signaling.participants(), true);
+    this.enqueueChat(session, () => this.receiveChat(session, fromId, blob));
+  }
+
+  /** Chat events are handled one at a time, in order (sequence numbers must only grow). */
+  private enqueueChat(session: Session, work: () => Promise<void>): void {
+    session.chats = session.chats.then(work).catch(() => undefined);
+  }
+
+  private async receiveChat(session: Session, fromId: string, blob: string): Promise<void> {
+    if (session.stopped) return;
+    let keyIndex: number;
+    try {
+      keyIndex = chatKeyIndex(blob);
+    } catch {
+      return;
+    }
+    // Keep the sender's order: behind anything of theirs that is still waiting for a key.
+    const waiting = session.pendingChat.some((p) => p.fromId === fromId);
+    if (waiting || !this.chatReceiveKey(session, fromId, keyIndex)) {
+      const now = Date.now();
+      session.pendingChat = session.pendingChat.filter((p) => p.until > now);
+      if (session.pendingChat.length < MAX_PENDING_CHAT && session.peers.has(fromId)) {
+        session.pendingChat.push({ fromId, blob, until: now + PENDING_CHAT_MS });
+      }
+      return;
+    }
+    await this.openChatEvent(session, fromId, blob, keyIndex);
+  }
+
+  private async flushPendingChat(session: Session, fromId: string): Promise<void> {
+    const now = Date.now();
+    const mine = session.pendingChat.filter((p) => p.fromId === fromId && p.until > now);
+    session.pendingChat = session.pendingChat.filter((p) => p.fromId !== fromId && p.until > now);
+    for (const [i, pending] of mine.entries()) {
+      const keyIndex = chatKeyIndex(pending.blob);
+      if (!this.chatReceiveKey(session, fromId, keyIndex)) {
+        // Still no key for this one (a later rotation): it and everything after it keep waiting.
+        session.pendingChat.push(...mine.slice(i));
+        return;
+      }
+      await this.openChatEvent(session, fromId, pending.blob, keyIndex);
+    }
+  }
+
+  private async openChatEvent(
+    session: Session,
+    fromId: string,
+    blob: string,
+    keyIndex: number,
+  ): Promise<void> {
+    const key = this.chatReceiveKey(session, fromId, keyIndex);
+    const peer = session.peers.get(fromId);
+    const author = await peer?.identity;
+    if (!key || !peer || !author) return;
+    let event: ChatEvent;
+    try {
+      event = await openChat(
+        blob,
+        { roomId: session.roomId, fromId, key },
+        author.bundle.ed25519Pub,
+      );
+    } catch (e) {
+      if (e instanceof ChatError) return;
+      throw e;
+    }
+    if (session.stopped || session.peers.get(fromId) !== peer) return;
+    const authorPub = author.bundle.ed25519Pub;
+    if (event.seq <= (this.lastChatSeq.get(authorPub) ?? 0)) return; // replayed
+    this.lastChatSeq.set(authorPub, event.seq);
+    this.chatListeners.forEach((listener) => listener({ fromId, authorPub, event }));
   }
 
   private drop(reason: EnvelopeDrop): void {

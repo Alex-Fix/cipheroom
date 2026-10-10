@@ -1,0 +1,225 @@
+.messages {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 12px 16px;
+}
+
+.intro,
+.system {
+  margin: 8px 0;
+  color: var(--label-secondary);
+  font-size: 12px;
+  text-align: center;
+}
+
+.message {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  margin-top: 12px;
+
+  &.grouped {
+    margin-top: 4px;
+  }
+
+  &.own {
+    align-items: flex-end;
+
+    .bubble-row {
+      flex-direction: row-reverse;
+    }
+
+    .bubble {
+      background: var(--accent);
+      color: #fff;
+
+      a {
+        color: inherit;
+      }
+    }
+  }
+}
+
+header {
+  display: flex;
+  gap: 6px;
+  margin: 0 4px 2px;
+  font-size: 12px;
+}
+
+.author {
+  color: var(--label);
+  font-weight: 600;
+}
+
+time,
+.status {
+  color: var(--label-secondary);
+}
+
+.bubble-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+}
+
+.bubble {
+  margin: 0;
+  max-width: 260px;
+  padding: 7px 12px;
+  border-radius: 16px;
+  background: var(--fill);
+  color: var(--label);
+  font-size: 15px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+
+  a {
+    text-decoration: underline;
+  }
+}
+
+.react {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--label-secondary);
+  font-size: 16px;
+  cursor: pointer;
+  opacity: 0;
+
+  &:hover,
+  &:focus-visible {
+    background: var(--fill);
+  }
+}
+
+.message:hover .react,
+.react:focus-visible,
+.react.ant-popover-open {
+  opacity: 1;
+}
+
+@media (pointer: coarse) {
+  .react {
+    width: 36px;
+    height: 36px;
+    opacity: 1;
+  }
+}
+
+.status {
+  margin: 2px 4px 0;
+  font-size: 12px;
+
+  &.failed {
+    color: var(--red);
+  }
+}
+
+.retry {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}
+
+.reactions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.chip {
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 13px;
+  background: var(--fill);
+  color: var(--label);
+  font-size: 14px;
+  cursor: pointer;
+
+  &.mine {
+    border-color: var(--accent);
+  }
+}
+
+.count {
+  font-size: 12px;
+}
+
+.composer {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+  border-top: 0.5px solid var(--separator);
+}
+
+textarea {
+  flex: 1;
+  min-height: 36px;
+  max-height: 120px;
+  padding: 7px 12px;
+  border: 1px solid var(--separator);
+  border-radius: 18px;
+  background: var(--bg);
+  color: var(--label);
+  font: inherit;
+  // 16 px or more: iOS Safari zooms the page into any smaller text field on focus.
+  font-size: 16px;
+  resize: none;
+  field-sizing: content;
+
+  &:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -1px;
+  }
+}
+
+.icon-button {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--label-secondary);
+  font-size: 20px;
+  cursor: pointer;
+
+  &.send:not(:disabled) {
+    color: var(--accent);
+  }
+
+  &:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+}
+
+@media (pointer: coarse) {
+  .icon-button {
+    width: 44px;
+    height: 44px;
+  }
+}
+
+// Phones: chat takes the whole screen (closing it brings the call back). The drawer renders in an overlay.
+@media (max-width: 599px) {
+  ::ng-deep .ant-drawer-content-wrapper.chat-drawer {
+    width: 100vw !important;
+  }
+}

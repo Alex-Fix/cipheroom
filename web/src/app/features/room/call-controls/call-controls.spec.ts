@@ -93,16 +93,33 @@ describe('CallControls', () => {
       mic: vi.fn(),
       camera: vi.fn(),
       screen: vi.fn(),
+      chat: vi.fn(),
       leave: vi.fn(),
     };
     c.toggleMic.subscribe(spies.mic);
     c.toggleCamera.subscribe(spies.camera);
     c.toggleScreenShare.subscribe(spies.screen);
+    c.openChat.subscribe(spies.chat);
     c.leave.subscribe(spies.leave);
 
-    for (const cls of ['mic', 'camera', 'screen', 'leave']) button(cls)!.click();
+    for (const cls of ['mic', 'camera', 'screen', 'chat', 'leave']) button(cls)!.click();
 
     for (const spy of Object.values(spies)) expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows unread chat messages on the chat button', () => {
+    const { fixture, el, button } = render(allOn);
+    expect(el.querySelector('.badge')).toBeNull();
+    expect(button('chat')!.getAttribute('aria-label')).toBe('Chat');
+
+    fixture.componentRef.setInput('unreadChats', 3);
+    fixture.detectChanges();
+    expect(el.querySelector('.badge')!.textContent!.trim()).toBe('3');
+    expect(button('chat')!.getAttribute('aria-label')).toBe('Chat, 3 unread');
+
+    fixture.componentRef.setInput('unreadChats', 120);
+    fixture.detectChanges();
+    expect(el.querySelector('.badge')!.textContent!.trim()).toBe('99+');
   });
 
   it('offers front/rear flip only on devices with a rear camera, while the camera is on', () => {

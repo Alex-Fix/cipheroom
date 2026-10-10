@@ -28,6 +28,8 @@ want private calls without trusting a vendor, and it runs on a home computer wit
   kept 7 days, behind Grafana's login ([`docs/observability.md`](docs/observability.md))
 - 🔐 End-to-end encrypted media: per-call keys, rotated whenever someone joins or leaves, and a safety code to
   compare out loud. Browsers that can't encrypt can't join — calls never fall back to unencrypted
+- 💬 End-to-end encrypted chat with emoji reactions — signed by each sender, kept in memory only, gone when you
+  leave; links stay plain links (no previews that would leak them)
 - 🚪 Lobby and host controls: a meeting belongs to a host key kept in the creator's browser (with a
   passphrase-protected backup). Guests knock and wait; the host or a co-host lets them in, removes people, asks them
   to mute, or ends the call. Every decision is signed and checked by each browser, so even a malicious server can't
@@ -123,7 +125,7 @@ is ~3.6 GB per viewer-hour against the 1 TB/month free tier. The usage guard enf
 - [x] **End-to-end encryption**: per-call identities, sender keys, rotation on join/leave, safety codes
 - [ ] Remember contacts' keys across calls (TOFU) — today identities are fresh per call
 - [x] Lobby and host admission: host keys, signed tickets, co-hosts, remove, auto-admit, end for everyone
-- [ ] End-to-end encrypted chat
+- [x] End-to-end encrypted chat: text, emoji reactions, links (no previews); memory only
 - [x] Observability: traces, logs, metrics, call-quality reports, Grafana dashboards (self-hosted, optional)
 - [x] Usage guard for the Cloudflare Realtime free tier (SFU + TURN): saving → audio-only → paused
 - [ ] Connection diagnostics panel (hidden since the SFU switch)

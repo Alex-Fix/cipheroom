@@ -10,6 +10,7 @@ using Cipheroom.Application.Admission.Commands.Knock;
 using Cipheroom.Application.Admission.Commands.RemoveParticipant;
 using Cipheroom.Application.Admission.Commands.UpdateSettings;
 using Cipheroom.Application.CallStats.Commands.ReportCallStats;
+using Cipheroom.Application.Chat.Commands.SendChat;
 using Cipheroom.Application.Common.Interfaces;
 using Cipheroom.Application.Keys.Commands.SendKeyEnvelopes;
 using Cipheroom.Application.Media.Commands.PublishTracks;
@@ -203,6 +204,14 @@ public sealed partial class RoomHub(IMediator mediator, IUsageGuard usage, Telem
             Context.ConnectionAborted);
 
         await Task.WhenAll(result.Deliveries.Select(d => Clients.Client(d.ConnectionId).KeyEnvelopeReceived(result.FromId.Value, d.Blob)));
+    }
+
+    // Chat: one opaque, end-to-end encrypted event to everyone else in the room. Never stored or logged.
+
+    public async Task SendChat(string? blob)
+    {
+        var result = await mediator.Send(new SendChatCommand(Context.ConnectionId, blob), Context.ConnectionAborted);
+        await Clients.OthersInGroup(GroupName(result.RoomId.Value)).ChatReceived(result.FromId.Value, blob!);
     }
 
     // Telemetry: a browser's call-quality summary (numbers only), recorded as metrics.

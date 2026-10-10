@@ -230,6 +230,7 @@ export const HubMethods = {
   SetTrackMuted: 'SetTrackMuted',
   SelectVideoLayer: 'SelectVideoLayer',
   SendKeyEnvelopes: 'SendKeyEnvelopes',
+  SendChat: 'SendChat',
   ReportCallStats: 'ReportCallStats',
 } as const;
 
@@ -241,6 +242,7 @@ export const ClientEvents = {
   TracksUnpublished: 'TracksUnpublished',
   TrackMuted: 'TrackMuted',
   KeyEnvelopeReceived: 'KeyEnvelopeReceived',
+  ChatReceived: 'ChatReceived',
   KnockReceived: 'KnockReceived',
   LobbyLeft: 'LobbyLeft',
   Admitted: 'Admitted',

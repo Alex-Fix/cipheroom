@@ -4,6 +4,7 @@ import { provideRouter, Router } from '@angular/router';
 import { provideNzIcons } from 'ng-zorro-antd/icon';
 import { NzMessageService } from 'ng-zorro-antd/message';
 import { NzModalService } from 'ng-zorro-antd/modal';
+import { ChatMessage, ChatService } from '../../core/chat/chat.service';
 import { CryptoService } from '../../core/crypto/crypto.service';
 import {
   LobbyClosedError,
@@ -81,6 +82,21 @@ function fakeCrypto() {
   };
 }
 
+/** ChatService: state only; what it does is covered by its own tests. */
+function fakeChat() {
+  return {
+    items: signal([]),
+    ready: signal(true),
+    unread: signal(0),
+    latest: signal<ChatMessage | undefined>(undefined),
+    setOpen: vi.fn(),
+    send: vi.fn().mockReturnValue(true),
+    retry: vi.fn(),
+    react: vi.fn(),
+    notice: vi.fn(),
+  };
+}
+
 /** LobbyService: straight in (as host) unless a test says otherwise. */
 function fakeLobby() {
   const lobby = {
@@ -145,6 +161,7 @@ async function setup(
   opts.crypto?.(crypto);
   const lobby = fakeLobby();
   opts.lobby?.(lobby);
+  const chat = fakeChat();
 
   TestBed.configureTestingModule({
     imports: [Room],
@@ -161,6 +178,7 @@ async function setup(
         { provide: MediaService, useValue: media },
         { provide: CryptoService, useValue: crypto },
         { provide: LobbyService, useValue: lobby },
+        { provide: ChatService, useValue: chat },
       ],
     },
   });
@@ -188,6 +206,7 @@ async function setup(
     navigate,
     crypto,
     lobby,
+    chat,
     modal,
   };
 }
@@ -303,7 +322,7 @@ describe('Room', () => {
       cameraOn: false,
       sharingScreen: false,
     });
-    const { el, fixture, media } = await setup({
+    const { el, fixture, media, chat } = await setup({
       tweak: (lk) =>
         lk.connect.mockImplementation(async () =>
           lk.participants.set([person('Alex', true), person('Bob')]),
@@ -320,6 +339,104 @@ describe('Room', () => {
     media.participants.set([person('Alex', true), person('<b>Eve</b>')]);
     fixture.detectChanges();
     expect(notices()).toContain('Bob left');
+    // The same lines go into chat, where a newcomer's history starts.
+    expect(chat.notice.mock.calls).toEqual([['<b>Eve</b> joined'], ['Bob left']]);
+  });
+
+  it('waits for a newcomer’s name before announcing them, and falls back to Guest', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const person = (identity: string, name: string, isLocal = false) =>
+        ({
+          identity,
+          name,
+          role: 'guest',
+          isLocal,
+          isSpeaking: false,
+          micMuted: false,
+          cameraOn: false,
+          sharingScreen: false,
+        }) as CallParticipant;
+      const { fixture, media, chat } = await setup({
+        tweak: (lk) =>
+          lk.connect.mockImplementation(async () =>
+            lk.participants.set([person('me', 'Alex', true)]),
+          ),
+      });
+      const me = person('me', 'Alex', true);
+
+      // Dana appears unnamed; her key envelope (with her name) follows.
+      media.participants.set([me, person('d', 'Guest')]);
+      fixture.detectChanges();
+      expect(chat.notice).not.toHaveBeenCalled();
+      media.participants.set([me, person('d', 'Dana')]);
+      fixture.detectChanges();
+      expect(chat.notice.mock.calls).toEqual([['Dana joined']]);
+
+      // Someone who never sends a key is announced all the same.
+      media.participants.set([me, person('d', 'Dana'), person('x', 'Guest')]);
+      fixture.detectChanges();
+      vi.advanceTimersByTime(5000);
+      expect(chat.notice.mock.calls.at(-1)).toEqual(['Guest joined']);
+
+      // Leaving before the name came: the join is announced first.
+      media.participants.set([me, person('d', 'Dana'), person('x', 'Guest'), person('y', 'Guest')]);
+      fixture.detectChanges();
+      media.participants.set([me, person('d', 'Dana'), person('x', 'Guest')]);
+      fixture.detectChanges();
+      expect(chat.notice.mock.calls.slice(-2)).toEqual([['Guest joined'], ['Guest left']]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  describe('chat', () => {
+    const overlay = () => document.body.querySelector('app-chat-panel');
+    const drawerOpen = () => !!document.body.querySelector('.ant-drawer-open .composer');
+
+    afterEach(() =>
+      document.querySelectorAll('.cdk-overlay-container').forEach((c) => (c.innerHTML = '')),
+    );
+
+    it('opens from the controls, shows unread messages, and closes People', async () => {
+      const { el, fixture, chat } = await setup();
+      chat.unread.set(2);
+      fixture.detectChanges();
+      expect(el.querySelector('.control.chat .badge')!.textContent!.trim()).toBe('2');
+
+      el.querySelector<HTMLButtonElement>('.control.chat')!.click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(overlay()).not.toBeNull();
+      expect(drawerOpen()).toBe(true);
+      expect(chat.setOpen).toHaveBeenLastCalledWith(true);
+    });
+
+    it('shows a new message as a notice while chat is closed, as text', async () => {
+      const { el, fixture, chat } = await setup();
+      const notices = () => [...el.querySelectorAll('.notice')].map((n) => n.textContent!.trim());
+      chat.latest.set({
+        authorName: '<i>Bob</i>',
+        text: 'look at this\nsecond line',
+      } as ChatMessage);
+      fixture.detectChanges();
+      expect(notices()).toEqual(['<i>Bob</i>: look at this…']);
+      expect(el.querySelector('.notice i')).toBeNull();
+    });
+
+    it('sends, retries and reacts through ChatService', async () => {
+      const { fixture, chat } = await setup();
+      const panel = fixture.debugElement.query(
+        (d) => d.name === 'app-chat-panel',
+      ).componentInstance;
+      panel.send.emit('hi');
+      panel.retry.emit('m1');
+      panel.react.emit({ id: 'm1', emoji: '👍' });
+      expect(chat.send).toHaveBeenCalledWith('hi');
+      expect(chat.retry).toHaveBeenCalledWith('m1');
+      expect(chat.react).toHaveBeenCalledWith('m1', '👍');
+    });
   });
 
   it('shows the encryption state and announces a changed safety code', async () => {

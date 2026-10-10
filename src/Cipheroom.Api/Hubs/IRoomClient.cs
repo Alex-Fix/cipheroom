@@ -19,6 +19,9 @@ public interface IRoomClient
     /// <summary>A sender-key envelope for this client only; <paramref name="fromId"/> is set by the server.</summary>
     Task KeyEnvelopeReceived(string fromId, string blob);
 
+    /// <summary>An encrypted chat event (message or reaction) from another member; <paramref name="fromId"/> is set by the server.</summary>
+    Task ChatReceived(string fromId, string blob);
+
     // Lobby and host controls.
 
     /// <summary>To an admitter: someone in the lobby asks to join; <paramref name="blob"/> is their name, encrypted to us.</summary>
