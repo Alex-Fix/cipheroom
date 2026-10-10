@@ -30,7 +30,13 @@ import {
 } from './codecs';
 import { receiveLayer } from './layers';
 import { CallParticipant, Diagnostics, MediaState, Tile } from './media.types';
-import { VideoQuality, cameraEncodings, captureConstraints, supportedQualities } from './quality';
+import {
+  VideoQuality,
+  cameraEncodings,
+  captureConstraints,
+  supportedQualities,
+  closestQuality,
+} from './quality';
 import { SerialQueue } from './serial-queue';
 import { SpeakingDetector, sameMembers } from './speaking';
 import { TrackKey, participantOf, subscriptionDiff, trackKey } from './subscriptions';
@@ -52,8 +58,8 @@ export interface Self {
  * - Negotiation order: our own tracks are published before we receive anyone else's (`startReceiving`). iOS Safari
  *   can't add a camera once the connection began by answering the SFU's offer; the camera transceiver is therefore
  *   always negotiated up front (`reserveCamera`), and later device changes only swap tracks.
- * - Quality: we send the camera at the chosen quality (`videoQuality`, default auto = best the camera has, up to
- *   4K) as f/h/q simulcast, and receive the layer that matches each camera tile's size (`q` when hidden).
+ * - Quality: we send the camera at the chosen quality (`videoQuality`: 4K, Full HD by default, or 720p; a camera
+ *   that can't do it sends the best it has below) as f/h/q simulcast, and receive the layer that matches each camera tile's size (`q` when hidden).
  * - Codec: chosen when we connect (`sendingCodec`, from `videoCodec` and what everyone in the call can decode — see
  *   codecs.ts). Cloudflare doesn't forward a codec change on a published track, so a different codec means
  *   rejoining: `codecUnsupported` tells the room when someone who joined can't play ours.
@@ -130,13 +136,17 @@ export class MediaService implements OnDestroy {
   readonly videoAllowed = computed(
     () => this.usageLevel() === 'normal' || this.usageLevel() === 'saving',
   );
-  /** What we actually capture: the chosen quality, or 720p while saving. */
-  readonly effectiveQuality = computed<VideoQuality>(() =>
+  /** What we ask the camera for: the chosen quality, or 720p while saving. */
+  private readonly captureQuality = computed<VideoQuality>(() =>
     this.qualityCapped() ? CAPPED_QUALITY : this.videoQuality(),
   );
   /** What the quality picker offers right now. */
   readonly offeredQualities = computed<VideoQuality[]>(() =>
     this.qualityCapped() ? [CAPPED_QUALITY] : this.availableQualities(),
+  );
+  /** What we actually send (the picker's tick): Full HD on a 720p camera is 720p. */
+  readonly effectiveQuality = computed<VideoQuality>(() =>
+    closestQuality(this.captureQuality(), this.offeredQualities()),
   );
   /** Video codec the user chose; remembered in this browser. */
   readonly videoCodec = signal<VideoCodec>(loadVideoCodec());
@@ -729,7 +739,7 @@ export class MediaService implements OnDestroy {
   }
 
   private cameraConstraints(extra: MediaTrackConstraints = {}): MediaTrackConstraints {
-    return { ...captureConstraints(this.effectiveQuality()), ...extra };
+    return { ...captureConstraints(this.captureQuality()), ...extra };
   }
 
   private updateCameraInfo(): void {

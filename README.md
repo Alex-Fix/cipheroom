@@ -17,7 +17,7 @@ want private calls without trusting a vendor, and it runs on a home computer wit
 ## Features
 
 - 🎥 Group video and audio calls through [Cloudflare Realtime SFU](https://developers.cloudflare.com/realtime/sfu/)
-  (simulcast; up to 4K, quality selectable; highest quality received by default)
+  (simulcast; Full HD by default, 4K or 720p selectable; each tile receives the size it needs)
 - 🖥️ Screen sharing, camera switching (front/rear on phones), active-speaker highlight, automatic reconnect
 - 🪟 Video layouts: Grid or Speaker view, pin anyone (or yourself, or a screen) to the stage, a floating self-view
   you can drag to any corner or minimize; small tiles receive smaller video, saving traffic

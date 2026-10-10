@@ -1,32 +1,52 @@
 import { VideoCodec } from './codecs';
 
-/** Camera send quality. 'auto' = the best the camera supports, up to 4K. */
-export type VideoQuality = 'auto' | '2160p' | '1080p' | '720p';
+/** Camera send quality. */
+export type VideoQuality = '2160p' | '1080p' | '720p';
 
-export const VIDEO_QUALITIES: readonly VideoQuality[] = ['auto', '2160p', '1080p', '720p'];
+/** Highest first (the picker's order). */
+export const VIDEO_QUALITIES: readonly VideoQuality[] = ['2160p', '1080p', '720p'];
 
-const SIZES: Record<Exclude<VideoQuality, 'auto'>, { width: number; height: number }> = {
+/** Full HD unless the user picks otherwise; a camera that can't do it sends the best it has below. */
+export const DEFAULT_VIDEO_QUALITY: VideoQuality = '1080p';
+
+const SIZES: Record<VideoQuality, { width: number; height: number }> = {
   '2160p': { width: 3840, height: 2160 },
   '1080p': { width: 1920, height: 1080 },
   '720p': { width: 1280, height: 720 },
 };
 
-/** getUserMedia video constraints for a quality (device / facing mode are added by the caller). */
+/**
+ * getUserMedia video constraints for a quality (device / facing mode are added by the caller): 'ideal' lets the
+ * browser pick the camera's closest mode when it can't do that size, 'max' keeps a bigger camera from sending more.
+ */
 export function captureConstraints(quality: VideoQuality): MediaTrackConstraints {
-  const { width, height } = SIZES[quality === 'auto' ? '2160p' : quality];
+  const { width, height } = SIZES[quality];
   return {
-    // 'ideal' lets the browser pick the camera's closest mode; explicit choices also cap it.
-    width: quality === 'auto' ? { ideal: width } : { ideal: width, max: width },
-    height: quality === 'auto' ? { ideal: height } : { ideal: height, max: height },
+    width: { ideal: width, max: width },
+    height: { ideal: height, max: height },
     frameRate: { ideal: 30 },
   };
 }
 
-/** Qualities worth offering for a camera: higher presets only if it can capture them. */
+/**
+ * Qualities worth offering for a camera: 4K and 1080p only if it can capture them, 720p always. Before a camera has
+ * run (capabilities unknown): the default and 720p.
+ */
 export function supportedQualities(maxHeight: number | undefined): VideoQuality[] {
-  return VIDEO_QUALITIES.filter(
-    (q) =>
-      q === 'auto' || q === '720p' || (maxHeight !== undefined && maxHeight >= SIZES[q].height),
+  if (maxHeight === undefined) return [DEFAULT_VIDEO_QUALITY, '720p'];
+  return VIDEO_QUALITIES.filter((q) => q === '720p' || maxHeight >= SIZES[q].height);
+}
+
+/** What a choice turns into on a camera offering `available`: the highest offered quality not above it. */
+export function closestQuality(
+  chosen: VideoQuality,
+  available: readonly VideoQuality[],
+): VideoQuality {
+  const order = VIDEO_QUALITIES;
+  return (
+    available
+      .filter((q) => order.indexOf(q) >= order.indexOf(chosen))
+      .sort((a, b) => order.indexOf(a) - order.indexOf(b))[0] ?? '720p'
   );
 }
 

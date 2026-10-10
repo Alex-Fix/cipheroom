@@ -219,7 +219,7 @@ and our encrypted payload, a viewer that dropped to a lower simulcast layer neve
   behind `IIceServerProvider`) is only a fallback for client networks that block direct UDP — ports UDP 3478/443,
   TCP 3478/80, TLS 5349/443. `Turn:ForceRelay` forces it for testing.
 - **Free tier:** SFU and TURN share **1,000 GB/month** of egress (traffic from Cloudflare to clients), $0.05/GB after.
-  4K camera video ≈ 3.6 GB per viewer-hour, 1080p about a third — quality is user-selectable (Auto/4K/1080p/720p).
+  4K camera video ≈ 3.6 GB per viewer-hour, 1080p about a third — quality is user-selectable (4K / 1080p, the default / 720p).
 
 History:
 - **Spike #1 — PASSED (2026-10-06):** LiveKit at home reached through Cloudflare TURN (`relay ⇄ prflx`, ~40 ms).

@@ -203,8 +203,8 @@ describe('CallControls', () => {
   it('offers the camera qualities, checks the chosen one and emits a new choice', async () => {
     const { fixture, button } = render({
       ...allOn,
-      qualities: ['auto', '2160p', '1080p', '720p'],
-      quality: 'auto',
+      qualities: ['2160p', '1080p', '720p'],
+      quality: '1080p',
     });
     const select = vi.fn();
     fixture.componentInstance.selectQuality.subscribe(select);
@@ -212,15 +212,10 @@ describe('CallControls', () => {
     await openMore(fixture, button('more')!);
     const items = [...document.body.querySelectorAll<HTMLElement>('.quality-item')];
 
-    expect(items.map((i) => i.textContent!.trim())).toEqual(['Auto', '4K', '1080p', '720p']);
-    expect(items.map((i) => i.getAttribute('aria-checked'))).toEqual([
-      'true',
-      'false',
-      'false',
-      'false',
-    ]);
-    items[2].click();
-    expect(select).toHaveBeenCalledWith('1080p');
+    expect(items.map((i) => i.textContent!.trim())).toEqual(['4K', '1080p', '720p']);
+    expect(items.map((i) => i.getAttribute('aria-checked'))).toEqual(['false', 'true', 'false']);
+    items[0].click();
+    expect(select).toHaveBeenCalledWith('2160p');
   });
 
   it('offers the video codecs, checks the chosen one and emits a new choice', async () => {

@@ -55,8 +55,8 @@ Design: `docs/plans/2026-10-07-cloudflare-sfu-design.md`. Protocol: `docs/signal
   the keyframes). H.264 was tried and reverted — it wasn't the cause of the iOS issue.
 
 ## Quality
-- Send: user choice Auto (best the camera supports, up to 4K) / 4K / 1080p / 720p (`quality.ts`; 4K/1080p only when
-  the camera can). f/h/q simulcast with bitrates by captured height × a codec factor (VP9 0.65 of VP8's);
+- Send: user choice 4K / 1080p (default) / 720p (`quality.ts`; a camera that can't do the choice sends its best below
+  it, and the picker ticks that; 4K/1080p offered only when the camera can). f/h/q simulcast with bitrates by captured height × a codec factor (VP9 0.65 of VP8's);
   `setParameters` re-targets them after a resolution change.
 - Receive: the layer that matches each camera tile's rendered width in device pixels (`layers.ts`): ≥ 960 → `f`,
   ≥ 360 → `h`, smaller / off screen / hidden tile / background tab → `q` (`ElementSizeDirective` → `setTileSize`,

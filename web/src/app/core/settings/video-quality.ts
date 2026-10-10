@@ -1,4 +1,4 @@
-import { VIDEO_QUALITIES, VideoQuality } from '../media/quality';
+import { DEFAULT_VIDEO_QUALITY, VIDEO_QUALITIES, VideoQuality } from '../media/quality';
 
 /** The user's camera quality choice, remembered in this browser only. */
 export const VIDEO_QUALITY_KEY = 'cipheroom.videoQuality';
@@ -6,9 +6,10 @@ export const VIDEO_QUALITY_KEY = 'cipheroom.videoQuality';
 export function loadVideoQuality(): VideoQuality {
   try {
     const stored = localStorage.getItem(VIDEO_QUALITY_KEY);
-    return VIDEO_QUALITIES.find((q) => q === stored) ?? 'auto';
+    // Includes the old 'auto' choice, which falls back to the default.
+    return VIDEO_QUALITIES.find((q) => q === stored) ?? DEFAULT_VIDEO_QUALITY;
   } catch {
-    return 'auto';
+    return DEFAULT_VIDEO_QUALITY;
   }
 }
 
