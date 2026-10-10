@@ -191,6 +191,11 @@ export class CryptoService implements OnDestroy {
 
   private authorityDto?: AuthorityDto;
   private authorityCheck: Promise<Authority> = Promise.resolve(NO_AUTHORITY);
+  /**
+   * Every removal we have verified in this call (identity keys). A removal is for good: an authority from the server
+   * that no longer lists one (an api restart, or a server lying by omission) never lets that person back in.
+   */
+  private readonly removed = new Set<string>();
   private muteSeq = 0;
   private readonly lastMuteSeq = new Map<string, number>();
   /** Our chat sequence number and the newest one seen from each author's identity (replays are dropped). */
@@ -451,6 +456,7 @@ export class CryptoService implements OnDestroy {
       this.lastMuteSeq.clear();
       this.chatSeq = 0;
       this.lastChatSeq.clear();
+      this.removed.clear();
       void this.updateAuthority(this.signaling.authority());
     }
     try {
@@ -495,7 +501,9 @@ export class CryptoService implements OnDestroy {
     }
     if (dto === this.authorityDto) return this.authorityCheck;
     this.authorityDto = dto;
-    const check = verifyAuthority(roomId, dto).catch(() => NO_AUTHORITY);
+    const check = verifyAuthority(roomId, dto)
+      .catch(() => NO_AUTHORITY)
+      .then((verified) => this.withRemovals(verified));
     this.authorityCheck = check;
     void check.then((authority) => {
       if (this.authorityCheck !== check) return;
@@ -503,6 +511,13 @@ export class CryptoService implements OnDestroy {
       if (this.session && !this.session.stopped) void this.recheckPeers(this.session, authority);
     });
     return check;
+  }
+
+  /** Adds this authority's removals to the ones we keep, and returns it with all of them. */
+  private withRemovals(authority: Authority): Authority {
+    authority.revoked.forEach((identity) => this.removed.add(identity));
+    if (this.removed.size === authority.revoked.size) return authority;
+    return { ...authority, revoked: new Set(this.removed) };
   }
 
   /**

@@ -188,6 +188,15 @@ class FakeServer {
     this.setAuthority({ ...this.authorityDto!, revoked: [{ subject: pub, issuer, sig }] });
   }
 
+  identityOf(client: Client): string {
+    return this.inRoom.get(client.id)!.identity.ed25519Pub;
+  }
+
+  /** The server's authority loses every removal (an api restart, or a server that lies by omission). */
+  forgetRemovals(): void {
+    this.setAuthority({ ...this.authorityDto!, revoked: [] });
+  }
+
   leave(client: Client): void {
     this.inRoom.delete(client.id);
     client.crypto.stop();
@@ -486,6 +495,40 @@ describe('CryptoService', () => {
       expect(receiveKeys(carol, 'alice').map((k) => k.key)).not.toContainEqual(
         lastSendKey(alice).key,
       );
+    });
+
+    it('never forgets a verified removal, even when the server does', async () => {
+      const [alice, bob, carol, dan] = ['alice', 'bob', 'carol', 'dan'].map((id) =>
+        server.client(id),
+      );
+      for (const c of [alice, bob, carol]) await server.join(c);
+      await afterRotation();
+      await server.revokeButKeep(carol);
+      await afterRotation();
+      await settle(SWITCH_DELAY_MS + 10);
+      const keyAfterRemoval = lastSendKey(alice).key;
+      const sendsAfterRemoval = alice.sent.length;
+
+      // The api restarts (or lies): its authority no longer lists Carol's removal. Carol, still holding her
+      // identity and ticket, is in the call again; Dan joins, so everyone rotates.
+      server.forgetRemovals();
+      await settle();
+      await server.join(dan);
+      await afterRotation();
+      await settle(SWITCH_DELAY_MS + 10);
+
+      expect(alice.crypto.unverified()).toContain('carol');
+      const later = alice.sent
+        .slice(sendsAfterRemoval)
+        .flat()
+        .map((e) => e.toId);
+      expect(later).toContain('dan');
+      expect(later).not.toContain('carol');
+      expect(lastSendKey(alice).key).not.toEqual(keyAfterRemoval);
+      expect(receiveKeys(carol, 'alice').map((k) => k.key)).not.toContainEqual(
+        lastSendKey(alice).key,
+      );
+      expect(alice.crypto.authority().revoked.has(server.identityOf(carol))).toBe(true);
     });
 
     it('rejects replayed and tampered envelopes', async () => {
