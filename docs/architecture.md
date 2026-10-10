@@ -171,6 +171,7 @@ emoji reactions, browser memory only (gone when you leave; newcomers see only wh
 ### Known limits
 - Metadata (who, when, IPs, bandwidth, who publishes which tracks, frame sizes and timing, the RTP audio-level
   header) is visible to the api and Cloudflare; for chat, the api sees who sent an event, when, and its size bucket.
+  Size-based layer requests also show which camera a viewer watches large (pin or active speaker).
 - A malicious server can drop envelopes, knocks or admissions, or hide a leave or a removal from some members
   (calls break, someone waits forever, or a leaver keeps getting keys until the next rotation) — visible as "who's
   in the call", never a decryption. It can't admit anyone, appoint a host or forge a removal or "end".
@@ -186,6 +187,18 @@ emoji reactions, browser memory only (gone when you leave; newcomers see only wh
   ([`observability.md`](observability.md)).
 - Debug: `?e2ee=passthrough` makes one browser skip decrypting what it receives (others look broken there) — a
   check that the SFU carries ciphertext; what it sends stays encrypted.
+
+## Video layouts
+Design: [`plans/2026-10-10-video-layouts-design.md`](plans/2026-10-10-video-layouts-design.md). Each person picks
+their own view; nothing about it goes to the server beyond the existing layer requests.
+- A pure `callLayout` (`features/room/layout/`) gives every tile a role (`stage` / `strip` / `grid` / `float` /
+  `hidden`) and a rect; the room keeps all tiles in one container, so videos never re-mount (hidden tiles stay mounted,
+  zero-sized, so their audio plays).
+- Stage priority in Speaker view: pin > remote screen share > active speaker (1.5 s hysteresis, `StageSpeaker`) >
+  first remote camera. A new remote share switches Grid to Speaker until it ends or the user picks a view.
+- Receive layers follow tile size in device pixels: ≥ 960 → `f`, ≥ 360 → `h`, else (or hidden / background tab) → `q`.
+- View, self-view mode and corner are remembered per browser (`core/settings/call-view.ts`); phones default to
+  Speaker + floating self-view.
 
 ## Video codecs
 
