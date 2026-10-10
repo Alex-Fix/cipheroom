@@ -19,6 +19,8 @@ import { fromBase64Url, toBase64Url, utf8 } from './encoding';
 import { FRAME_CRYPTO_FACTORY } from './frame-transforms';
 import { HostKey, createHostKey } from './host-key';
 import { HOST_KEY_STORE, MemoryHostKeyStore } from './host-key-store';
+import { DEVICE_KEY_STORE, MemoryDeviceKeyStore } from './device-key-store';
+import { createDeviceKey } from './device-key';
 import { verifyIdentity } from './identity';
 
 /** Records what the service hands the frame worker. */
@@ -47,6 +49,7 @@ interface Client {
   crypto: CryptoService;
   frames: FakeFrames;
   hostKeys: MemoryHostKeyStore;
+  deviceKeys: MemoryDeviceKeyStore;
   participants: ReturnType<typeof signal<ParticipantDto[]>>;
   authority: ReturnType<typeof signal<AuthorityDto | undefined>>;
   sent: KeyEnvelopeDto[][];
@@ -82,12 +85,14 @@ class FakeServer {
   client(id: string): Client {
     const frames = new FakeFrames();
     const hostKeys = new MemoryHostKeyStore();
+    const deviceKeys = new MemoryDeviceKeyStore();
     const participants = signal<ParticipantDto[]>([]);
     const authority = signal<AuthorityDto | undefined>(this.authorityDto);
     const client = {
       id,
       frames,
       hostKeys,
+      deviceKeys,
       participants,
       authority,
       sent: [],
@@ -127,6 +132,7 @@ class FakeServer {
         { provide: SignalingService, useValue: signaling },
         { provide: FRAME_CRYPTO_FACTORY, useValue: () => frames },
         { provide: HOST_KEY_STORE, useValue: hostKeys },
+        { provide: DEVICE_KEY_STORE, useValue: deviceKeys },
       ],
       TestBed.inject(EnvironmentInjector),
     );
@@ -614,6 +620,36 @@ describe('CryptoService', () => {
     alice.inbox('mallory', 'AAAA');
     await settle();
     expect(alice.crypto.telemetry(now).envelopesDropped).toBe(1);
+  });
+
+  describe('device keys', () => {
+    it('tells everyone our device key, only from statements that verify, and forgets leavers', async () => {
+      const [alice, bob, carol] = ['alice', 'bob', 'carol'].map((id) => server.client(id));
+      const { deviceKey } = await createDeviceKey();
+      await alice.deviceKeys.put(deviceKey);
+      for (const c of [alice, bob, carol]) await server.join(c);
+      await afterRotation();
+
+      expect(bob.crypto.devices()).toEqual(new Map([['alice', deviceKey.pub]]));
+      expect(carol.crypto.devices().get('alice')).toBe(deviceKey.pub);
+      // Bob has none set up: nothing to tell.
+      expect(alice.crypto.devices().has('bob')).toBe(false);
+
+      server.leave(alice);
+      await settle();
+      expect(bob.crypto.devices().size).toBe(0);
+    });
+
+    it('a broken key store just means no device key', async () => {
+      const alice = server.client('alice');
+      const bob = server.client('bob');
+      vi.spyOn(alice.deviceKeys, 'get').mockRejectedValue(new Error('IndexedDB timed out.'));
+      await server.join(alice);
+      await server.join(bob);
+      await afterRotation();
+      expect(bob.crypto.devices().size).toBe(0);
+      expect(bob.crypto.secured()).toEqual(new Set(['alice']));
+    });
   });
 
   describe('chat', () => {

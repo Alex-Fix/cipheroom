@@ -10,6 +10,7 @@ import {
   ParticipantDto,
 } from '../signaling/signaling.types';
 import {
+  DeviceProof,
   EnvelopeError,
   EnvelopeRejection,
   keyIndexOf,
@@ -35,6 +36,9 @@ import {
 } from './identity';
 import { signHostAttestation } from './host-key';
 import { HOST_KEY_STORE } from './host-key-store';
+import { DEVICE_KEY_STORE } from './device-key-store';
+import { signDeviceStatement } from './device-key';
+import { fromBase64Url } from './encoding';
 import { PREVIOUS_KEY_GRACE_MS, SENDER_KEY_BYTES } from './keyring';
 import { openKnock, sealKnock } from './knock';
 import { cleanName } from './names';
@@ -117,6 +121,8 @@ interface Session {
   /** Ours, sent to everyone inside our key envelopes (never to the server in plaintext). */
   name: string;
   identity: Identity;
+  /** Our device key's statement for this call's identity, in every envelope (none until the user sets one up). */
+  device?: DeviceProof;
   frames: FrameCrypto;
   peers: Map<string, Peer>;
   /** Our current rotation counter (-1 before the first key). */
@@ -154,6 +160,7 @@ export class CryptoService implements OnDestroy {
   private readonly signaling = inject(SignalingService);
   private readonly createFrames = inject(FRAME_CRYPTO_FACTORY);
   private readonly hostKeys = inject(HOST_KEY_STORE);
+  private readonly deviceKeys = inject(DEVICE_KEY_STORE);
 
   private identity?: Promise<Identity>;
   private identityRoom?: string;
@@ -168,6 +175,11 @@ export class CryptoService implements OnDestroy {
   readonly unverified = signal<ReadonlySet<string>>(new Set());
   /** Dropped envelopes by reason (diagnostics only). */
   readonly droppedEnvelopes = signal<Partial<Record<EnvelopeDrop, number>>>({});
+  /**
+   * Participants' long-term device keys (base64url), from statements that verified over their per-call identity
+   * inside their key envelopes. Who has none isn't listed. docs/plans/2026-10-10-contacts-tofu-design.md
+   */
+  readonly devices = signal<ReadonlyMap<string, string>>(new Map());
   /** Display names by participant id, as each participant signed them in their key envelopes (ours included). */
   readonly names = signal<ReadonlyMap<string, string>>(new Map());
   /** The room's authority after our own verification (hosts, co-hosts, removals, auto-admit). */
@@ -339,11 +351,13 @@ export class CryptoService implements OnDestroy {
     const api = frameTransformApi();
     if (!api) throw new Error(E2EE_UNSUPPORTED);
 
+    const device = await this.deviceProof(roomId, identity);
     const session: Session = {
       roomId,
       selfId,
       name: cleanName(name),
       identity,
+      device,
       frames: this.createFrames(api),
       peers: new Map(),
       epoch: -1,
@@ -394,6 +408,7 @@ export class CryptoService implements OnDestroy {
     this.secured.set(new Set());
     this.unverified.set(new Set());
     this.names.set(new Map());
+    this.devices.set(new Map());
   }
 
   ngOnDestroy(): void {
@@ -437,6 +452,16 @@ export class CryptoService implements OnDestroy {
       framesMissingKey: frames?.missingKey ?? 0,
       envelopesDropped: Object.values(this.droppedEnvelopes()).reduce((a, b) => a + (b ?? 0), 0),
       securingSeconds: (this.securingMs + waiting) / 1000,
+    };
+  }
+
+  /** Our device key vouching for this call's identity, if this browser has one (a broken store just means none). */
+  private async deviceProof(roomId: string, identity: Identity): Promise<DeviceProof | undefined> {
+    const deviceKey = await this.deviceKeys.get().catch(() => undefined);
+    if (!deviceKey) return undefined;
+    return {
+      pub: fromBase64Url(deviceKey.pub),
+      sig: await signDeviceStatement(deviceKey, roomId, identity.bundle.ed25519Pub),
     };
   }
 
@@ -596,6 +621,7 @@ export class CryptoService implements OnDestroy {
       this.secured.update((ids) => without(ids, id));
       this.unverified.update((ids) => without(ids, id));
       this.names.update((names) => withoutKey(names, id));
+      this.devices.update((devices) => withoutKey(devices, id));
       changed = true;
     }
 
@@ -640,6 +666,7 @@ export class CryptoService implements OnDestroy {
           session.name,
           session.identity,
           identity,
+          session.device,
         ),
       })),
     );
@@ -719,6 +746,9 @@ export class CryptoService implements OnDestroy {
       this.setChatReceiveKey(session, fromId, opened.keyIndex, chat);
       if (this.names().get(fromId) !== opened.name) {
         this.names.update((names) => new Map(names).set(fromId, opened.name));
+      }
+      if (opened.device && this.devices().get(fromId) !== opened.device) {
+        this.devices.update((devices) => new Map(devices).set(fromId, opened.device!));
       }
       this.stopWaiting(fromId);
       this.secured.update((ids) => (ids.has(fromId) ? ids : new Set(ids).add(fromId)));

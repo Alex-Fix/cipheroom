@@ -1,5 +1,6 @@
 import { fromBase64Url, toBase64Url, utf8 } from './encoding';
 import {
+  DeviceProof,
   EnvelopeError,
   EnvelopeHeader,
   EnvelopeRejection,
@@ -9,6 +10,7 @@ import {
   sealEnvelope,
 } from './envelopes';
 import { Identity, VerifiedIdentity, createIdentity, verifyIdentity } from './identity';
+import { DeviceKey, createDeviceKey, signDeviceStatement } from './device-key';
 
 const ROOM = 'team-sync';
 
@@ -64,6 +66,79 @@ describe('envelopes', () => {
     const opened = await open(blob);
     expect(new Uint8Array(opened.senderKey)).toEqual(senderKey);
     expect(opened).toMatchObject({ epoch: 5, keyIndex: 5, name: 'Alice' });
+  });
+
+  describe('device keys (v3)', () => {
+    let device: { deviceKey: DeviceKey; proof: DeviceProof };
+
+    beforeAll(async () => {
+      const { deviceKey } = await createDeviceKey();
+      const sig = await signDeviceStatement(deviceKey, ROOM, alice.identity.bundle.ed25519Pub);
+      device = { deviceKey, proof: { pub: fromBase64Url(deviceKey.pub), sig } };
+    });
+
+    it('carries the sender’s device key, vouched for their per-call identity', async () => {
+      const withDevice = await sealEnvelope(
+        header(),
+        senderKey,
+        'Alice',
+        alice.identity,
+        bob.verified,
+        device.proof,
+      );
+      expect((await open(withDevice)).device).toBe(device.deviceKey.pub);
+      expect((await open(blob)).device).toBeUndefined();
+    });
+
+    it('looks the same size with or without one (the server can’t tell who set up an identity)', async () => {
+      const withDevice = await sealEnvelope(
+        header(),
+        senderKey,
+        'Alice',
+        alice.identity,
+        bob.verified,
+        device.proof,
+      );
+      expect(withDevice.length).toBe(blob.length);
+      expect(withDevice.length).toBeLessThanOrEqual(MAX_ENVELOPE_BLOB);
+    });
+
+    it('ignores a statement replayed from someone else’s envelope (the envelope still opens)', async () => {
+      // Mallory copies Alice's device proof into her own envelope.
+      const mallory = await participant();
+      const stolen = await sealEnvelope(
+        header(),
+        senderKey,
+        'Alice',
+        mallory.identity,
+        bob.verified,
+        device.proof,
+      );
+      const opened = await open(stolen, expected, bob.identity, mallory.verified);
+      expect(opened.name).toBe('Alice');
+      expect(opened.device).toBeUndefined();
+    });
+
+    it('still opens v2 envelopes (no device key)', async () => {
+      const v2 = await sealEnvelope(
+        header(),
+        senderKey,
+        'Alice',
+        alice.identity,
+        bob.verified,
+        undefined,
+        2,
+      );
+      const opened = await open(v2);
+      expect(opened.name).toBe('Alice');
+      expect(new Uint8Array(opened.senderKey)).toEqual(senderKey);
+      expect(opened.device).toBeUndefined();
+    });
+
+    it('rejects a v3 envelope relabelled as v2 by the server', async () => {
+      const relabelled = tamper(blob, (w) => (w['v'] = 2));
+      expect(await rejection(open(relabelled))).toBe('undecryptable');
+    });
   });
 
   it('pads names so their length doesn’t show', async () => {
