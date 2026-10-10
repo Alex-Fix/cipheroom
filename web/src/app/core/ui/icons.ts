@@ -33,6 +33,8 @@ import {
   PushpinOutline,
   ShrinkOutline,
   ArrowsAltOutline,
+  PaperClipOutline,
+  FileOutline,
 } from '@ant-design/icons-angular/icons';
 import { IconDefinition } from '@ant-design/icons-angular';
 
@@ -76,4 +78,6 @@ export const APP_ICONS: IconDefinition[] = [
   PushpinOutline,
   ShrinkOutline,
   ArrowsAltOutline,
+  PaperClipOutline,
+  FileOutline,
 ];

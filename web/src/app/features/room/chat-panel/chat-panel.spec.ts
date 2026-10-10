@@ -3,6 +3,7 @@ import { provideNzIcons } from 'ng-zorro-antd/icon';
 import { ChatItem, ChatMessage } from '../../../core/chat/chat.service';
 import { linkify } from '../../../core/chat/links';
 import { APP_ICONS } from '../../../core/ui/icons';
+import { SharedFile } from '../../../core/files/file-transfer.service';
 import { ChatPanel, GROUP_GAP_MS } from './chat-panel';
 
 const T0 = new Date(2026, 9, 9, 14, 30).getTime();
@@ -188,5 +189,64 @@ describe('ChatPanel', () => {
     const { q } = await render([], false);
     expect(q<HTMLTextAreaElement>('textarea')!.disabled).toBe(true);
     expect(q<HTMLTextAreaElement>('textarea')!.placeholder).toBe('Securing…');
+  });
+
+  describe('files', () => {
+    const fileMessage = (id = 'f1') => message({ id, text: '', segments: [], fileId: id });
+
+    async function renderWithFiles(items: ChatItem[], files: Map<string, SharedFile>, canShare = true) {
+      const r = await render(items);
+      r.fixture.componentRef.setInput('files', files);
+      r.fixture.componentRef.setInput('canShare', canShare);
+      r.fixture.detectChanges();
+      const attached: File[][] = [];
+      const downloads: string[] = [];
+      r.fixture.componentInstance.attach.subscribe((f) => attached.push(f));
+      r.fixture.componentInstance.download.subscribe((id) => downloads.push(id));
+      return { ...r, attached, downloads };
+    }
+
+    const pdf: SharedFile = { id: 'f1', name: 'a.pdf', size: 10, mime: 'application/pdf', image: false, own: false, fromId: 'bob', state: 'available', progress: 0 };
+
+    it('shows a file card instead of a text bubble, with its actions', async () => {
+      const { q, downloads } = await renderWithFiles([fileMessage()], new Map([['f1', pdf]]));
+      expect(q('.ant-drawer .bubble')).toBeNull();
+      expect(q('.ant-drawer app-file-card .name')!.textContent).toBe('a.pdf');
+      q<HTMLButtonElement>('.ant-drawer app-file-card .download')!.click();
+      expect(downloads).toEqual(['f1']);
+    });
+
+    it('attaches picked files', async () => {
+      const { q, attached } = await renderWithFiles([], new Map());
+      const input = q<HTMLInputElement>('.composer input[type=file]')!;
+      const file = new File(['x'], 'x.txt');
+      Object.defineProperty(input, 'files', { value: [file], configurable: true });
+      input.dispatchEvent(new Event('change'));
+      expect(attached).toEqual([[file]]);
+    });
+
+    it('shares pasted and dropped files', async () => {
+      const { q, attached } = await renderWithFiles([], new Map());
+      const file = new File(['x'], 'shot.png', { type: 'image/png' });
+      const paste = new Event('paste', { cancelable: true }) as ClipboardEvent;
+      Object.defineProperty(paste, 'clipboardData', { value: { files: [file] } });
+      q('.composer textarea')!.dispatchEvent(paste);
+      expect(paste.defaultPrevented).toBe(true);
+
+      const drop = new Event('drop', { cancelable: true }) as DragEvent;
+      Object.defineProperty(drop, 'dataTransfer', { value: { files: [file], types: ['Files'] } });
+      q('.ant-drawer .messages')!.dispatchEvent(drop);
+
+      expect(attached).toEqual([[file], [file]]);
+    });
+
+    it('disables attaching while file sharing is paused', async () => {
+      const { q, attached } = await renderWithFiles([], new Map(), false);
+      expect(q<HTMLButtonElement>('.composer .attach')!.disabled).toBe(true);
+      const paste = new Event('paste', { cancelable: true }) as ClipboardEvent;
+      Object.defineProperty(paste, 'clipboardData', { value: { files: [new File(['x'], 'x')] } });
+      q('.composer textarea')!.dispatchEvent(paste);
+      expect(attached).toEqual([]);
+    });
   });
 });

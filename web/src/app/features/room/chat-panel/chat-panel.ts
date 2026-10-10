@@ -18,7 +18,10 @@ import { NzTooltipModule } from 'ng-zorro-antd/tooltip';
 import { ChatItem } from '../../../core/chat/chat.service';
 import { QUICK_REACTIONS } from '../../../core/chat/emoji';
 import { MAX_CHAT_TEXT } from '../../../core/crypto/chat-crypto';
+import { SharedFile } from '../../../core/files/file-transfer.service';
 import { EmojiPicker } from '../emoji-picker/emoji-picker';
+import { FileCard } from '../file-card/file-card';
+import { ImageLightbox } from '../image-lightbox/image-lightbox';
 
 /** Messages closer together than this from one author share one name/time header. */
 export const GROUP_GAP_MS = 5 * 60_000;
@@ -34,6 +37,8 @@ const STICK_PX = 80;
   imports: [
     DatePipe,
     EmojiPicker,
+    FileCard,
+    ImageLightbox,
     NzButtonModule,
     NzDrawerModule,
     NzIconModule,
@@ -49,11 +54,18 @@ export class ChatPanel {
   readonly items = input.required<ChatItem[]>();
   /** We hold a chat key (false before the first key and while reconnecting). */
   readonly ready = input(false);
+  /** Shared files by id (FileTransferService). */
+  readonly files = input<ReadonlyMap<string, SharedFile>>(new Map());
+  /** Files can be shared now (usage guard). */
+  readonly canShare = input(true);
 
   readonly closed = output();
   readonly send = output<string>();
   readonly retry = output<string>();
   readonly react = output<{ id: string; emoji: string }>();
+  readonly attach = output<File[]>();
+  readonly download = output<string>();
+  readonly cancelDownload = output<string>();
 
   protected readonly maxLength = MAX_CHAT_TEXT;
   protected readonly quickReactions = QUICK_REACTIONS;
@@ -67,6 +79,14 @@ export class ChatPanel {
   protected readonly pickerOpen = signal(false);
   /** The message whose reaction picker is open. */
   protected readonly reactingTo = signal<string | undefined>(undefined);
+  /** The image open in the lightbox. */
+  protected readonly viewing = signal<string | undefined>(undefined);
+  protected readonly viewed = computed(() => {
+    const id = this.viewing();
+    return id ? this.files().get(id) : undefined;
+  });
+  /** Files are being dragged over the panel. */
+  protected readonly dragging = signal(false);
 
   /** Each item, and whether it starts a new group (name and time shown). */
   protected readonly rows = computed(() =>
@@ -131,6 +151,40 @@ export class ChatPanel {
     this.draft.set(field.value);
     this.pickerOpen.set(false);
     field.focus();
+  }
+
+  protected pick(input: HTMLInputElement): void {
+    const files = [...(input.files ?? [])];
+    input.value = '';
+    if (files.length) this.share(files);
+  }
+
+  protected onDragOver(event: DragEvent): void {
+    if (!event.dataTransfer?.types.includes('Files')) return;
+    event.preventDefault();
+    this.dragging.set(true);
+  }
+
+  protected onDrop(event: DragEvent): void {
+    this.dragging.set(false);
+    const files = [...(event.dataTransfer?.files ?? [])];
+    if (!files.length) return;
+    event.preventDefault();
+    this.share(files);
+  }
+
+  /** Pasted screenshots and files are shared; pasted text goes into the field as usual. */
+  protected onPaste(event: ClipboardEvent): void {
+    const files = [...(event.clipboardData?.files ?? [])];
+    if (!files.length) return;
+    event.preventDefault();
+    this.share(files);
+  }
+
+  private share(files: File[]): void {
+    if (!this.ready() || !this.canShare()) return;
+    this.stick = true;
+    this.attach.emit(files);
   }
 
   protected reactWith(id: string, emoji: string): void {
