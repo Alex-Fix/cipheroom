@@ -39,6 +39,7 @@ public static class DependencyInjection
             })
             // Track and session mutations aren't idempotent: a retried POST/PUT could add tracks twice.
             .AddStandardResilienceHandler(o => o.Retry.DisableForUnsafeHttpMethods());
+        services.AddSingleton<PendingOffers>();
         services.AddTransient<ISfu, CloudflareSfu>();
 
         // Free-tier usage from Cloudflare's GraphQL Analytics (read-only token), polled in the background.

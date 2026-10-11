@@ -8,9 +8,10 @@ namespace Cipheroom.Infrastructure.Rtc;
 /// <summary>
 /// <see cref="ISfu"/> on Cloudflare Realtime SFU. Adapter only: HTTP lives in <see cref="CloudflareSfuClient"/>.
 /// Every failure (HTTP, Cloudflare error code, per-track error, timeout) becomes a <see cref="MediaServerException"/>.
-/// Every request is timed by operation (<see cref="CipheroomMetrics"/>).
+/// Every request is timed by operation (<see cref="CipheroomMetrics"/>). Offers the client must answer are remembered
+/// as codec summaries (<see cref="PendingOffers"/>), so a refused answer is logged with what was offered and answered.
 /// </summary>
-public sealed class CloudflareSfu(CloudflareSfuClient cloudflare, CipheroomMetrics metrics) : ISfu
+public sealed class CloudflareSfu(CloudflareSfuClient cloudflare, CipheroomMetrics metrics, PendingOffers pendingOffers) : ISfu
 {
     // Highest quality first; Cloudflare steps down (asciibetical: f → h → q) when the receiver can't keep up.
     private const string FirstLayer = "f";
@@ -55,11 +56,25 @@ public sealed class CloudflareSfu(CloudflareSfuClient cloudflare, CipheroomMetri
                     t => t.TrackName,
                     (r, t) => new SfuPulledTrack(t.PublisherSessionId, t.TrackName, r.Mid!)),
             ];
-            return new SfuSubscribeResult(response.RequiresImmediateRenegotiation ? Sdp(response.SessionDescription) : null, pulled);
+            var offer = response.RequiresImmediateRenegotiation ? Sdp(response.SessionDescription) : null;
+            if (offer is not null)
+                pendingOffers.Remember(sessionId, offer);
+            return new SfuSubscribeResult(offer, pulled);
         }, cancellationToken);
 
-    public Task RenegotiateAsync(string sessionId, string answerSdp, CancellationToken cancellationToken) =>
-        Call("renegotiate", () => cloudflare.RenegotiateAsync(sessionId, new RenegotiateRequest(new SessionDescription("answer", answerSdp)), cancellationToken), cancellationToken);
+    public async Task RenegotiateAsync(string sessionId, string answerSdp, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await Call("renegotiate", () => cloudflare.RenegotiateAsync(sessionId, new RenegotiateRequest(new SessionDescription("answer", answerSdp)), cancellationToken), cancellationToken);
+            pendingOffers.Take(sessionId);
+        }
+        catch (MediaServerException ex) when (ex.InnerException is CloudflareSfuException refused)
+        {
+            // Codec names only: which codec a subscriber left out is what a refused answer usually comes down to.
+            throw new MediaServerException(new SfuAnswerRefusedException(pendingOffers.Take(sessionId), SdpCodecs.Summary(answerSdp), refused));
+        }
+    }
 
     public Task<string> RestartIceAsync(string sessionId, string offerSdp, CancellationToken cancellationToken) =>
         Call("restart_ice", async () =>
@@ -90,7 +105,9 @@ public sealed class CloudflareSfu(CloudflareSfuClient cloudflare, CipheroomMetri
                 new EstablishDataTransportRequest(new SfuDataChannel(Location: "remote", DataChannelName: ServerEventsChannel)),
                 cancellationToken);
             var id = response.DataChannel is { ErrorCode: null, Id: { } channelId } ? channelId : throw new MediaServerException();
-            return new SfuDataTransport(Sdp(response.SessionDescription), id);
+            var offer = Sdp(response.SessionDescription);
+            pendingOffers.Remember(sessionId, offer);
+            return new SfuDataTransport(offer, id);
         }, cancellationToken);
 
     public Task<int> PublishDataChannelAsync(string sessionId, string name, CancellationToken cancellationToken) =>

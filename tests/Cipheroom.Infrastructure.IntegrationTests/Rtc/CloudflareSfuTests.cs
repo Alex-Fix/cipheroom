@@ -225,8 +225,85 @@ public sealed class CloudflareSfuTests
 
         var error = await Assert.ThrowsAsync<MediaServerException>(() => Sfu(handler).RenegotiateAsync("s1", "v=0 answer", _ct));
 
-        var message = error.InnerException!.Message;
+        var message = Assert.IsType<SfuAnswerRefusedException>(error.InnerException).InnerException!.Message;
         Assert.Equal("Cloudflare SFU request failed: HTTP 400 invalid_session_description (Failed to set remote answer sdp: Called in wrong state: stable from [ip])", message);
+    }
+
+    [Fact]
+    public async Task A_refused_answer_is_logged_with_offered_and_answered_codecs_only()
+    {
+        const string offer = "v=0\r\no=- 1 2 IN IP4 203.0.113.9\r\nm=audio 9 UDP/TLS/RTP/SAVPF 111\r\na=mid:0\r\na=rtpmap:111 opus/48000/2\r\n"
+            + "m=video 9 UDP/TLS/RTP/SAVPF 98 99\r\nc=IN IP4 203.0.113.9\r\na=mid:3\r\na=fingerprint:sha-256 AB:CD\r\na=rtpmap:98 VP9/90000\r\na=rtpmap:99 rtx/90000\r\n";
+        const string answer = "v=0\r\nm=audio 9 UDP/TLS/RTP/SAVPF 111\r\na=mid:0\r\na=rtpmap:111 opus/48000/2\r\n"
+            + "m=video 9 UDP/TLS/RTP/SAVPF 96\r\na=mid:3\r\na=ice-pwd:secretpassword\r\na=rtpmap:96 VP8/90000\r\n";
+        var handler = new ScriptedHandler(
+            (HttpStatusCode.OK, $$"""{"requiresImmediateRenegotiation":true,"sessionDescription":{"type":"offer","sdp":{{System.Text.Json.JsonSerializer.Serialize(offer)}}},"tracks":[{"mid":"3","trackName":"p-camera"}]}"""),
+            (HttpStatusCode.BadRequest, """{"errorCode":"invalid_session_description","errorDescription":"Renegotiation failed: The subscriber's SDP is missing the published track's codec."}"""));
+        var (sfu, provider) = SfuWithServices(handler);
+
+        await sfu.SubscribeAsync("s1", [new SfuRemoteTrack("pub", "p-camera", Simulcast: true)], _ct);
+        var error = await Assert.ThrowsAsync<MediaServerException>(() => sfu.RenegotiateAsync("s1", answer, _ct));
+
+        var refused = Assert.IsType<SfuAnswerRefusedException>(error.InnerException);
+        Assert.Equal("SFU refused the answer. Offered: 0:audio[opus] 3:video[VP9]. Answered: 0:audio[opus] 3:video[VP8].", refused.Message);
+        Assert.Contains("missing the published track's codec", refused.InnerException!.Message);
+        Assert.DoesNotContain("203.0.113.9", error.ToString());
+        Assert.DoesNotContain("secretpassword", error.ToString());
+        Assert.DoesNotContain("AB:CD", error.ToString());
+        Assert.Equal(0, provider.GetRequiredService<PendingOffers>().Count);
+    }
+
+    [Fact]
+    public async Task An_accepted_answer_settles_the_pending_offer()
+    {
+        var handler = new ScriptedHandler(
+            (HttpStatusCode.OK, """{"requiresImmediateRenegotiation":true,"sessionDescription":{"type":"offer","sdp":"v=0 sfu offer"},"tracks":[]}"""),
+            (HttpStatusCode.OK, "{}"));
+        var (sfu, provider) = SfuWithServices(handler);
+
+        await sfu.SubscribeAsync("s1", [new SfuRemoteTrack("pub", "p-camera", Simulcast: true)], _ct);
+        Assert.Equal(1, provider.GetRequiredService<PendingOffers>().Count);
+        await sfu.RenegotiateAsync("s1", "v=0 answer", _ct);
+
+        Assert.Equal(0, provider.GetRequiredService<PendingOffers>().Count);
+    }
+
+    [Theory]
+    [InlineData(null, "none")]
+    [InlineData("", "none")]
+    [InlineData("v=0 no sections", "none")]
+    [InlineData("v=0\nm=video 9 X 96\na=mid:1\na=rtpmap:96 VP8/90000\na=rtpmap:97 red/90000\na=rtpmap:98 ulpfec/90000", "1:video[VP8]")]
+    [InlineData("v=0\nm=video 9 X 96\na=mid:1 192.168.0.1\na=rtpmap:96 <script>/90000\na=rtpmap:97", "?:video[?]")]
+    [InlineData("v=0\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel\na=mid:2", "2:application[]")]
+    public void Codec_summaries_hold_mids_kinds_and_codec_names_only(string? sdp, string expected) =>
+        Assert.Equal(expected, SdpCodecs.Summary(sdp));
+
+    [Fact]
+    public void Codec_summaries_are_bounded()
+    {
+        var sdp = "v=0" + string.Concat(Enumerable.Range(0, 200).Select(i => $"\nm=video 9 X 96\na=mid:{i}\na=rtpmap:96 VP8/90000"));
+        var summary = SdpCodecs.Summary(sdp);
+
+        Assert.True(summary.Length <= SdpCodecs.MaxLength + 1);
+        Assert.DoesNotContain($"{SdpCodecs.MaxSections}:video", summary);
+    }
+
+    [Fact]
+    public void Pending_offers_drop_the_oldest_when_full()
+    {
+        var time = new Microsoft.Extensions.Time.Testing.FakeTimeProvider();
+        var offers = new PendingOffers(time);
+        for (var i = 0; i < PendingOffers.Capacity; i++)
+        {
+            offers.Remember($"s{i}", "v=0\nm=audio 9 X 111\na=mid:0\na=rtpmap:111 opus/48000");
+            time.Advance(TimeSpan.FromMilliseconds(1));
+        }
+
+        offers.Remember("newest", "v=0");
+
+        Assert.Equal(PendingOffers.Capacity, offers.Count);
+        Assert.Equal("unknown", offers.Take("s0"));
+        Assert.Equal("0:audio[opus]", offers.Take("s1"));
     }
 
     [Theory]
@@ -242,9 +319,9 @@ public sealed class CloudflareSfuTests
     public void Long_reasons_are_cut() =>
         Assert.Equal(CloudflareSfuException.MaxReasonLength + 1, CloudflareSfuException.SafeReason(new string('x', 500))!.Length);
 
-    private static ISfu Sfu(StubHandler handler) => SfuWithServices(handler).Sfu;
+    private static ISfu Sfu(HttpMessageHandler handler) => SfuWithServices(handler).Sfu;
 
-    private static (ISfu Sfu, ServiceProvider Provider) SfuWithServices(StubHandler handler)
+    private static (ISfu Sfu, ServiceProvider Provider) SfuWithServices(HttpMessageHandler handler)
     {
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {
@@ -266,6 +343,18 @@ public sealed class CloudflareSfuTests
         var sfu = provider.GetRequiredService<ISfu>();
         Assert.IsType<CloudflareSfu>(sfu);
         return (sfu, provider);
+    }
+
+    /// <summary>Answers each request with the next scripted response.</summary>
+    private sealed class ScriptedHandler(params (HttpStatusCode Status, string Body)[] responses) : HttpMessageHandler
+    {
+        private int _next;
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var (status, body) = responses[_next++];
+            return Task.FromResult(new HttpResponseMessage(status) { Content = new StringContent(body, Encoding.UTF8, "application/json") });
+        }
     }
 
     private sealed record Recorded(HttpMethod Method, string Uri, string? Authorization, string? Body);
