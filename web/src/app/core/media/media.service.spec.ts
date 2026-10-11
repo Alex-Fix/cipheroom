@@ -794,9 +794,9 @@ describe('MediaService', () => {
       expect(signaling.subscribeTracks).toHaveBeenCalledOnce();
     });
 
-    it('reserves the camera with muted placeholder frames; turning it on later is a track swap', async () => {
+    /** jsdom has no canvas capture: provide one for the camera placeholder. */
+    function placeholderCapture() {
       const placeholder = fakeTrack('video', '', 180);
-      // jsdom has no canvas capture: provide one for the placeholder.
       Object.defineProperty(HTMLCanvasElement.prototype, 'captureStream', {
         configurable: true,
         value: () => ({ getVideoTracks: () => [placeholder] }),
@@ -805,28 +805,91 @@ describe('MediaService', () => {
         delete (HTMLCanvasElement.prototype as { captureStream?: unknown }).captureStream;
       });
       vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null);
-      const { media, signaling, pc } = setup();
+      return placeholder;
+    }
 
-      await media.reserveCamera();
+    it('publishes microphone and camera in one negotiation, both encrypted before the offer', async () => {
+      const { media, signaling, pc, frames, mic, camera } = setup();
+      const createOffer = vi.spyOn(pc, 'createOffer');
 
-      expect(signaling.publishTracks).toHaveBeenCalledWith('v=0 offer 1', [
-        { mid: '0', source: 'camera' },
+      const failures = await media.publishOwnTracks({ microphone: true, camera: true });
+
+      expect(failures).toEqual({});
+      expect(createOffer).toHaveBeenCalledOnce();
+      expect(frames.attachSender).toHaveBeenCalledTimes(2);
+      expect(frames.attachSender.mock.invocationCallOrder[1]).toBeLessThan(
+        createOffer.mock.invocationCallOrder[0],
+      );
+      expect(signaling.publishTracks).toHaveBeenCalledExactlyOnceWith('v=0 offer 2', [
+        { mid: '0', source: 'microphone' },
+        { mid: '1', source: 'camera' },
       ]);
+      expect(media.tiles()[0].video).toBe(camera);
+      expect(mic.enabled).toBe(true);
+      expect(media.micEnabled()).toBe(true);
+      expect(media.cameraEnabled()).toBe(true);
+      expect(signaling.setTrackMuted).not.toHaveBeenCalled();
+    });
+
+    it('publishes an unwanted microphone muted and the camera as placeholder frames; turning them on is a swap', async () => {
+      const placeholder = placeholderCapture();
+      const { media, signaling, pc, mic } = setup();
+
+      await media.publishOwnTracks({ microphone: false, camera: false });
+
+      expect(signaling.publishTracks).toHaveBeenCalledExactlyOnceWith('v=0 offer 2', [
+        { mid: '0', source: 'microphone' },
+        { mid: '1', source: 'camera' },
+      ]);
+      expect(mic.enabled).toBe(false);
+      expect(signaling.setTrackMuted).toHaveBeenCalledWith('microphone', true);
       expect(signaling.setTrackMuted).toHaveBeenCalledWith('camera', true);
+      expect(media.micEnabled()).toBe(false);
       expect(media.cameraEnabled()).toBe(false);
       expect(media.tiles()[0].video).toBeUndefined();
 
+      await media.setMicrophone(true);
       await media.setCamera(true);
 
       expect(signaling.publishTracks).toHaveBeenCalledOnce();
-      expect(pc.transceivers[0].sender.replaceTrack).toHaveBeenCalled();
+      expect(mic.enabled).toBe(true);
+      expect(pc.transceivers[1].sender.replaceTrack).toHaveBeenCalled();
       expect(placeholder.stop).toHaveBeenCalled();
       expect(signaling.setTrackMuted).toHaveBeenLastCalledWith('camera', false);
       expect(media.cameraEnabled()).toBe(true);
+    });
 
-      // Already reserved / published: nothing to do.
-      await media.reserveCamera();
-      expect(signaling.publishTracks).toHaveBeenCalledOnce();
+    it('returns a denied camera and still publishes the microphone with the camera reserved', async () => {
+      placeholderCapture();
+      const { media, signaling } = setup();
+      const denied = new DOMException('denied', 'NotAllowedError');
+      const getUserMedia = vi.mocked(navigator.mediaDevices.getUserMedia);
+      const capture = getUserMedia.getMockImplementation()!;
+      getUserMedia.mockImplementation(async (c) => (c?.video ? Promise.reject(denied) : capture(c)));
+
+      const failures = await media.publishOwnTracks({ microphone: true, camera: true });
+
+      expect(failures).toEqual({ camera: denied });
+      expect(signaling.publishTracks).toHaveBeenCalledExactlyOnceWith('v=0 offer 2', [
+        { mid: '0', source: 'microphone' },
+        { mid: '1', source: 'camera' },
+      ]);
+      expect(media.cameraEnabled()).toBe(false);
+      expect(signaling.setTrackMuted).toHaveBeenCalledWith('camera', true);
+    });
+
+    it('a failed negotiation rejects, rolls back and stops both captures', async () => {
+      const { media, signaling, pc, mic, camera } = setup();
+      signaling.publishTracks.mockRejectedValueOnce(new Error('Media server unavailable.'));
+
+      await expect(media.publishOwnTracks({ microphone: true, camera: true })).rejects.toThrow();
+
+      expect(pc.signalingState).toBe('stable');
+      expect(pc.transceivers.every((t) => t.stopped)).toBe(true);
+      expect(mic.stop).toHaveBeenCalled();
+      expect(camera.stop).toHaveBeenCalled();
+      expect(media.tiles()[0].video).toBeUndefined();
+      expect(media.micEnabled()).toBe(false);
     });
   });
 

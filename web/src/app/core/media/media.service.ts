@@ -53,6 +53,13 @@ import { SerialQueue } from './serial-queue';
 import { SpeakingDetector, sameMembers } from './speaking';
 import { TrackKey, participantOf, subscriptionDiff, trackKey } from './subscriptions';
 
+/** A track to publish; `placeholder`: placeholder frames, not a capture (kept in `placeholders`, not shown). */
+interface Publication {
+  source: TrackSource;
+  track: MediaStreamTrack;
+  placeholder?: boolean;
+}
+
 /** Who we are in the room (from JoinRoom). */
 export interface Self {
   id: string;
@@ -69,7 +76,7 @@ export interface Self {
  * - Every SFU/peer-connection mutation runs through one queue: negotiations must never overlap.
  * - Negotiation order: our own tracks are published before we receive anyone else's (`startReceiving`). iOS Safari
  *   can't add a camera once the connection began by answering the SFU's offer; the camera transceiver is therefore
- *   always negotiated up front (`reserveCamera`), and later device changes only swap tracks.
+ *   always negotiated up front (`publishOwnTracks`), and later device changes only swap tracks.
  * - Quality: we send the camera at the chosen quality (`videoQuality`: 4K, Full HD by default, or 720p; a camera
  *   that can't do it sends the best it has below) as f/h/q simulcast, and receive the layer that matches each camera tile's size (`q` when hidden).
  * - Codec: chosen when we connect (`sendingCodec`, from `videoCodec` and what everyone in the call can decode — see
@@ -324,15 +331,50 @@ export class MediaService implements OnDestroy {
   }
 
   /**
-   * Publishes the camera without capturing (placeholder frames, muted) when it isn't on, so turning it on later is a
-   * track swap rather than a new negotiation after we've started receiving.
+   * Publishes our microphone and camera when we join, in one negotiation and before we receive anything (iOS Safari
+   * can't add them after answering the SFU). Both are always published so turning them on later never renegotiates:
+   * the microphone disabled when `wanted.microphone` is false, the camera as muted placeholder frames when it's off,
+   * denied or missing. Capture failures are returned per device (the call goes on without it); a failed
+   * negotiation rejects.
    */
-  async reserveCamera(): Promise<void> {
-    if (this.senders.has('camera')) return;
-    const placeholder = blankVideoTrack();
-    if (!placeholder) return;
-    await this.publish('camera', placeholder, { placeholder: true });
-    await this.signaling.setTrackMuted('camera', true);
+  async publishOwnTracks(wanted: {
+    microphone: boolean;
+    camera: boolean;
+  }): Promise<Partial<Record<'microphone' | 'camera', unknown>>> {
+    const failures: Partial<Record<'microphone' | 'camera', unknown>> = {};
+    const [mic, camera] = await Promise.all([
+      navigator.mediaDevices.getUserMedia({ audio: true }).then(
+        (s) => s.getAudioTracks()[0],
+        (e: unknown) => void (failures.microphone = e),
+      ),
+      wanted.camera
+        ? navigator.mediaDevices.getUserMedia({ video: this.cameraConstraints() }).then(
+            (s) => s.getVideoTracks()[0],
+            (e: unknown) => void (failures.camera = e),
+          )
+        : undefined,
+    ]);
+    const placeholder = camera ? undefined : (blankVideoTrack() ?? undefined);
+    const items: Publication[] = [];
+    if (mic) items.push({ source: 'microphone', track: mic });
+    if (camera) items.push({ source: 'camera', track: camera });
+    else if (placeholder) items.push({ source: 'camera', track: placeholder, placeholder: true });
+    if (!items.length) return failures;
+
+    await this.publishAll(items);
+    if (mic) {
+      mic.enabled = wanted.microphone;
+      this.micEnabled.set(wanted.microphone);
+      if (!wanted.microphone) await this.signaling.setTrackMuted('microphone', true);
+    }
+    if (camera) {
+      this.cameraEnabled.set(true);
+      this.updateCameraInfo();
+      await this.refreshCameras();
+    } else if (placeholder) {
+      await this.signaling.setTrackMuted('camera', true);
+    }
+    return failures;
   }
 
   /** Rejects with the browser's DOMException (e.g. NotAllowedError) when the device can't be used. */
@@ -532,43 +574,49 @@ export class MediaService implements OnDestroy {
     }
   }
 
-  /** `placeholder`: the track is placeholder frames, not a capture (kept in `placeholders`, not shown locally). */
-  private publish(
-    source: TrackSource,
-    track: MediaStreamTrack,
-    { placeholder = false } = {},
-  ): Promise<void> {
+  private publish(source: TrackSource, track: MediaStreamTrack): Promise<void> {
+    return this.publishAll([{ source, track }]);
+  }
+
+  /** Publishes tracks in one negotiation: one offer, one PublishTracks, one answer. All or nothing. */
+  private publishAll(items: readonly Publication[]): Promise<void> {
     return this.queue.run(async () => {
       const pc = this.requirePc();
       const codec = this.requireCodec();
       const capabilities = sendCapabilities();
-      const transceiver = addSendTransceiver(pc, track, source, codec);
-      const kind = track.kind as MediaKind;
-      // Before the first frame leaves: frames are only ever sent encrypted.
-      this.requireFrames().attachSender(
-        transceiver.sender,
-        kind,
-        kind === 'video' ? codec : undefined,
-      );
-      if (kind === 'video') preferCodec(transceiver, capabilities, codec);
+      const transceivers = items.map(({ source, track }) => {
+        const transceiver = addSendTransceiver(pc, track, source, codec);
+        const kind = track.kind as MediaKind;
+        // Before the first frame leaves: frames are only ever sent encrypted.
+        this.requireFrames().attachSender(
+          transceiver.sender,
+          kind,
+          kind === 'video' ? codec : undefined,
+        );
+        if (kind === 'video') preferCodec(transceiver, capabilities, codec);
+        return transceiver;
+      });
       try {
         await pc.setLocalDescription(await pc.createOffer());
-        const answer = await this.signaling.publishTracks(pc.localDescription!.sdp, [
-          { mid: transceiver.mid!, source },
-        ]);
+        const answer = await this.signaling.publishTracks(
+          pc.localDescription!.sdp,
+          items.map(({ source }, i) => ({ mid: transceivers[i].mid!, source })),
+        );
         await pc.setRemoteDescription({ type: 'answer', sdp: answer });
       } catch (e) {
         this.recordFailure('publish', undefined, pc.localDescription?.sdp);
         // Leave the connection ready for the next negotiation.
         if (pc.signalingState === 'have-local-offer')
           await pc.setLocalDescription({ type: 'rollback' });
-        transceiver.stop();
-        track.stop();
+        transceivers.forEach((t) => t.stop());
+        items.forEach(({ track }) => track.stop());
         throw e;
       }
-      this.senders.set(source, transceiver);
-      if (placeholder) this.placeholders.set(source, track);
-      else this.setLocalTrack(source, track);
+      items.forEach(({ source, track, placeholder }, i) => {
+        this.senders.set(source, transceivers[i]);
+        if (placeholder) this.placeholders.set(source, track);
+        else this.setLocalTrack(source, track);
+      });
     });
   }
 

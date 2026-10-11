@@ -701,23 +701,18 @@ export class Room implements OnInit, OnDestroy {
   }
 
   /**
-   * Publishes our microphone and camera before we receive anyone else's tracks: iOS Safari can't add them once the
-   * connection began by answering the SFU. Devices that should be off are still published — the microphone muted,
-   * the camera as muted placeholder frames — so turning them on later never needs a new negotiation.
+   * Publishes our microphone and camera in one negotiation before we receive anyone else's tracks (see
+   * MediaService.publishOwnTracks). A device that can't be used becomes a toast; the call goes on without it.
    */
   private async publishOwnTracks(devices: Devices, run: number): Promise<void> {
-    await Promise.all([
-      this.setDevice('microphone', true, run).then(() =>
-        devices.microphone || !this.media.micEnabled() || run !== this.joinRun
-          ? undefined
-          : this.setDevice('microphone', false, run),
-      ),
-      // Usage guard: no camera while it's audio-only (its slot is reserved below, so it can come back later).
-      devices.camera && this.media.videoAllowed() ? this.setDevice('camera', true, run) : undefined,
-    ]);
-    // Camera off, denied or missing: reserve its slot anyway.
-    if (run === this.joinRun && !this.media.cameraEnabled()) {
-      await this.media.reserveCamera().catch(() => undefined);
+    const failures = await this.media.publishOwnTracks({
+      microphone: devices.microphone,
+      // Usage guard: no camera while it's audio-only (its slot is still reserved, so it can come back later).
+      camera: devices.camera && this.media.videoAllowed(),
+    });
+    if (run !== this.joinRun) return;
+    for (const device of ['microphone', 'camera'] as const) {
+      if (device in failures) this.deviceFailed(device, failures[device]);
     }
   }
 
