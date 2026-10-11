@@ -21,8 +21,9 @@ import { E2eeStatsDto, ParticipantDto, RtcConfig, TrackSource } from '../signali
 import { AudioPlayback } from './audio-playback';
 import { VIDEO_CODECS, VideoCodec, decodableCodecs, encodableCodecs, sendCodec } from './codecs';
 import { CloudflareTransport } from './cloudflare-transport';
+import { LiveKitTransport } from './livekit-transport';
 import { receiveLayer } from './layers';
-import { MediaTransport, Publication, TransportEvents } from './media-transport';
+import { FileChannel, MediaTransport, Publication, TransportEvents } from './media-transport';
 import { CallParticipant, MediaState, Tile } from './media.types';
 import {
   VideoQuality,
@@ -394,21 +395,21 @@ export class MediaService implements OnDestroy {
   }
 
   /**
-   * Publishes a data channel (one file transfer) under our random `name` and resolves once it's open. Reliable and
-   * ordered; binary messages as ArrayBuffers. Needs receiving to have started: the transport is added by answering an
-   * SFU offer, like a subscribe (negotiation order).
+   * Publishes a channel (one file transfer) under our random `name` for `recipients` and resolves once it's open.
+   * Reliable; binary messages as ArrayBuffers. Needs receiving to have started (on Cloudflare the transport is added
+   * by answering an SFU offer, like a subscribe).
    */
-  async publishChannel(name: string): Promise<RTCDataChannel> {
-    return this.requireReceiving().publishChannel(name);
+  async publishChannel(name: string, recipients: readonly string[] = []): Promise<FileChannel> {
+    return this.requireReceiving().publishChannel(name, recipients);
   }
 
   /** Receives `participantId`'s data channel `name`; resolves once it's open. */
-  async subscribeChannel(participantId: string, name: string): Promise<RTCDataChannel> {
+  async subscribeChannel(participantId: string, name: string): Promise<FileChannel> {
     return this.requireReceiving().subscribeChannel(participantId, name);
   }
 
   /** Closes a channel from publishChannel (`participantId` omitted) or subscribeChannel. */
-  async closeChannel(channel: RTCDataChannel, name: string, participantId?: string): Promise<void> {
+  async closeChannel(channel: FileChannel, name: string, participantId?: string): Promise<void> {
     channel.close();
     await this.transport?.closeChannel(name, participantId);
   }
@@ -556,6 +557,8 @@ export class MediaService implements OnDestroy {
     switch (config.provider) {
       case 'cloudflare':
         return new CloudflareTransport(config, frames, this.signaling, events, wanted);
+      case 'livekit':
+        return new LiveKitTransport(config, frames, this.signaling, events);
     }
   }
 

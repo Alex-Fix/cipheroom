@@ -36,7 +36,7 @@ export class FrameCrypto {
   >();
 
   constructor(
-    private readonly api: FrameTransformApi,
+    private api: FrameTransformApi,
     /** Debug (`?e2ee=passthrough`): receive without decrypting (proves the SFU carries ciphertext). */
     private readonly passThrough = false,
     onStats?: (stats: FrameStats) => void,
@@ -50,6 +50,21 @@ export class FrameCrypto {
 
   /** The worker's counters since it started (every few seconds; counts only). */
   latestStats?: FrameStats;
+
+  /** The encoded-transform API in use. */
+  get transformApi(): FrameTransformApi {
+    return this.api;
+  }
+
+  /**
+   * LiveKit mode: use encoded streams where the browser has them (Chromium). livekit-client creates its peer
+   * connections itself, and on them Chromium silently bypasses script transforms on receivers — LiveKit makes the same
+   * split (docs/plans/2026-10-11-livekit-media-mode-design.md, Spike results). Only before anything is attached.
+   */
+  preferEncodedStreams(): void {
+    if (this.nextId > 0) throw new Error('Frame transforms are already attached.');
+    if (typeof RTCRtpSender !== 'undefined' && 'createEncodedStreams' in RTCRtpSender.prototype) this.api = 'encoded-streams';
+  }
 
   /** Extra RTCPeerConnection settings this API needs. */
   get peerConnectionConfig(): object {

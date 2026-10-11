@@ -12,6 +12,24 @@ export interface Publication {
   placeholder?: boolean;
 }
 
+/**
+ * One file transfer's channel: the part of RTCDataChannel FileTransferService uses. Cloudflare: a real data channel
+ * on the SFU; LiveKit: reliable data messages under the channel's name. Carries only file-crypto-sealed frames.
+ */
+export interface FileChannel {
+  readonly readyState: RTCDataChannelState;
+  /** Always 'arraybuffer': messages arrive as ArrayBuffers. */
+  readonly binaryType: BinaryType;
+  readonly bufferedAmount: number;
+  bufferedAmountLowThreshold: number;
+  send(data: ArrayBuffer | ArrayBufferView<ArrayBuffer>): void;
+  close(): void;
+  onmessage: ((event: MessageEvent<ArrayBuffer>) => void) | null;
+  onclose: ((event: Event) => void) | null;
+  addEventListener(type: 'bufferedamountlow' | 'close', listener: () => void): void;
+  removeEventListener(type: 'bufferedamountlow' | 'close', listener: () => void): void;
+}
+
 /** What a transport tells MediaService. Called synchronously, in the order things happen. */
 export interface TransportEvents {
   /** The connection to the media server changed state. */
@@ -52,9 +70,9 @@ export interface MediaTransport {
   /** Receives `layer` of a remote camera (no-op until it's subscribed, or when unchanged). */
   setLayer(key: TrackKey, layer: VideoLayer): Promise<void>;
 
-  /** File transfer channels (FileTransferService through MediaService). */
-  publishChannel(name: string): Promise<RTCDataChannel>;
-  subscribeChannel(participantId: string, name: string): Promise<RTCDataChannel>;
+  /** File transfer channels (FileTransferService through MediaService); `recipients`: who asked for it. */
+  publishChannel(name: string, recipients: readonly string[]): Promise<FileChannel>;
+  subscribeChannel(participantId: string, name: string): Promise<FileChannel>;
   closeChannel(name: string, participantId?: string): Promise<void>;
 
   /** The connection's stats (getStats), or undefined once closed / unavailable. */

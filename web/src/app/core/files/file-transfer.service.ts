@@ -19,6 +19,7 @@ import {
   sealChunk,
 } from '../crypto/file-crypto';
 import { ChunkRange, FileCard, FileEvent, MAX_RANGES } from '../crypto/file-events';
+import { FileChannel } from '../media/media-transport';
 import { MediaService } from '../media/media.service';
 import { SignalingService } from '../signaling/signaling.service';
 import { canStrip, stripImageMetadata } from './image-metadata';
@@ -110,7 +111,7 @@ interface Download {
   chunks: (Uint8Array<ArrayBuffer> | undefined)[];
   hashes: (Uint8Array | undefined)[];
   received: number;
-  channel?: { name: string; data: RTCDataChannel };
+  channel?: { name: string; data: FileChannel };
   rounds: number;
   stallTimer?: ReturnType<typeof setTimeout>;
   waitTimer?: ReturnType<typeof setTimeout>;
@@ -314,7 +315,7 @@ export class FileTransferService implements OnDestroy {
     if (!offer || !to.length || !this.allowed()) return;
 
     const name = toBase64Url(crypto.getRandomValues(new Uint8Array(16)));
-    const channel = await this.media.publishChannel(name);
+    const channel = await this.media.publishChannel(name, to);
     try {
       // Everyone gets the union of what was asked; each keeps what it lacks.
       const ranges = mergeRanges(to.flatMap((id) => batch.requesters.get(id)!)).slice(0, MAX_RANGES);
@@ -351,7 +352,7 @@ export class FileTransferService implements OnDestroy {
     if (entry.waiting.size === 0) entry.done();
   }
 
-  private async pump(offer: Offer, channel: RTCDataChannel, ranges: ChunkRange[]): Promise<void> {
+  private async pump(offer: Offer, channel: FileChannel, ranges: ChunkRange[]): Promise<void> {
     channel.bufferedAmountLowThreshold = BUFFER_LOW;
     const total = ranges.reduce((n, [a, b]) => n + b - a, 0);
     let sent = 0;
@@ -459,7 +460,7 @@ export class FileTransferService implements OnDestroy {
     if (!file || !download || file.fromId !== fromId || !['waiting', 'downloading'].includes(file.state)) return;
     clearTimeout(download.waitTimer);
     await this.closeChannel(fileId, download);
-    let data: RTCDataChannel;
+    let data: FileChannel;
     try {
       data = await this.media.subscribeChannel(fromId, channelName);
     } catch {
@@ -668,7 +669,7 @@ async function readChunk(source: Blob, index: number): Promise<Uint8Array<ArrayB
   return new Uint8Array(await source.slice(index * CHUNK_BYTES, (index + 1) * CHUNK_BYTES).arrayBuffer());
 }
 
-function drained(channel: RTCDataChannel): Promise<void> {
+function drained(channel: FileChannel): Promise<void> {
   return new Promise((resolve) => {
     const done = () => {
       channel.removeEventListener('bufferedamountlow', done);
