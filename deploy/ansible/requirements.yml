@@ -1,5 +1,6 @@
+# Exact versions: a deploy runs the code that was reviewed, not whatever Galaxy published since (bump deliberately).
 collections:
   - name: community.general
-    version: ">=9.0.0"
+    version: "==13.1.0"
   - name: ansible.posix
-    version: ">=1.5.0"
+    version: "==2.2.0"
