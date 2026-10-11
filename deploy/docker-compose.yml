@@ -31,6 +31,9 @@ services:
       # Trust X-Forwarded-* from our proxies only (cloudflared → nginx → api). The api publishes no ports, so only
       # containers on the compose network (Docker's 172.16.0.0/12 range) can reach it.
       ForwardedHeaders__KnownNetworks__0: 172.16.0.0/12
+      # Host header allowlist ("host1;host2"). Ansible sets PUBLIC_HOST;localhost on a server; home keeps * so LAN
+      # access by IP address works.
+      AllowedHosts: ${API_ALLOWED_HOSTS:-*}
       # Telemetry: exported only when scripts/up.sh --observability sets the endpoint (otherwise console logs only).
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
       OTEL_METRIC_EXPORT_INTERVAL: "30000"
@@ -50,6 +53,7 @@ services:
     volumes:
       # The guard's month-to-date estimate survives restarts (numbers and timestamps only).
       - api-data:/data
+    networks: [default, otlp]
     restart: unless-stopped
 
   web:
@@ -66,6 +70,7 @@ services:
     depends_on:
       api:
         condition: service_healthy
+    networks: [default, grafana]
     restart: unless-stopped
 
   # MEDIA_MODE=livekit (profile livekit): a self-hosted SFU on this machine's public IP. Signaling (7880) stays on the
@@ -112,6 +117,7 @@ services:
     volumes:
       - ./observability/otel-collector.yaml:/etc/otelcol/config.yaml:ro
     mem_limit: 256m
+    networks: [otlp, telemetry]
     restart: unless-stopped
     profiles: [observability]
 
@@ -128,6 +134,7 @@ services:
       - ./observability/prometheus.yaml:/etc/prometheus/prometheus.yaml:ro
       - prometheus-data:/prometheus
     mem_limit: 384m
+    networks: [telemetry]
     restart: unless-stopped
     profiles: [observability]
 
@@ -139,6 +146,7 @@ services:
       - ./observability/loki.yaml:/etc/loki/config.yaml:ro
       - loki-data:/loki
     mem_limit: 256m
+    networks: [telemetry]
     restart: unless-stopped
     profiles: [observability]
 
@@ -150,6 +158,7 @@ services:
       - ./observability/tempo.yaml:/etc/tempo/config.yaml:ro
       - tempo-data:/var/tempo
     mem_limit: 256m
+    networks: [telemetry]
     restart: unless-stopped
     profiles: [observability]
 
@@ -193,6 +202,7 @@ services:
       - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
       - grafana-data:/var/lib/grafana
     mem_limit: 256m
+    networks: [grafana, telemetry]
     restart: unless-stopped
     profiles: [observability]
 
@@ -210,6 +220,7 @@ services:
       - /:/rootfs:ro
     pid: host
     mem_limit: 64m
+    networks: [telemetry]
     restart: unless-stopped
     profiles: [observability]
 
@@ -229,8 +240,21 @@ services:
       - /var/lib/docker/:/var/lib/docker:ro
     privileged: true
     mem_limit: 192m
+    networks: [telemetry]
     restart: unless-stopped
     profiles: [observability]
+
+# Edge services (api, web, livekit, cloudflared) are on `default`, which reaches the internet. Telemetry lives on
+# internal networks (no internet, nothing published): the api reaches only the collector (otlp), nginx only Grafana
+# (grafana), and nothing internet-facing reaches Prometheus, Loki, Tempo or the privileged cadvisor.
+networks:
+  default:
+  otlp:
+    internal: true
+  grafana:
+    internal: true
+  telemetry:
+    internal: true
 
 volumes:
   api-data:

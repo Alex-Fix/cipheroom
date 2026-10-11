@@ -40,7 +40,7 @@ compromised client devices.
 - Errors: `HubException` with a generic message. Don't leak stack traces, config or internal state.
 - Logging: ids, counts and lengths only. **Never** log tokens, ICE credentials, envelopes, chat ciphertext, SDP, display names in bulk, or raw client payloads.
 - Limits: `MaximumReceiveMessageSize` (64 KB), per-connection rate limits on chatty methods, a max participants per room.
-- `AllowedHosts`: set it to the real hostname in production (not `*`).
+- `AllowedHosts`: the real hostname on servers (Ansible sets `API_ALLOWED_HOSTS=PUBLIC_HOST;localhost`); home keeps `*` so LAN access by IP works.
 
 ### SFU proxy and TURN
 - The SFU app secret stays in the api (Bearer header set once in the typed client). Clients never get it, nor
@@ -62,6 +62,9 @@ compromised client devices.
 - Security headers live at **server level** in `deploy/nginx/default.conf` (an `add_header` in a location silently drops them): CSP, `Referrer-Policy: no-referrer`, `Permissions-Policy`, `X-Content-Type-Options`, `Strict-Transport-Security` (this host only). A location with its own `add_header` (the `/grafana/` ones) repeats what it still needs, HSTS included.
 - Cloudflare dashboard: SSL/TLS mode Full, "Always Use HTTPS" on, HSTS on (a second layer to nginx's), minimum TLS 1.2.
 - Only the web container is published, and only on `127.0.0.1`. At home no UDP or media ports are published — media goes to Cloudflare. In LiveKit mode on a server, only LiveKit's media and TURN ports are (never its 7880 signaling/API port).
+- Networks: edge services (api, web, livekit, cloudflared) on `default`; telemetry on internal networks (`telemetry`, plus `otlp` = api + collector, `grafana` = web + Grafana). A new service joins only the networks it needs; nothing internet-facing joins `telemetry`.
+- Dependencies: Dependabot (`.github/dependabot.yml`, weekly, grouped, release cooldown). Dockerfile base images are pinned by digest; review and test each update PR like any change.
+- SSH on servers: key-only, `AllowUsers`, modern algorithms only (`sshd.conf.j2`), no keys for root.
 - Containers run as non-root (`USER app`, nginx-unprivileged) where the image allows. Every service gets the compose file's `x-hardening` block (`cap_drop: [ALL]`, `no-new-privileges`); a service that needs a capability adds just that one with a comment; `privileged` only for cadvisor. Images are pinned to versions, never `latest`.
 - Servers: SSH host keys are pinned once per server (`scripts/provision.sh`) and only verified afterwards — never re-scanned and trusted on a later run.
 - `deploy/.env` is gitignored and `chmod 600`. Claude Code is denied from reading it. Ask the user to edit it via `!` commands.

@@ -74,7 +74,8 @@ firewall `<name>-server` = 22/tcp from `allowed_ssh_cidrs` only, plus LiveKit's 
 - Deploys verify `https://PUBLIC_HOST/` through the tunnel (`up --wait` alone misses a crash-looping cloudflared) and
   record good tags in `/opt/cipheroom/deployed-tags` (current + previous, kept for rollback).
 - New compose services that the server needs: nothing to add if they're in the compose file; files they mount must be
-  copied by the `cipheroom` role. The mode is `cipheroom_media_mode`, taken from `MEDIA_MODE` in the merged `.env`.
+  copied by the `cipheroom` role. Give each one the `x-hardening` block and only the networks it needs (edge services
+  `default`; telemetry `telemetry`, internal). The mode is `cipheroom_media_mode`, taken from `MEDIA_MODE` in the merged `.env`.
 - Validate: `scripts/lint.sh` (terraform validate, ansible syntax/lint, shellcheck). Guide: `docs/deployment-hetzner.md`.
 
 ## Commands

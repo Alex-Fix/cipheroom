@@ -59,11 +59,18 @@
         path: /etc/fstab
         line: /swapfile none swap sw 0 0
 
-- name: Prefer RAM over swap
+- name: Kernel settings
   ansible.posix.sysctl:
-    name: vm.swappiness
-    value: "10"
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
     sysctl_file: /etc/sysctl.d/90-cipheroom.conf
+  loop:
+    - { name: vm.swappiness, value: "10" } # prefer RAM over swap
+    # Docker turns on forwarding, which makes the kernel send ICMP redirects; this host is no router for anyone.
+    - { name: net.ipv4.conf.all.send_redirects, value: "0" }
+    - { name: net.ipv4.conf.default.send_redirects, value: "0" }
+  loop_control:
+    label: "{{ item.name }}"
 
 # ── SSH ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
 # sshd uses the first value it reads, and drop-ins are read in name order: 10- wins over Ubuntu's 50-cloud-init.conf.
@@ -85,6 +92,13 @@
 - name: Check the sshd configuration
   ansible.builtin.command: /usr/sbin/sshd -t
   changed_when: false
+
+# Hetzner adds the server's SSH key for root at creation too. Root can't log in (PermitRootLogin no, AllowUsers), but a
+# key there would let it the moment that config regressed.
+- name: No SSH keys for root
+  ansible.builtin.file:
+    path: /root/.ssh/authorized_keys
+    state: absent
 
 - name: Ban repeated SSH login failures
   ansible.builtin.copy:

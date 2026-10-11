@@ -1,0 +1,48 @@
+# Weekly, grouped dependency updates as pull requests (free for public repositories). Each PR is reviewed and tested
+# locally (scripts/test.sh, scripts/lint.sh) before merging, like any other change. The cooldown waits a few days
+# after a release before proposing it, so a malicious version that gets yanked quickly never reaches us.
+# Ansible collections (deploy/ansible/requirements.yml) aren't supported: bump them by hand.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly, day: monday }
+    cooldown: { default-days: 7 }
+    groups:
+      actions: { patterns: ["*"] }
+
+  # Base images, pinned by digest: Dependabot updates the digest and the tag together.
+  - package-ecosystem: docker
+    directories: [/src/Cipheroom.Api, /web]
+    schedule: { interval: weekly, day: monday }
+    cooldown: { default-days: 3 }
+    groups:
+      base-images: { patterns: ["*"] }
+
+  # Third-party services in deploy/docker-compose.yml (LiveKit, cloudflared, the observability stack).
+  - package-ecosystem: docker-compose
+    directory: /deploy
+    schedule: { interval: weekly, day: monday }
+    cooldown: { default-days: 3 }
+    groups:
+      compose-images: { patterns: ["*"] }
+
+  - package-ecosystem: nuget
+    directory: /
+    schedule: { interval: weekly, day: monday }
+    cooldown: { default-days: 7 }
+    groups:
+      nuget-minor-patch: { update-types: [minor, patch] }
+
+  - package-ecosystem: npm
+    directory: /web
+    schedule: { interval: weekly, day: monday }
+    cooldown: { default-days: 7 }
+    groups:
+      angular: { patterns: ["@angular/*", "@angular-devkit/*", "@schematics/angular", "ng-zorro-antd", "typescript", "zone.js"] }
+      npm-minor-patch: { update-types: [minor, patch] }
+
+  - package-ecosystem: terraform
+    directory: /deploy/terraform/hetzner
+    schedule: { interval: weekly, day: monday }
+    cooldown: { default-days: 7 }

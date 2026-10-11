@@ -45,6 +45,22 @@ public sealed class HardeningTests(WebApplicationFactory<Program> factory) : ICl
         Assert.DoesNotContain(options.KnownIPNetworks, n => n.Contains(IPAddress.Parse("203.0.113.7")));
     }
 
+    [Theory]
+    [InlineData("call.example.com", HttpStatusCode.OK)]
+    [InlineData("localhost", HttpStatusCode.OK)] // the container's health probe
+    [InlineData("evil.example", HttpStatusCode.BadRequest)]
+    public async Task Allowed_hosts_rejects_other_host_headers(string host, HttpStatusCode expected)
+    {
+        // The server sets this from PUBLIC_HOST (Ansible → API_ALLOWED_HOSTS); home setups keep "*".
+        using var client = _factory.WithWebHostBuilder(b => b.UseSetting("AllowedHosts", "call.example.com;localhost")).CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/healthz");
+        request.Headers.Host = host;
+
+        using var response = await client.SendAsync(request, Ct);
+
+        Assert.Equal(expected, response.StatusCode);
+    }
+
     private async Task<HubConnection> ConnectAsync()
     {
         var connection = new HubConnectionBuilder()

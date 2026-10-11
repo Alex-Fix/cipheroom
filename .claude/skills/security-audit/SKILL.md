@@ -117,7 +117,7 @@ Auditor: <who> · Method: .claude/skills/security-audit (passes A–F)
 - **Evidence:** what was observed (redacted)
 - **Impact:** against the threat model (`security` skill)
 - **Fix:** what was or should be done
-- **Status:** fixed in <commit> · follow-up · accepted risk (why)
+- **Status:** fixed in PR #N (`Fix SA-…` commit title — squash merges drop branch hashes) · follow-up · accepted risk (why)
 
 ## Checked and passed
 - A. …  (one line per check, so the next audit knows what was covered)

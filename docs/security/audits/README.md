@@ -6,6 +6,6 @@ live in the `security` and `e2ee-media` skills.
 
 | Date | Scope | Result |
 |---|---|---|
-| [2026-10-11](2026-10-11.md) | App at `4827b28` + hardening branch; Hetzner cpx42, LiveKit mode | 0 Critical/High · 3 Medium (fixed) · 7 Low · 3 Info |
+| [2026-10-11](2026-10-11.md) | App at `4827b28` + hardening branch; Hetzner cpx42, LiveKit mode | 0 Critical/High · 3 Medium · 7 Low · 3 Info — all fixed or accepted the same day |
 
 Findings that were open when a report was written are described at the class level only.
