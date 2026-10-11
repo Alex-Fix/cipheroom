@@ -1133,8 +1133,9 @@ function sendCapabilities(): CodecCapability[] {
 }
 
 /**
- * Every video transceiver (camera and screen) sends only the call's codec: frame encryption knows its layout, and
- * we never switch codecs on a published track (see codecs.ts).
+ * Every video transceiver (camera and screen) sends the call's codec, listed first: frame encryption knows its
+ * layout, and we never switch codecs on a published track. Our other codecs follow so the SFU will offer them when
+ * we subscribe to someone sending a different one (see codecs.ts).
  */
 function preferCodec(
   transceiver: RTCRtpTransceiver,

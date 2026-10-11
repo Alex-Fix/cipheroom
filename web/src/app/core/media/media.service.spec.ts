@@ -1010,13 +1010,14 @@ describe('MediaService', () => {
       expect(media.decodableCodecs).toEqual(['vp8', 'vp9']);
     });
 
-    it('negotiates only the sending codec, with L1T3 simulcast layers and matching bitrates', async () => {
+    it('negotiates the sending codec first (then VP8, so we can receive it), with L1T3 simulcast layers and matching bitrates', async () => {
       const { media, pc, frames } = setup();
       await media.setCamera(true);
 
       const camera = pc.transceivers[0];
       expect(camera.setCodecPreferences).toHaveBeenCalledWith([
         capabilities.codecs[1],
+        capabilities.codecs[0],
         capabilities.codecs[3],
       ]);
       expect(
