@@ -13,8 +13,10 @@
 
     - name: The roles target Ubuntu 26.04 LTS (24.04 works too)
       ansible.builtin.assert:
-        that: ansible_distribution == "Ubuntu" and ansible_distribution_version is version("24.04", ">=")
-        fail_msg: "Ubuntu 24.04 or newer expected (26.04 LTS recommended), found {{ ansible_distribution }} {{ ansible_distribution_version }}"
+        that: ansible_facts["distribution"] == "Ubuntu" and ansible_facts["distribution_version"] is version("24.04", ">=")
+        fail_msg: >-
+          Ubuntu 24.04 or newer expected (26.04 LTS recommended), found
+          {{ ansible_facts["distribution"] }} {{ ansible_facts["distribution_version"] }}
         quiet: true
   roles:
     - base
