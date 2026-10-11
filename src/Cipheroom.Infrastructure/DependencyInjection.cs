@@ -70,7 +70,20 @@ public static class DependencyInjection
                 http.DefaultRequestHeaders.Authorization = new("Bearer", cloudflare.ApiToken);
             })
             .AddStandardResilienceHandler();
-        services.AddTransient<IRealtimeUsage, CloudflareRealtimeUsage>();
+        // LiveKit mode on Hetzner: the server's own traffic (read-only token) instead of Cloudflare's analytics.
+        services.AddHttpClient<HetznerTrafficClient>((sp, http) =>
+            {
+                var hetzner = sp.GetRequiredService<IOptions<RealtimeUsageOptions>>().Value.Hetzner;
+                http.BaseAddress = new Uri(hetzner.ApiBaseUrl);
+                http.DefaultRequestHeaders.Authorization = new("Bearer", hetzner.ApiToken);
+            })
+            .AddStandardResilienceHandler();
+        services.AddTransient<CloudflareRealtimeUsage>();
+        services.AddTransient<HetznerRealtimeUsage>();
+        services.AddTransient<IRealtimeUsage>(sp =>
+            sp.GetRequiredService<IOptions<RealtimeUsageOptions>>().Value.Hetzner.IsConfigured
+                ? sp.GetRequiredService<HetznerRealtimeUsage>()
+                : sp.GetRequiredService<CloudflareRealtimeUsage>());
         services.AddHostedService<RealtimeUsagePoller>();
 
         // The usage guard: one instance is the guard, the ledger browser reports feed, and its background loop.

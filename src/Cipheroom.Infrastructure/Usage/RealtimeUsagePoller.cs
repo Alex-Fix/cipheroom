@@ -25,7 +25,10 @@ public sealed partial class RealtimeUsagePoller(
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         metrics.SetRealtimeFreeTier(options.Value.FreeTierGb * 1_000_000_000L);
-        if (!options.Value.Cloudflare.IsConfigured)
+        bool configured;
+        await using (var scope = scopes.CreateAsyncScope())
+            configured = scope.ServiceProvider.GetRequiredService<IRealtimeUsage>().IsConfigured;
+        if (!configured)
         {
             LogNotConfigured(logger);
             return;
@@ -55,6 +58,8 @@ public sealed partial class RealtimeUsagePoller(
             var usage = scope.ServiceProvider.GetRequiredService<IRealtimeUsage>();
             var monthToDate = await usage.GetMonthToDateAsync(cancellationToken);
             var at = time.GetUtcNow();
+            if (monthToDate.AllowanceBytes is { } allowance)
+                metrics.SetRealtimeFreeTier(allowance);
             metrics.RealtimeUsagePolled(monthToDate, at);
             guard.CloudflarePolled(monthToDate, at);
             _failures = 0;
@@ -64,7 +69,7 @@ public sealed partial class RealtimeUsagePoller(
         {
             metrics.RealtimeUsagePollFailed();
             if (_failures++ == 0)
-                LogFailed(logger, (ex as CloudflareAnalyticsException)?.Status ?? 0);
+                LogFailed(logger, (ex as CloudflareAnalyticsException)?.Status ?? (int?)(ex as HttpRequestException)?.StatusCode ?? 0);
         }
     }
 
@@ -77,9 +82,9 @@ public sealed partial class RealtimeUsagePoller(
         return backoff < interval ? backoff : interval;
     }
 
-    [LoggerMessage(Level = LogLevel.Information, Message = "Realtime usage: no Cloudflare analytics credentials — usage is estimated from browser reports")]
+    [LoggerMessage(Level = LogLevel.Information, Message = "Realtime usage: no Cloudflare analytics or Hetzner credentials — usage is estimated from browser reports")]
     private static partial void LogNotConfigured(ILogger logger);
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "Realtime usage: Cloudflare analytics request failed (status {Status}); retrying")]
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Realtime usage: usage request failed (status {Status}); retrying")]
     private static partial void LogFailed(ILogger logger, int status);
 }
