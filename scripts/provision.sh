@@ -90,4 +90,4 @@ done
 printf '%s\n' "$keys" > "$ANSIBLE_DIR/known_hosts"
 
 info "Server $name is at $ipv4 (ssh -i $SSH_KEY $user@$ipv4) — next: scripts/deploy.sh (docs/deployment-hetzner.md)"
-warn "It costs money while it exists (server + IPv4, about €4–5 a month for cx23); scripts/provision.sh --destroy removes it"
+warn "It costs money while it exists (server + IPv4, billed by Hetzner — see docs/deployment-hetzner.md); scripts/provision.sh --destroy removes it"
