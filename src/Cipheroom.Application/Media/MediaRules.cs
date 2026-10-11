@@ -20,6 +20,31 @@ public static partial class MediaRules
     public const string InvalidLayer = "Invalid layer.";
     public const string NotInRoom = "Join a room first.";
     public const string NoMediaSession = "No media session.";
+    public const string NotInThisMode = "Not available in this media mode.";
+    public const string InvalidRelay = "Invalid media relay.";
+    public const string TooManyRelays = "Too many media relays.";
+
+    /// <summary>One relayed LiveKit signaling message (raw bytes; base64 on the wire must fit SignalR's 64 KB).</summary>
+    public const int MaxRelayMessageBytes = 40 * 1024;
+
+    /// <summary>LiveKit's connect query carries a base64 join request (client info, sometimes an offer).</summary>
+    public const int MaxRelayQueryLength = 48 * 1024;
+
+    /// <summary>A live relay and one being replaced while livekit-client reconnects.</summary>
+    public const int MaxRelaysPerConnection = 2;
+
+    /// <summary>LiveKit's signaling paths.</summary>
+    public static readonly IReadOnlyList<string> RelayPaths = ["/rtc/v1", "/rtc"];
+
+    /// <summary>Relay ids are chosen by the browser (it must register the socket before LiveKit's first message).</summary>
+    public static bool IsRelayId(string? id) => id is not null && RelayIdRegex().IsMatch(id);
+
+    public static bool IsRelayPath(string? path) => path is not null && RelayPaths.Contains(path);
+
+    public static bool IsRelayQuery(string? query) => query is { Length: <= MaxRelayQueryLength };
+
+    public static bool IsRelayMessage(string? base64) =>
+        base64 is { Length: > 0 and <= (MaxRelayMessageBytes + 2) / 3 * 4 } && Base64RelayRegex().IsMatch(base64);
 
     public static readonly IReadOnlyList<string> Layers = ["f", "h", "q"];
 
@@ -35,6 +60,12 @@ public static partial class MediaRules
 
     [GeneratedRegex("^[A-Za-z0-9_-]{1,16}$")]
     private static partial Regex MidRegex();
+
+    [GeneratedRegex("^[0-9a-f]{16}$")]
+    private static partial Regex RelayIdRegex();
+
+    [GeneratedRegex("^[A-Za-z0-9+/]*={0,2}$")]
+    private static partial Regex Base64RelayRegex();
 }
 
 /// <summary>Media sessions are created lazily: on the first publish or subscribe.</summary>
@@ -60,6 +91,13 @@ internal static class MediaSessions
         (rooms.InRoom(connectionId, (room, self) => new Box<T>(action(room, self))) ?? throw new NotFoundException(MediaRules.NotInRoom)).Value;
 
     private sealed record Box<T>(T Value);
+
+    /// <summary>Fails unless this server runs <paramref name="provider"/>.</summary>
+    public static void RequireProvider(IMediaRoom media, MediaProvider provider)
+    {
+        if (media.Provider != provider)
+            throw new DomainException(MediaRules.NotInThisMode);
+    }
 
     /// <summary>The caller's existing session (renegotiation and closing need one already).</summary>
     public static string Require(IRoomStore rooms, string connectionId)

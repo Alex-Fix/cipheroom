@@ -12,8 +12,14 @@ Design: `docs/plans/2026-10-07-cloudflare-sfu-design.md`. Protocol: `docs/signal
 - **Provider seam** (docs/plans/2026-10-11-livekit-media-mode-design.md): `MediaService` is provider-neutral; the
   connection belongs to a `MediaTransport` (`media-transport.ts`) chosen by `RtcConfig.provider` —
   `CloudflareTransport` (`cloudflare-transport.ts`: the single peer connection, negotiation queue, subscriptions,
-  layers, ICE restart, data channels). The api side: `ISfu` (Cloudflare negotiation) + `IMediaRoom` (remove
-  participant / end room, `Provider`). Everything below describes the Cloudflare transport.
+  layers, ICE restart, data channels) or `LiveKitTransport` (`livekit-transport.ts`, LiveKit mode: livekit-client
+  loaded lazily; its signaling socket replaced by `relay-websocket.ts`, carried over SignalR — `OpenMediaRelay` /
+  `SendMediaRelay` / `MediaRelayReceived`; our transform in `localSenderCreated` / `trackSubscribed`, Chromium on
+  encoded streams with the flag on every livekit-client peer connection; published sources announced with
+  `AnnounceTracks`; files as reliable data messages via `FileChannel`). The api side: `ISfu` (Cloudflare negotiation),
+  `IMediaRoom` (remove participant / end room, `Provider`), `IMediaRelay` (`LiveKitRelay`: real WebSocket to LiveKit
+  with a server-made token). Local LiveKit: `scripts/dev.sh --livekit`. Everything below describes the Cloudflare
+  transport.
 - **Frontend** `web/src/app/core/media/`: `MediaService` (provided per room route) owns the call (through its
   transport) and exposes signals (`tiles`, `participants`, `state`, device flags, `cameras`,
   `videoQuality`, `availableQualities`, `canPlaybackAudio`, `connection`, `poorConnection`). Components never touch the peer

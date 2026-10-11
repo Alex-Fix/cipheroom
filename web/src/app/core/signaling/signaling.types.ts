@@ -115,10 +115,17 @@ export interface KeyEnvelopeDto {
  * How this server's calls reach their media server, tagged by `provider` (one per deployment, MEDIA_MODE). Cloudflare:
  * ICE servers for the peer connection to the SFU (Cloudflare STUN/TURN); `forceRelay` = TURN only (testing).
  */
-export type RtcConfig = CloudflareRtcConfig;
+export type RtcConfig = CloudflareRtcConfig | LiveKitRtcConfig;
 
 export interface CloudflareRtcConfig {
   provider: 'cloudflare';
+  iceServers: RTCIceServer[];
+  forceRelay: boolean;
+}
+
+/** LiveKit mode: nothing else — livekit-client connects through the media relay; LiveKit hands out TURN itself. */
+export interface LiveKitRtcConfig {
+  provider: 'livekit';
   iceServers: RTCIceServer[];
   forceRelay: boolean;
 }
@@ -255,6 +262,10 @@ export const HubMethods = {
   SubscribeDataChannel: 'SubscribeDataChannel',
   CloseDataChannel: 'CloseDataChannel',
   ReportCallStats: 'ReportCallStats',
+  OpenMediaRelay: 'OpenMediaRelay',
+  SendMediaRelay: 'SendMediaRelay',
+  CloseMediaRelay: 'CloseMediaRelay',
+  AnnounceTracks: 'AnnounceTracks',
 } as const;
 
 /** Server → client events. */
@@ -275,4 +286,6 @@ export const ClientEvents = {
   MuteRequested: 'MuteRequested',
   CallEnded: 'CallEnded',
   UsageChanged: 'UsageChanged',
+  MediaRelayReceived: 'MediaRelayReceived',
+  MediaRelayClosed: 'MediaRelayClosed',
 } as const;

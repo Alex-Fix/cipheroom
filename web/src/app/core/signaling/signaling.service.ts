@@ -37,6 +37,14 @@ export type KeyEnvelopeListener = (fromId: string, blob: string) => void;
 /** An encrypted chat event from another member (fromId set by the server). */
 export type ChatListener = (fromId: string, blob: string) => void;
 
+/** LiveKit mode: what the media relay stand-in hears (see core/media/relay-websocket.ts). */
+export interface MediaRelayListener {
+  received(relayId: string, message: string, text: boolean): void;
+  closed(relayId: string, code: number): void;
+  /** Our SignalR connection dropped: every relay is gone with it. */
+  disconnected(): void;
+}
+
 /**
  * Lobby and host-control events (server → us). Signed ones (`muteRequested`, `callEnded`) must be verified by
  * CryptoService before anyone acts on them.
@@ -69,6 +77,7 @@ export class SignalingService {
   readonly usage = signal<UsageDto | undefined>(undefined);
   private readonly keyEnvelopeListeners = new Set<KeyEnvelopeListener>();
   private readonly chatListeners = new Set<ChatListener>();
+  private readonly mediaRelayListeners = new Set<MediaRelayListener>();
   private readonly lobbyListeners = new Set<LobbyEventListener>();
 
   /**
@@ -206,6 +215,33 @@ export class SignalingService {
     await this.invoke(HubMethods.ReportCallStats, stats);
   }
 
+  // LiveKit mode: livekit-client's signaling socket relayed to the LiveKit server (opaque messages, never logged).
+
+  /** Opens relay `relayId` (chosen by us, registered before calling: LiveKit's first message can beat the reply). */
+  async openMediaRelay(relayId: string, path: string, query: string): Promise<void> {
+    await this.invoke(HubMethods.OpenMediaRelay, relayId, path, query);
+  }
+
+  /** One message upstream, base64. Fire and forget: SignalR keeps them in order; a failure closes the connection. */
+  sendMediaRelay(relayId: string, message: string, text: boolean): void {
+    void this.connection?.send(HubMethods.SendMediaRelay, relayId, message, text).catch(() => undefined);
+  }
+
+  async closeMediaRelay(relayId: string): Promise<void> {
+    await this.invoke(HubMethods.CloseMediaRelay, relayId);
+  }
+
+  /** What we published on LiveKit, so the room (tiles, mute state) knows it like a Cloudflare publish. */
+  async announceTracks(sources: TrackSource[]): Promise<void> {
+    await this.invoke(HubMethods.AnnounceTracks, sources);
+  }
+
+  /** Relayed messages and closes, and our SignalR connection dropping. Returns a function that removes it. */
+  onMediaRelay(listener: MediaRelayListener): () => void {
+    this.mediaRelayListeners.add(listener);
+    return () => this.mediaRelayListeners.delete(listener);
+  }
+
   /** Envelopes addressed to us. Returns a function that removes the listener. */
   onKeyEnvelope(listener: KeyEnvelopeListener): () => void {
     this.keyEnvelopeListeners.add(listener);
@@ -293,7 +329,16 @@ export class SignalingService {
       this.emit({ type: 'callEnded', issuer, sig }),
     );
     connection.on(ClientEvents.UsageChanged, (usage: UsageDto) => this.usage.set(usage));
-    connection.onclose(() => this.connected.set(false));
+    connection.on(ClientEvents.MediaRelayReceived, (relayId: string, message: string, text: boolean) =>
+      this.mediaRelayListeners.forEach((l) => l.received(relayId, message, text)),
+    );
+    connection.on(ClientEvents.MediaRelayClosed, (relayId: string, code: number) =>
+      this.mediaRelayListeners.forEach((l) => l.closed(relayId, code)),
+    );
+    connection.onclose(() => {
+      this.connected.set(false);
+      this.mediaRelayListeners.forEach((l) => l.disconnected());
+    });
 
     await connection.start();
     this.connection = connection;

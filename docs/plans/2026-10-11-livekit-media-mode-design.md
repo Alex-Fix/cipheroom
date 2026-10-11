@@ -251,6 +251,23 @@ Changes to the design from the spike:
 - `livekit-client` probes `https://<placeholder>/rtc/v1/validate` after a failed connect; it fails harmlessly
   (`ERR_NAME_NOT_RESOLVED`) and the retry goes through the relay.
 
+## Implementation notes (PR 2, 2026-10-11)
+
+- **AnnounceTracks** (new hub method, not in the original design): in LiveKit mode publishing happens on LiveKit, so
+  the browser tells the room which sources it published; `Room.Announce` records them without a media session (the
+  source name stands in for a mid). Tiles, mute state and the usage guard keep reading the room as on Cloudflare.
+- Providers are picked when services are resolved (`Media:Provider`); Cloudflare-only methods answer
+  `Not available in this media mode.` via `UnavailableSfu`; LiveKit settings are validated at startup only in LiveKit
+  mode (Cloudflare's stay checked at deploy: `scripts/up.sh`, Ansible).
+- `SendMediaRelay` has its own rate bucket (200 burst / 100 per second); the general 5/s would cut a connect's ICE
+  burst.
+- `livekit-client` is a lazy chunk (≈127 KB gzipped), loaded only when a LiveKit call starts.
+- Files over LiveKit: reliable data messages to the recipients only (`FileChannel`), the same 16 KiB sealed chunks.
+- `scripts/dev.sh --livekit` runs a local LiveKit container with throwaway keys.
+- Verified on the dev stack in LiveKit mode: three-person call with four codec changes and rejoins (everyone receives
+  everyone), encrypted files (20 MB in 9 s; 100 MB twice, no stall), a mixed Chromium + WebKit call (each decrypts the
+  other). Known noise: livekit-client logs "error reading from signal stream" when a rejoin tears down the old session.
+
 ## Open questions
 
 - Does LiveKit reload renewed certificates without a restart? (Otherwise the 04:30 restart stays.) — check in PR 3.

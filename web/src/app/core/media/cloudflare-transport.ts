@@ -16,7 +16,7 @@ import {
 } from './codecs';
 import { NegotiationStep } from './connection-health';
 import { StatsLike } from './ice-path';
-import { MediaTransport, Publication, TransportEvents } from './media-transport';
+import { FileChannel, MediaTransport, Publication, TransportEvents } from './media-transport';
 import { MediaState } from './media.types';
 import { cameraEncodings } from './quality';
 import { sdpCodecs } from './sdp-codecs';
@@ -170,14 +170,14 @@ export class CloudflareTransport implements MediaTransport {
    * ordered; binary messages as ArrayBuffers. Needs receiving to have started (MediaService checks): the transport
    * is added by answering an SFU offer, like a subscribe (negotiation order).
    */
-  async publishChannel(name: string): Promise<RTCDataChannel> {
+  async publishChannel(name: string): Promise<FileChannel> {
     await this.ensureDataTransport();
     const { channelId } = await this.queue.runFirst(() => this.signaling.publishDataChannel(name));
     return opened(this.negotiatedChannel(name, channelId));
   }
 
   /** Receives `participantId`'s data channel `name`; resolves once it's open. */
-  async subscribeChannel(participantId: string, name: string): Promise<RTCDataChannel> {
+  async subscribeChannel(participantId: string, name: string): Promise<FileChannel> {
     await this.ensureDataTransport();
     const { channelId } = await this.queue.runFirst(() =>
       this.signaling.subscribeDataChannel(participantId, name),

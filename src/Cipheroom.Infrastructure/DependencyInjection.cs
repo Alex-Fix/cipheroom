@@ -3,6 +3,7 @@ using Cipheroom.Infrastructure.Crypto;
 using Cipheroom.Infrastructure.Rooms;
 using Cipheroom.Infrastructure.Rtc;
 using Cipheroom.Infrastructure.Rtc.Cloudflare;
+using Cipheroom.Infrastructure.Rtc.LiveKit;
 using Cipheroom.Infrastructure.Usage;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Http.Resilience;
@@ -40,8 +41,25 @@ public static class DependencyInjection
             // Track and session mutations aren't idempotent: a retried POST/PUT could add tracks twice.
             .AddStandardResilienceHandler(o => o.Retry.DisableForUnsafeHttpMethods());
         services.AddSingleton<PendingOffers>();
-        services.AddTransient<ISfu, CloudflareSfu>();
-        services.AddTransient<IMediaRoom, CloudflareMediaRoom>();
+        services.AddTransient<CloudflareSfu>();
+        services.AddTransient<CloudflareMediaRoom>();
+
+        // LiveKit mode (docs/plans/2026-10-11-livekit-media-mode-design.md): signaling relayed over SignalR, server API
+        // for removals and ended calls. The provider is one per deployment (Media:Provider).
+        services.AddOptions<LiveKitOptions>().BindConfiguration(LiveKitOptions.Section).ValidateDataAnnotations().ValidateOnStart();
+        services.AddOptions<MediaOptions>().BindConfiguration(MediaOptions.Section).ValidateOnStart();
+        services.AddSingleton<IValidateOptions<MediaOptions>, MediaOptionsValidator>();
+        services.AddSingleton<LiveKitTokens>();
+        services.AddHttpClient<LiveKitRoomServiceClient>((sp, http) =>
+                http.BaseAddress = new Uri(sp.GetRequiredService<IOptions<LiveKitOptions>>().Value.Url.TrimEnd('/') + "/"))
+            // Removing a participant or deleting a room twice is harmless; LiveKit is on the same host.
+            .AddStandardResilienceHandler();
+        services.AddTransient<LiveKitMediaRoom>();
+
+        services.AddTransient<ISfu>(sp => IsLiveKit(sp) ? new UnavailableSfu() : sp.GetRequiredService<CloudflareSfu>());
+        services.AddTransient<IMediaRoom>(sp => IsLiveKit(sp) ? sp.GetRequiredService<LiveKitMediaRoom>() : sp.GetRequiredService<CloudflareMediaRoom>());
+        // Created only in LiveKit mode: its sink (the hub) is provided by the api.
+        services.AddSingleton<IMediaRelay>(sp => IsLiveKit(sp) ? ActivatorUtilities.CreateInstance<LiveKitRelay>(sp) : new NoMediaRelay());
 
         // Free-tier usage from Cloudflare's GraphQL Analytics (read-only token), polled in the background.
         services.AddOptions<RealtimeUsageOptions>().BindConfiguration(RealtimeUsageOptions.Section).ValidateDataAnnotations().ValidateOnStart();
@@ -70,4 +88,7 @@ public static class DependencyInjection
 
         return services;
     }
+
+    private static bool IsLiveKit(IServiceProvider sp) =>
+        sp.GetRequiredService<IOptions<MediaOptions>>().Value.Provider == MediaProvider.LiveKit;
 }

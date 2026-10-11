@@ -40,6 +40,7 @@ builder.Services.AddMediator((MediatorOptions options) =>
 
 builder.Services.AddOptions<HubRateLimitOptions>().BindConfiguration(HubRateLimitOptions.Section).ValidateDataAnnotations().ValidateOnStart();
 builder.Services.AddSingleton<HubRateLimitFilter>();
+builder.Services.AddSingleton<Cipheroom.Application.Common.Interfaces.IMediaRelaySink, Cipheroom.Api.Media.HubMediaRelaySink>();
 builder.Services.AddSignalR(o =>
 {
     o.MaximumReceiveMessageSize = 64 * 1024;

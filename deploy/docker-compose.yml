@@ -13,9 +13,14 @@ services:
       Turn__Cloudflare__ApiToken: ${CF_TURN_API_TOKEN:-}
       Turn__CredentialTtlSeconds: ${TURN_CREDENTIAL_TTL_SECONDS:-14400}
       Turn__ForceRelay: ${TURN_FORCE_RELAY:-false}
-      # Media goes through Cloudflare Realtime SFU: calls can't work without it.
-      Sfu__Cloudflare__AppId: ${CF_SFU_APP_ID:?set CF_SFU_APP_ID in deploy/.env (see scripts/secrets.sh)}
-      Sfu__Cloudflare__AppSecret: ${CF_SFU_APP_SECRET:?set CF_SFU_APP_SECRET in deploy/.env (see scripts/secrets.sh)}
+      # Media provider, one per deployment: cloudflare (Cloudflare Realtime SFU + TURN) or livekit (the livekit
+      # service below, profile livekit). scripts/up.sh checks the settings the chosen mode needs.
+      Media__Provider: ${MEDIA_MODE:-cloudflare}
+      Sfu__Cloudflare__AppId: ${CF_SFU_APP_ID:-}
+      Sfu__Cloudflare__AppSecret: ${CF_SFU_APP_SECRET:-}
+      LiveKit__Url: http://livekit:7880
+      LiveKit__ApiKey: ${LIVEKIT_API_KEY:-}
+      LiveKit__ApiSecret: ${LIVEKIT_API_SECRET:-}
       # Trust X-Forwarded-* from our proxies only (cloudflared → nginx → api). The api publishes no ports, so only
       # containers on the compose network (Docker's 172.16.0.0/12 range) can reach it.
       ForwardedHeaders__KnownNetworks__0: 172.16.0.0/12
@@ -51,6 +56,21 @@ services:
       api:
         condition: service_healthy
     restart: unless-stopped
+
+  # MEDIA_MODE=livekit (profile livekit): a self-hosted SFU on this machine's public IP. Signaling (7880) stays on the
+  # compose network — browsers reach it only through the api's relay; only the media ports are published.
+  livekit:
+    image: livekit/livekit-server:v1.13.9
+    command: ["--config", "/etc/livekit.yaml", "--node-ip", "${LIVEKIT_NODE_IP:-127.0.0.1}"]
+    environment:
+      LIVEKIT_KEYS: "${LIVEKIT_API_KEY:-}: ${LIVEKIT_API_SECRET:-}"
+    volumes:
+      - ./livekit/livekit.yaml:/etc/livekit.yaml:ro
+    ports:
+      - "7881:7881/tcp"
+      - "7882:7882/udp"
+    restart: unless-stopped
+    profiles: [livekit]
 
   cloudflared:
     image: cloudflare/cloudflared:2026.10.0

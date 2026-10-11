@@ -36,6 +36,19 @@ public sealed class RoomMediaTests
     }
 
     [Fact]
+    public void Announced_tracks_need_no_media_session_and_use_the_source_as_mid()
+    {
+        var carol = _room.Join("conn-c");
+
+        var tracks = _room.Announce(carol.Id, [TrackSource.Microphone, TrackSource.Camera]);
+
+        Assert.Equal([$"{carol.Id}-microphone", $"{carol.Id}-camera"], tracks.Select(t => t.Name));
+        Assert.Equal(["microphone", "camera"], tracks.Select(t => t.Mid));
+        Assert.Equal(tracks, _room.Find(carol.Id)!.Tracks);
+        Assert.Throws<DomainException>(() => _room.Announce(carol.Id, [TrackSource.Camera]));
+    }
+
+    [Fact]
     public void Publishing_requires_a_media_session()
     {
         var carol = _room.Join("conn-c");

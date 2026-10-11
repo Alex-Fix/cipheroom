@@ -102,8 +102,9 @@ public sealed record AuthorityDto(
 public sealed record IceServer(string[] Urls, string? Username = null, string? Credential = null);
 
 /// <summary>
-/// How this server's calls reach their media server, tagged by <c>Provider</c> (<c>cloudflare</c>): ICE servers for the
-/// peer connection to the SFU; <c>ForceRelay</c> = TURN only (testing).
+/// How this server's calls reach their media server, tagged by <c>Provider</c>. <c>cloudflare</c>: ICE servers for the
+/// peer connection to the SFU; <c>ForceRelay</c> = TURN only (testing). <c>livekit</c>: nothing else (the browser
+/// connects through the media relay; LiveKit hands out its own TURN credentials).
 /// </summary>
 public sealed record RtcConfig(string Provider, IReadOnlyList<IceServer> IceServers, bool ForceRelay)
 {
@@ -111,6 +112,7 @@ public sealed record RtcConfig(string Provider, IReadOnlyList<IceServer> IceServ
         r.Provider switch
         {
             MediaProvider.Cloudflare => "cloudflare",
+            MediaProvider.LiveKit => "livekit",
             _ => throw new ArgumentOutOfRangeException(nameof(r), r.Provider, "Unknown media provider."),
         },
         [.. r.IceServers.Select(s => new IceServer(s.Urls, s.Username, s.Credential))],

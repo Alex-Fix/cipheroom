@@ -126,6 +126,32 @@ describe('FrameCrypto', () => {
     });
   });
 
+  describe('preferring encoded streams (LiveKit mode)', () => {
+    it('switches where the browser has them (Chromium) and needs the flag then', () => {
+      vi.stubGlobal('RTCRtpSender', class { createEncodedStreams() {} });
+      const crypto = new FrameCrypto('script-transform');
+      crypto.preferEncodedStreams();
+      expect(crypto.transformApi).toBe('encoded-streams');
+      expect(crypto.peerConnectionConfig).toEqual({ encodedInsertableStreams: true });
+    });
+
+    it('keeps script transforms where encoded streams don’t exist (WebKit)', () => {
+      vi.stubGlobal('RTCRtpSender', class {});
+      const crypto = new FrameCrypto('script-transform');
+      crypto.preferEncodedStreams();
+      expect(crypto.transformApi).toBe('script-transform');
+    });
+
+    it('refuses once a transform is attached (they can’t change API mid-call)', () => {
+      vi.stubGlobal('RTCRtpScriptTransform', FakeScriptTransform);
+      vi.stubGlobal('RTCRtpSender', class { createEncodedStreams() {} });
+      const crypto = new FrameCrypto('script-transform');
+      crypto.attachSender({} as RTCRtpSender, 'audio');
+      expect(() => crypto.preferEncodedStreams()).toThrow();
+      expect(crypto.transformApi).toBe('script-transform');
+    });
+  });
+
   it('is unavailable without encoded transforms', () => {
     vi.stubGlobal('RTCRtpScriptTransform', undefined);
     vi.stubGlobal('RTCRtpSender', class {});

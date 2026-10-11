@@ -39,6 +39,10 @@ Payloads never contain plaintext keys: only public keys and opaque signed envelo
 | C→S | `SubscribeDataChannel` | `participantId`, `name` (published by them, same room only) | `DataChannelDto { channelId }` |
 | C→S | `CloseDataChannel` | `name`, `participantId \| null` (null = own channel) | — |
 | C→S | `ReportCallStats` | `CallStatsDto` (numbers only — see "Call-quality reports") | — |
+| C→S | `OpenMediaRelay` | `relayId` (16 hex, chosen by the browser), `path` (`/rtc/v1` or `/rtc`), `query` (livekit-client's connect parameters, ≤ 48 KB) | — (LiveKit mode — see "LiveKit mode") |
+| C→S | `SendMediaRelay` | `relayId`, `message` (base64, ≤ 40 KiB decoded), `text` | — |
+| C→S | `CloseMediaRelay` | `relayId` | — |
+| C→S | `AnnounceTracks` | `sources[]` (published on LiveKit) | — (others get `TracksPublished`) |
 | S→C | `ParticipantJoined` | `ParticipantDto { id, tracks[], identity, videoCodecs[], ticket }` (no name: names travel encrypted) | |
 | S→C | `ParticipantLeft` | `id` | |
 | S→C | `TracksPublished` | `participantId`, `TrackDto[] { source, kind, muted }` | |
@@ -55,11 +59,34 @@ Payloads never contain plaintext keys: only public keys and opaque signed envelo
 | S→C | `MuteRequested` | `fromId`, `seq`, `sig` | to the participant asked |
 | S→C | `CallEnded` | `issuer`, `sig` | to the room and the lobby |
 | S→C | `UsageChanged` | `UsageDto { level, percent, resetsAt }` | to each connection as it connects, and to everyone when the level changes — see "Usage guard" |
+| S→C | `MediaRelayReceived` | `relayId`, `message` (base64), `text` | to the relay's owner (LiveKit mode) |
+| S→C | `MediaRelayClosed` | `relayId`, `code` | to the relay's owner: LiveKit (or the api: removal, call ended) closed it |
 
 Values: `source` ∈ `microphone` / `camera` / `screen`; `kind` ∈ `audio` / `video` (follows from the source); SDP ≤ 32 KB
 and starts with `v=0`; `mid` matches `^[A-Za-z0-9_-]{1,16}$`. Media events go to the **other** participants in the room;
 the caller already knows its own state. The media session is created by `GetRtcConfig` (best effort, in parallel with the ICE servers) or else on the first
 `PublishTracks` / `SubscribeTracks`.
+
+### LiveKit mode
+
+Design: [`plans/2026-10-11-livekit-media-mode-design.md`](plans/2026-10-11-livekit-media-mode-design.md). A server runs
+one media provider (`MEDIA_MODE`); `GetRtcConfig` says which (`provider: "cloudflare" | "livekit"`).
+
+- In LiveKit mode livekit-client's signaling WebSocket is carried over SignalR: the browser's stand-in opens a relay
+  (`OpenMediaRelay`, id chosen by the browser and registered first — LiveKit's join response can beat the reply), sends
+  each message with `SendMediaRelay` and gets LiveKit's with `MediaRelayReceived`. The api opens the real socket to the
+  LiveKit server on the compose network with an **access token it creates** (room = room id, identity = participant
+  id, 10 min, publish/subscribe/data); the browser's placeholder token is dropped and the query is reduced to an
+  allowlist. Messages are opaque (SDP, ICE candidates) and never logged.
+- Only admitted members get a relay; at most 2 per connection (a live one and one while livekit-client reconnects).
+  Relays close when the connection leaves, the participant is removed (also removed from the LiveKit room) or the call
+  ends (LiveKit room deleted).
+- `SendMediaRelay` has its own rate bucket (`RateLimiting:Hub:Relay*`, 200 burst / 100 per second): a connect sends a
+  burst of ICE candidates.
+- `AnnounceTracks` records what the browser published on LiveKit, so the room's tracks, tiles and mute state
+  (`SetTrackMuted`) work as with Cloudflare. Cloudflare's negotiation methods (`PublishTracks`, `SubscribeTracks`,
+  `Renegotiate`, `RestartIce`, `SelectVideoLayer`, data channel methods) answer `Not available in this media mode.`;
+  so do the relay methods and `AnnounceTracks` on a Cloudflare server.
 
 ### Lobby and admission
 
@@ -239,6 +266,9 @@ echo input. Mapped centrally by `HubExceptionFilter`; pinned by `Cipheroom.Api.F
 | `Track already published.` | `PublishTracks` for a source that is already published (or listed twice) |
 | `Unknown track.` | Track not published in the caller's room (incl. own tracks), mute of an unpublished source, layer for a non-camera track |
 | `No media session.` | `Renegotiate` / `RestartIce` before publishing or subscribing |
+| `Not available in this media mode.` | A Cloudflare method on a LiveKit server, or a relay method / `AnnounceTracks` on a Cloudflare server |
+| `Invalid media relay.` | Bad relay id, path, query or message, or a relay id already in use |
+| `Too many media relays.` | A third relay on one connection |
 | `Media server unavailable.` | Cloudflare refused or failed the request (cause logged as status, error code and Cloudflare's reason with SDP lines and IP addresses removed) |
 | `Too many requests.` | More than 20 calls in a burst / 5 per second on one connection (`RateLimiting:Hub`) |
 | `Something went wrong.` | Any unexpected server error (details only in the server log) |

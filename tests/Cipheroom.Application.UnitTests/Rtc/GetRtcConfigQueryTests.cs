@@ -43,6 +43,20 @@ public sealed class GetRtcConfigQueryTests
     }
 
     [Fact]
+    public async Task LiveKit_mode_names_the_provider_without_ice_servers_or_a_cloudflare_session()
+    {
+        var rooms = new FakeRoomStore();
+        rooms.Join("conn");
+        _media.Provider.Returns(MediaProvider.LiveKit);
+
+        var result = await new GetRtcConfigQueryHandler(rooms, _ice, _sfu, _media).Handle(new GetRtcConfigQuery("conn"), TestContext.Current.CancellationToken);
+
+        Assert.Equal(new RtcConfigResult(MediaProvider.LiveKit, [], false), result);
+        await _ice.DidNotReceiveWithAnyArgs().GetAsync(default!, TestContext.Current.CancellationToken);
+        await _sfu.DidNotReceiveWithAnyArgs().CreateSessionAsync(TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
     public async Task Creates_the_media_session_ahead_of_the_first_publish()
     {
         var rooms = new FakeRoomStore();
