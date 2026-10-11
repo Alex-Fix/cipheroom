@@ -20,6 +20,8 @@ check docker docker "Docker Desktop / OrbStack"
 info "Optional"
 check mkcert      mkcert      "brew install mkcert  (LAN HTTPS testing)" 0
 check cloudflared cloudflared "brew install cloudflared (only for tunnel)" 0
+check terraform   terraform   "brew install terraform  (only for a Hetzner server)" 0
+check ansible     ansible     "brew install ansible    (only for a Hetzner server)" 0
 
 if command -v dotnet >/dev/null && ! dotnet --list-sdks | grep -q '^10\.'; then
   warn ".NET 10 SDK not found"; ok=0

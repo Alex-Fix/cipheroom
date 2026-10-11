@@ -24,6 +24,34 @@ diff -rq "$dashboards" "$DEPLOY_DIR/observability/grafana/dashboards" >/dev/null
   || die "dashboards are out of date: python3 deploy/observability/grafana/build_dashboards.py deploy/observability/grafana/dashboards"
 rm -rf "$dashboards"
 
+# Infrastructure as code (docs/deployment-hetzner.md) — each check runs when its tool is installed.
+if command -v terraform >/dev/null; then
+  info "terraform"
+  tf_dir="$DEPLOY_DIR/terraform/hetzner"
+  terraform -chdir="$tf_dir" fmt -check -recursive >/dev/null || die "terraform files need formatting: terraform -chdir=$tf_dir fmt"
+  terraform -chdir="$tf_dir" init -backend=false -input=false >/dev/null && terraform -chdir="$tf_dir" validate -no-color >/dev/null \
+    || die "deploy/terraform/hetzner is invalid: terraform -chdir=$tf_dir validate"
+else
+  warn "terraform not installed: skipped terraform validate"
+fi
+if command -v ansible-playbook >/dev/null; then
+  info "ansible"
+  (cd "$DEPLOY_DIR/ansible" && ansible-playbook -i inventory.example.ini site.yml --syntax-check >/dev/null) \
+    || die "deploy/ansible/site.yml has syntax errors"
+  if command -v ansible-lint >/dev/null; then
+    (cd "$DEPLOY_DIR/ansible" && ansible-lint -q site.yml) || die "ansible-lint found problems in deploy/ansible"
+  else
+    warn "ansible-lint not installed: skipped (brew install ansible-lint)"
+  fi
+else
+  warn "ansible not installed: skipped the playbook check"
+fi
+if command -v shellcheck >/dev/null; then
+  info "shellcheck"; shellcheck -S warning -x -P "$ROOT/scripts" "$ROOT/scripts/provision.sh" "$ROOT/scripts/deploy.sh"
+else
+  warn "shellcheck not installed: skipped (brew install shellcheck)"
+fi
+
 if [[ -d "$WEB_DIR" ]] && npm run --prefix "$WEB_DIR" 2>/dev/null | grep -q '^  lint$'; then
   info "ng lint"; npm run lint --prefix "$WEB_DIR" ${1:+-- --fix}
 else
