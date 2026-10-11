@@ -18,7 +18,7 @@ Design: `docs/plans/2026-10-07-cloudflare-sfu-design.md`. Protocol: `docs/signal
   encoded streams with the flag on every livekit-client peer connection; published sources announced with
   `AnnounceTracks`; files as reliable data messages via `FileChannel`). The api side: `ISfu` (Cloudflare negotiation),
   `IMediaRoom` (remove participant / end room, `Provider`), `IMediaRelay` (`LiveKitRelay`: real WebSocket to LiveKit
-  with a server-made token). Local LiveKit: `scripts/dev.sh --livekit`. Everything below describes the Cloudflare
+  with a server-made token). Local dev uses LiveKit by default (`scripts/dev.sh`; `--cloudflare` for the SFU). Everything below describes the Cloudflare
   transport.
 - **Frontend** `web/src/app/core/media/`: `MediaService` (provided per room route) owns the call (through its
   transport) and exposes signals (`tiles`, `participants`, `state`, device flags, `cameras`,

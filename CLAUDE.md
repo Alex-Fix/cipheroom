@@ -48,7 +48,8 @@ docs/                            architecture + protocol docs; plans/ holds appr
 All scripts run from the repo root.
 
 - `scripts/doctor.sh` — check required toolchain
-- `scripts/dev.sh` — API :5080 (`dotnet watch`, SFU/TURN credentials from `deploy/.env`) + Angular :4200
+- `scripts/dev.sh [--cloudflare]` — API :5080 (`dotnet watch`) + Angular :4200; media via a local LiveKit container
+  (Docker, throwaway keys), or Cloudflare SFU/TURN with credentials from `deploy/.env`
 - `scripts/test.sh` — backend + frontend tests (`--server` / `--web` to run one side)
 - `scripts/lint.sh` — `dotnet format --verify-no-changes`, compose/observability config, terraform validate, ansible
   syntax + lint, shellcheck (each when installed), `ng lint` (if configured)

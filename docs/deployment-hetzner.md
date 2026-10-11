@@ -118,7 +118,7 @@ not Cloudflare's 1 TB; with `HCLOUD_READ_TOKEN` set, the usage guard follows tha
 
 The certificate renews at 04:30 UTC (systemd timer `cipheroom-cert-renew`); LiveKit restarts only when it changed.
 Back to Cloudflare: `MEDIA_MODE=cloudflare` (or remove it) in `deploy/.env.hetzner`, `scripts/provision.sh` (closes the
-ports), `scripts/deploy.sh` (stops LiveKit). Try it locally first: `scripts/dev.sh --livekit`.
+ports), `scripts/deploy.sh` (stops LiveKit). Try it locally first: `scripts/dev.sh` (LiveKit is the dev default).
 
 ## Updating and rolling back
 
