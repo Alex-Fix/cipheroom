@@ -997,5 +997,41 @@ describe('Room', () => {
       expect(lobby.enter).toHaveBeenCalledTimes(4);
       expect(el.querySelector('.join-error')?.textContent).toContain('Connection lost.');
     });
+
+    it('a loss right after every connect still ends at Try Again (no endless rejoins)', async () => {
+      const { el, fixture, media, lobby } = await setup();
+      vi.useFakeTimers();
+
+      for (let i = 0; i < 4; i++) {
+        media.state.set('connected');
+        fixture.detectChanges();
+        await vi.advanceTimersByTimeAsync(5000);
+        media.state.set('disconnected');
+        fixture.detectChanges();
+        await vi.advanceTimersByTimeAsync(1000);
+      }
+      fixture.detectChanges();
+
+      expect(lobby.enter).toHaveBeenCalledTimes(4);
+      expect(el.querySelector('.join-error')?.textContent).toContain('Connection lost.');
+    });
+
+    it('starts counting again after 30 s connected', async () => {
+      const { el, fixture, media, lobby } = await setup();
+      vi.useFakeTimers();
+
+      for (let i = 0; i < 6; i++) {
+        media.state.set('connected');
+        fixture.detectChanges();
+        await vi.advanceTimersByTimeAsync(30_000);
+        media.state.set('disconnected');
+        fixture.detectChanges();
+        await vi.advanceTimersByTimeAsync(1000);
+      }
+      fixture.detectChanges();
+
+      expect(lobby.enter).toHaveBeenCalledTimes(7);
+      expect(el.querySelector('.join-error')).toBeNull();
+    });
   });
 });

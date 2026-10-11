@@ -147,6 +147,8 @@ export class Room implements OnInit, OnDestroy {
   /** Automatic rejoin after the connection was lost (shown as "Reconnecting…"). */
   private readonly rejoining = signal(false);
   private rejoinAttempts = 0;
+  /** Resets `rejoinAttempts` once media has stayed connected for STABLE_MS. */
+  private stableTimer?: ReturnType<typeof setTimeout>;
 
   protected readonly link = location.href;
   protected readonly canShareScreen = typeof navigator.mediaDevices?.getDisplayMedia === 'function';
@@ -335,10 +337,13 @@ export class Room implements OnInit, OnDestroy {
       });
     });
 
-    // Lost the media connection (ICE restarts gave up) or the signaling connection: rejoin from scratch.
+    // Lost the media connection (ICE restarts gave up, or the SFU refused an answer) or the signaling connection:
+    // rejoin from scratch. Attempts only count as recovered after a stable stretch — a fault that strikes right
+    // after every connect must end at Try Again, not loop.
     effect(() => {
       if (!this.joined() || this.lobby.state() !== 'admitted') return;
-      if (this.media.state() === 'connected') this.rejoinAttempts = 0;
+      const connected = this.media.state() === 'connected';
+      untracked(() => this.trackStability(connected));
       const lost = this.media.state() === 'disconnected' || !this.signaling.connected();
       if (lost) untracked(() => void this.rejoin());
     });
@@ -400,6 +405,7 @@ export class Room implements OnInit, OnDestroy {
   async ngOnDestroy(): Promise<void> {
     this.theme.setForcedDark(false);
     clearInterval(this.speakerTimer);
+    clearTimeout(this.stableTimer);
     this.flushJoins();
     await this.teardown();
   }
@@ -715,6 +721,18 @@ export class Room implements OnInit, OnDestroy {
     }
   }
 
+  private trackStability(connected: boolean): void {
+    if (!connected) {
+      clearTimeout(this.stableTimer);
+      this.stableTimer = undefined;
+    } else if (!this.stableTimer) {
+      this.stableTimer = setTimeout(() => {
+        this.stableTimer = undefined;
+        this.rejoinAttempts = 0;
+      }, STABLE_MS);
+    }
+  }
+
   /**
    * The devices the user wants (not what happens to be on: a camera still starting would otherwise come back off);
    * gives up (Try Again screen) after a few attempts in a row.
@@ -749,6 +767,8 @@ export class Room implements OnInit, OnDestroy {
 type Devices = { microphone: boolean; camera: boolean };
 
 const MAX_REJOINS = 3;
+/** Connected this long counts as recovered: rejoin attempts start over. */
+const STABLE_MS = 30_000;
 /** The server's cooldown after being turned away (Room.DenyCooldown) plus a little. */
 const ASK_AGAIN_DELAY_MS = 31_000;
 const REJOIN_DELAY_MS = 1000;
