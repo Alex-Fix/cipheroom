@@ -57,18 +57,32 @@ describe('video codecs', () => {
     });
   });
 
-  it('prefers only the chosen codec (baseline profile first) plus rtx / red / ulpfec', () => {
+  it('prefers the chosen codec, then our other codecs (baseline first), then rtx / red / ulpfec', () => {
     expect(
       codecPreferences(CHROME, 'vp9').map((c) => `${c.mimeType} ${c.sdpFmtpLine ?? ''}`.trim()),
     ).toEqual([
       'video/VP9 profile-id=0',
       'video/VP9 profile-id=2',
+      'video/VP8',
       'video/rtx',
       'video/red',
       'video/ulpfec',
     ]);
-    expect(codecPreferences(CHROME, 'vp8')[0].mimeType).toBe('video/VP8');
+    expect(codecPreferences(CHROME, 'vp8').map((c) => c.mimeType)).toEqual([
+      'video/VP8',
+      'video/VP9',
+      'video/VP9',
+      'video/rtx',
+      'video/red',
+      'video/ulpfec',
+    ]);
     expect(codecPreferences([cap('video/VP8')], 'vp9')).toEqual([]);
+  });
+
+  it('never advertises codecs the frame layout doesn’t know', () => {
+    const names = codecPreferences(CHROME, 'vp8').map((c) => c.mimeType);
+    expect(names).not.toContain('video/H264');
+    expect(names).not.toContain('video/AV1');
   });
 
   it('asks for L1T3 simulcast layers for VP9, leaves VP8 alone', () => {

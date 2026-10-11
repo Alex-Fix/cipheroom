@@ -81,13 +81,15 @@ Design: [`plans/2026-10-08-lobby-admission-design.md`](plans/2026-10-08-lobby-ad
    **verified and admitted** participant in envelopes (`SendKeyEnvelopes`); everyone else rotates and sends us theirs.
 4. `GetRtcConfig()` → Cloudflare STUN/TURN servers; the browser opens one `RTCPeerConnection`, with the frame
    transforms on every sender and receiver.
-5. The browser **publishes its own tracks first** (`PublishTracks`): microphone and camera (f/h/q simulcast, in the
-   video codec chosen at join — VP9 by default, see "Video codecs" below);
+5. The browser **publishes its own tracks first**, in one negotiation (`PublishTracks`): microphone and camera (f/h/q
+   simulcast, in the video codec chosen at join — VP9 by default, see "Video codecs" below);
    devices that are off are published muted / as placeholder frames. iOS Safari can't add a camera once the
    connection began by answering the SFU, so this order is a rule.
 6. Then it **receives** others: `SubscribeTracks` → SFU offer → answer (`Renegotiate`); new and removed tracks arrive
    as `TracksPublished` / `TracksUnpublished` / `ParticipantLeft`.
-7. Recovery: ICE restart in place (Cloudflare keeps the session 30 s), otherwise a full rejoin (with our ticket).
+7. Recovery: ICE restart in place (Cloudflare keeps the session 30 s), otherwise a full rejoin (with our ticket). A
+   refused answer to an SFU offer wedges the session, so it rejoins at once; three quick losses in a row end at
+   "Connection lost." with Try Again.
 
 Host and co-host controls are signed statements too: `GrantCoHost`, `RemoveParticipant` (revocation → everyone
 rotates without them), `UpdateSettings` (auto-admit: admitters' browsers sign tickets as people knock),
@@ -233,7 +235,9 @@ Designs: [`plans/2026-10-08-video-compression-design.md`](plans/2026-10-08-video
 [`plans/2026-10-08-remove-av1-design.md`](plans/2026-10-08-remove-av1-design.md). Users pick VP9 (default, ~⅓ fewer
 bytes than VP8) or VP8 in the ⋯ menu; it's remembered per browser. Each participant tells the others what it can
 decode (`videoCodecs` in `JoinLobby`), and each sender picks its codec when it joins: its choice if everyone can
-decode it, else VP8. Cloudflare doesn't forward a codec change on a published track, so changing it — or someone
+decode it, else VP8. Publish offers list the sending codec first and our other codec after it: Cloudflare offers
+a subscriber only the codecs its session advertised, so people sending different codecs can still receive each
+other. Cloudflare doesn't forward a codec change on a published track, so changing it — or someone
 joining who can't decode it — makes that sender rejoin (~1–2 s). VP9 layers are sent with `scalabilityMode: L1T3`
 (otherwise Chrome sends VP9 as one SVC stream). AV1 was removed: with Cloudflare dropping its Dependency Descriptor
 and our encrypted payload, a viewer that dropped to a lower simulcast layer never switched back up.

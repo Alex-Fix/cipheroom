@@ -8,10 +8,13 @@ import {
   ConnectionReport,
   HealthContext,
   HealthSnapshot,
+  NegotiationFailure,
+  NegotiationStep,
   PoorStreak,
   connectionReport,
   healthSnapshot,
 } from './connection-health';
+import { sdpCodecs } from './sdp-codecs';
 import { StatsLike } from './ice-path';
 import { callPlatform } from './platform';
 import { loadVideoCodec, saveVideoCodec } from '../settings/video-codec';
@@ -50,6 +53,13 @@ import { SerialQueue } from './serial-queue';
 import { SpeakingDetector, sameMembers } from './speaking';
 import { TrackKey, participantOf, subscriptionDiff, trackKey } from './subscriptions';
 
+/** A track to publish; `placeholder`: placeholder frames, not a capture (kept in `placeholders`, not shown). */
+interface Publication {
+  source: TrackSource;
+  track: MediaStreamTrack;
+  placeholder?: boolean;
+}
+
 /** Who we are in the room (from JoinRoom). */
 export interface Self {
   id: string;
@@ -66,14 +76,15 @@ export interface Self {
  * - Every SFU/peer-connection mutation runs through one queue: negotiations must never overlap.
  * - Negotiation order: our own tracks are published before we receive anyone else's (`startReceiving`). iOS Safari
  *   can't add a camera once the connection began by answering the SFU's offer; the camera transceiver is therefore
- *   always negotiated up front (`reserveCamera`), and later device changes only swap tracks.
+ *   always negotiated up front (`publishOwnTracks`), and later device changes only swap tracks.
  * - Quality: we send the camera at the chosen quality (`videoQuality`: 4K, Full HD by default, or 720p; a camera
  *   that can't do it sends the best it has below) as f/h/q simulcast, and receive the layer that matches each camera tile's size (`q` when hidden).
  * - Codec: chosen when we connect (`sendingCodec`, from `videoCodec` and what everyone in the call can decode — see
  *   codecs.ts). Cloudflare doesn't forward a codec change on a published track, so a different codec means
  *   rejoining: `codecUnsupported` tells the room when someone who joined can't play ours.
  * - Recovery: ICE restart on connection loss; after two failed attempts `state` becomes 'disconnected' and the
- *   room rejoins.
+ *   room rejoins. A failed answer to an SFU offer does the same at once: Cloudflare keeps waiting for an answer and
+ *   refuses every later negotiation on that session, so only a new session helps (`answerOffer`).
  * - E2EE: every sender and receiver gets CryptoService's frame transform as it's created, before any frame flows
  *   (`FrameCrypto`, passed to `connect`). Media is never sent or played unencrypted; remote tiles show `securing`
  *   until that participant's key arrived.
@@ -116,6 +127,8 @@ export class MediaService implements OnDestroy {
   private readonly placeholders = new Map<TrackSource, MediaStreamTrack>();
   /** Data channel transport (files): set up on first use, once per connection. */
   private dataTransport?: Promise<void>;
+  /** An answer to an SFU offer failed: the session refuses further negotiations until we rejoin. */
+  private stuck = false;
 
   private readonly self = signal<Self | undefined>(undefined);
   /** Pulling others' tracks starts only after our own publishes (see class docs). */
@@ -133,6 +146,8 @@ export class MediaService implements OnDestroy {
   readonly canPlaybackAudio = computed(() => !this.audioPlayback.blocked());
   /** Our own link to the SFU, every 2 s (docs/plans/2026-10-10-connection-diagnostics-design.md). */
   readonly connection = signal<ConnectionReport | undefined>(undefined);
+  /** The last negotiation that failed in this call, for the Connection report (kept across rejoins). */
+  readonly negotiationFailure = signal<NegotiationFailure | undefined>(undefined);
   /** The connection has been poor for a while (the header's chip). */
   readonly poorConnection = signal(false);
 
@@ -316,15 +331,50 @@ export class MediaService implements OnDestroy {
   }
 
   /**
-   * Publishes the camera without capturing (placeholder frames, muted) when it isn't on, so turning it on later is a
-   * track swap rather than a new negotiation after we've started receiving.
+   * Publishes our microphone and camera when we join, in one negotiation and before we receive anything (iOS Safari
+   * can't add them after answering the SFU). Both are always published so turning them on later never renegotiates:
+   * the microphone disabled when `wanted.microphone` is false, the camera as muted placeholder frames when it's off,
+   * denied or missing. Capture failures are returned per device (the call goes on without it); a failed
+   * negotiation rejects.
    */
-  async reserveCamera(): Promise<void> {
-    if (this.senders.has('camera')) return;
-    const placeholder = blankVideoTrack();
-    if (!placeholder) return;
-    await this.publish('camera', placeholder, { placeholder: true });
-    await this.signaling.setTrackMuted('camera', true);
+  async publishOwnTracks(wanted: {
+    microphone: boolean;
+    camera: boolean;
+  }): Promise<Partial<Record<'microphone' | 'camera', unknown>>> {
+    const failures: Partial<Record<'microphone' | 'camera', unknown>> = {};
+    const [mic, camera] = await Promise.all([
+      navigator.mediaDevices.getUserMedia({ audio: true }).then(
+        (s) => s.getAudioTracks()[0],
+        (e: unknown) => void (failures.microphone = e),
+      ),
+      wanted.camera
+        ? navigator.mediaDevices.getUserMedia({ video: this.cameraConstraints() }).then(
+            (s) => s.getVideoTracks()[0],
+            (e: unknown) => void (failures.camera = e),
+          )
+        : undefined,
+    ]);
+    const placeholder = camera ? undefined : (blankVideoTrack() ?? undefined);
+    const items: Publication[] = [];
+    if (mic) items.push({ source: 'microphone', track: mic });
+    if (camera) items.push({ source: 'camera', track: camera });
+    else if (placeholder) items.push({ source: 'camera', track: placeholder, placeholder: true });
+    if (!items.length) return failures;
+
+    await this.publishAll(items);
+    if (mic) {
+      mic.enabled = wanted.microphone;
+      this.micEnabled.set(wanted.microphone);
+      if (!wanted.microphone) await this.signaling.setTrackMuted('microphone', true);
+    }
+    if (camera) {
+      this.cameraEnabled.set(true);
+      this.updateCameraInfo();
+      await this.refreshCameras();
+    } else if (placeholder) {
+      await this.signaling.setTrackMuted('camera', true);
+    }
+    return failures;
   }
 
   /** Rejects with the browser's DOMException (e.g. NotAllowedError) when the device can't be used. */
@@ -446,6 +496,7 @@ export class MediaService implements OnDestroy {
     this.restartAttempts = 0;
     document.removeEventListener('visibilitychange', this.onVisibilityChange);
     this.dataTransport = undefined;
+    this.stuck = false;
     this.pc?.close();
     this.pc = undefined;
     // The worker belongs to CryptoService (stopped with the call's keys).
@@ -523,47 +574,54 @@ export class MediaService implements OnDestroy {
     }
   }
 
-  /** `placeholder`: the track is placeholder frames, not a capture (kept in `placeholders`, not shown locally). */
-  private publish(
-    source: TrackSource,
-    track: MediaStreamTrack,
-    { placeholder = false } = {},
-  ): Promise<void> {
+  private publish(source: TrackSource, track: MediaStreamTrack): Promise<void> {
+    return this.publishAll([{ source, track }]);
+  }
+
+  /** Publishes tracks in one negotiation: one offer, one PublishTracks, one answer. All or nothing. */
+  private publishAll(items: readonly Publication[]): Promise<void> {
     return this.queue.run(async () => {
       const pc = this.requirePc();
       const codec = this.requireCodec();
       const capabilities = sendCapabilities();
-      const transceiver = addSendTransceiver(pc, track, source, codec);
-      const kind = track.kind as MediaKind;
-      // Before the first frame leaves: frames are only ever sent encrypted.
-      this.requireFrames().attachSender(
-        transceiver.sender,
-        kind,
-        kind === 'video' ? codec : undefined,
-      );
-      if (kind === 'video') preferCodec(transceiver, capabilities, codec);
+      const transceivers = items.map(({ source, track }) => {
+        const transceiver = addSendTransceiver(pc, track, source, codec);
+        const kind = track.kind as MediaKind;
+        // Before the first frame leaves: frames are only ever sent encrypted.
+        this.requireFrames().attachSender(
+          transceiver.sender,
+          kind,
+          kind === 'video' ? codec : undefined,
+        );
+        if (kind === 'video') preferCodec(transceiver, capabilities, codec);
+        return transceiver;
+      });
       try {
         await pc.setLocalDescription(await pc.createOffer());
-        const answer = await this.signaling.publishTracks(pc.localDescription!.sdp, [
-          { mid: transceiver.mid!, source },
-        ]);
+        const answer = await this.signaling.publishTracks(
+          pc.localDescription!.sdp,
+          items.map(({ source }, i) => ({ mid: transceivers[i].mid!, source })),
+        );
         await pc.setRemoteDescription({ type: 'answer', sdp: answer });
       } catch (e) {
+        this.recordFailure('publish', undefined, pc.localDescription?.sdp);
         // Leave the connection ready for the next negotiation.
         if (pc.signalingState === 'have-local-offer')
           await pc.setLocalDescription({ type: 'rollback' });
-        transceiver.stop();
-        track.stop();
+        transceivers.forEach((t) => t.stop());
+        items.forEach(({ track }) => track.stop());
         throw e;
       }
-      this.senders.set(source, transceiver);
-      if (placeholder) this.placeholders.set(source, track);
-      else this.setLocalTrack(source, track);
+      items.forEach(({ source, track, placeholder }, i) => {
+        this.senders.set(source, transceivers[i]);
+        if (placeholder) this.placeholders.set(source, track);
+        else this.setLocalTrack(source, track);
+      });
     });
   }
 
   private syncSubscriptions(participants: readonly ParticipantDto[]): void {
-    if (!this.pc) return;
+    if (!this.pc || this.stuck) return;
     const { subscribe, drop } = subscriptionDiff(participants, new Set(this.subscriptions.keys()));
 
     if (drop.length) {
@@ -597,10 +655,7 @@ export class MediaService implements OnDestroy {
     }
 
     if (result.offerSdp) {
-      await pc.setRemoteDescription({ type: 'offer', sdp: result.offerSdp });
-      const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
-      await this.signaling.renegotiate(answer.sdp!);
+      await this.answerOffer(pc, result.offerSdp, 'subscribe-answer');
       this.tagReceivers(pc);
     }
     if (stale.length) await this.signaling.unsubscribeTracks(stale);
@@ -623,7 +678,7 @@ export class MediaService implements OnDestroy {
    */
   private retryLater(tracks: TrackRefDto[]): void {
     tracks.forEach((t) => this.subscriptions.delete(trackKey(t.participantId, t.source)));
-    if (this.resyncTimer) return;
+    if (this.resyncTimer || this.stuck) return;
     const delay = Math.min(PULL_RETRY_BASE_MS * 2 ** this.pullFailures++, PULL_RETRY_MAX_MS);
     this.resyncTimer = setTimeout(() => {
       this.resyncTimer = undefined;
@@ -702,6 +757,7 @@ export class MediaService implements OnDestroy {
       // If ICE hasn't recovered by then, try again (or give up).
       this.recoveryTimer = setTimeout(() => void this.restartIce(), ICE_RESTART_TIMEOUT_MS);
     } catch {
+      this.recordFailure('ice-restart', undefined, pc.localDescription?.sdp);
       if (pc.signalingState === 'have-local-offer') {
         await pc.setLocalDescription({ type: 'rollback' }).catch(() => undefined);
       }
@@ -789,13 +845,9 @@ export class MediaService implements OnDestroy {
         const pc = this.requirePc();
         const transport = await this.signaling.openDataTransport();
         // From here on the SFU has set up the transport and won't again on this session: if anything below fails,
-        // the failure stands until we reconnect (a new session). Cloudflare also keeps waiting for an answer to its
-        // offer then, refusing other negotiations — retrying couldn't help.
+        // only a new session helps — answerOffer makes the room rejoin.
         established = true;
-        await pc.setRemoteDescription({ type: 'offer', sdp: transport.offerSdp });
-        const answer = await pc.createAnswer();
-        await pc.setLocalDescription(answer);
-        await this.signaling.renegotiate(answer.sdp!);
+        await this.answerOffer(pc, transport.offerSdp, 'data-transport');
         // The SFU opens its own `server-events` channel in-band (stream transport.serverEventsChannelId): the browser
         // creates it by itself, and we ignore it. Creating it here too would collide (OperationError). Our file
         // channels are negotiated on the existing application section and need no further SDP.
@@ -911,7 +963,50 @@ export class MediaService implements OnDestroy {
         totals: this.crypto.telemetry(),
         dropped,
       },
+      negotiationFailure: this.negotiationFailure(),
     };
+  }
+
+  /**
+   * Answers an SFU offer. If any step fails, Cloudflare keeps waiting for an answer and refuses every later
+   * negotiation on this session: the failure is recorded, subscriptions stop retrying, and `state` becomes
+   * 'disconnected' so the room rejoins with a new session.
+   */
+  private async answerOffer(
+    pc: RTCPeerConnection,
+    offerSdp: string,
+    step: NegotiationStep,
+  ): Promise<void> {
+    try {
+      await pc.setRemoteDescription({ type: 'offer', sdp: offerSdp });
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      await this.signaling.renegotiate(answer.sdp!);
+    } catch (e) {
+      const answer = pc.localDescription?.type === 'answer' ? pc.localDescription.sdp : undefined;
+      this.recordFailure(step, offerSdp, answer);
+      if (this.pc === pc) {
+        this.stuck = true;
+        clearTimeout(this.resyncTimer);
+        this.resyncTimer = undefined;
+        this.state.set('disconnected');
+      }
+      throw e;
+    }
+  }
+
+  /** Codec summaries only (sdp-codecs.ts): never the SDP itself. */
+  private recordFailure(
+    step: NegotiationStep,
+    offered: string | undefined,
+    sent: string | undefined,
+  ): void {
+    this.negotiationFailure.set({
+      step,
+      at: Date.now(),
+      offered: sdpCodecs(offered),
+      answered: sdpCodecs(sent),
+    });
   }
 
   /**
@@ -1133,8 +1228,9 @@ function sendCapabilities(): CodecCapability[] {
 }
 
 /**
- * Every video transceiver (camera and screen) sends only the call's codec: frame encryption knows its layout, and
- * we never switch codecs on a published track (see codecs.ts).
+ * Every video transceiver (camera and screen) sends the call's codec, listed first: frame encryption knows its
+ * layout, and we never switch codecs on a published track. Our other codecs follow so the SFU will offer them when
+ * we subscribe to someone sending a different one (see codecs.ts).
  */
 function preferCodec(
   transceiver: RTCRtpTransceiver,

@@ -76,20 +76,25 @@ export function sendCodec(
 }
 
 /**
- * Codec preferences for a video transceiver: only `codec` (its baseline profile first) plus the helper entries
- * (rtx, red, ulpfec…). Other codecs are left out — we never switch codecs on a published track (see above), and a
- * codec the frame layout doesn't know would be dropped anyway. Empty when the browser doesn't offer `codec`.
+ * Codec preferences for a video transceiver: `codec` first (we send the first one), then our other codecs, each
+ * baseline profile first, then the helper entries (rtx, red, ulpfec…). The other codecs must be listed: Cloudflare
+ * offers a subscriber only the codecs its session advertised when publishing, so leaving VP8 out of a VP9 publish
+ * makes receiving someone's VP8 fail. Codecs the frame layout doesn't know (H.264, AV1) are left out. Empty when
+ * the browser doesn't offer `codec`.
  */
 export function codecPreferences(
   capabilities: readonly CodecCapability[],
   codec: VideoCodec,
 ): CodecCapability[] {
-  const chosen = capabilities
-    .filter((c) => videoCodecOf(c.mimeType) === codec)
-    .sort((a, b) => Number(!isBaselineProfile(a)) - Number(!isBaselineProfile(b)));
+  const of = (wanted: VideoCodec) =>
+    capabilities
+      .filter((c) => videoCodecOf(c.mimeType) === wanted)
+      .sort((a, b) => Number(!isBaselineProfile(a)) - Number(!isBaselineProfile(b)));
+  const chosen = of(codec);
   if (!chosen.length) return [];
+  const others = VIDEO_CODECS.filter((c) => c !== codec).flatMap(of);
   const helpers = capabilities.filter((c) => /\/(rtx|red|ulpfec|flexfec-03)$/i.test(c.mimeType));
-  return [...chosen, ...helpers];
+  return [...chosen, ...others, ...helpers];
 }
 
 /**

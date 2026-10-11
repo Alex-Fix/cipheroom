@@ -63,8 +63,16 @@ function fakeMedia() {
     setScreenShare: vi.fn().mockResolvedValue(undefined),
     startAudio: vi.fn().mockResolvedValue(undefined),
     startReceiving: vi.fn(),
-    reserveCamera: vi.fn().mockResolvedValue(undefined),
+    publishOwnTracks: vi.fn(),
   };
+  // Like the real service: what was wanted comes on; nothing failed.
+  media.publishOwnTracks.mockImplementation(
+    async (wanted: { microphone: boolean; camera: boolean }) => {
+      media.micEnabled.set(wanted.microphone);
+      media.cameraEnabled.set(wanted.camera);
+      return {};
+    },
+  );
   // Like the real service: a device that turned on reports enabled.
   media.setMicrophone.mockImplementation(async (on: boolean) => media.micEnabled.set(on));
   media.setCamera.mockImplementation(async (on: boolean) => media.cameraEnabled.set(on));
@@ -243,9 +251,7 @@ describe('Room', () => {
       { id: 'me', displayName: 'Alex' },
       frames,
     );
-    expect(media.setMicrophone).toHaveBeenCalledWith(true);
-    expect(media.setCamera).toHaveBeenCalledWith(true);
-    expect(media.reserveCamera).not.toHaveBeenCalled();
+    expect(media.publishOwnTracks).toHaveBeenCalledExactlyOnceWith({ microphone: true, camera: true });
     expect(el.querySelector('app-call-controls')).not.toBeNull();
   });
 
@@ -274,20 +280,37 @@ describe('Room', () => {
     const order: string[] = [];
     await setup({
       tweak: (lk) => {
-        lk.setMicrophone.mockImplementation(async () => void order.push('mic'));
-        lk.setCamera.mockImplementation(async () => void order.push('camera'));
+        lk.publishOwnTracks.mockImplementation(async () => {
+          order.push('publish');
+          return {};
+        });
         lk.startReceiving.mockImplementation(() => order.push('receive'));
       },
     });
-    expect(order).toEqual(['mic', 'camera', 'receive']);
+    expect(order).toEqual(['publish', 'receive']);
   });
 
-  it('reserves the camera when it could not be turned on, then starts receiving', async () => {
+  it('starts receiving when the camera could not be turned on', async () => {
     const { media } = await setup({
-      tweak: (lk) => lk.setCamera.mockRejectedValue(new DOMException('denied', 'NotAllowedError')),
+      tweak: (lk) =>
+        lk.publishOwnTracks.mockResolvedValue({
+          camera: new DOMException('denied', 'NotAllowedError'),
+        }),
     });
-    expect(media.reserveCamera).toHaveBeenCalledOnce();
     expect(media.startReceiving).toHaveBeenCalledOnce();
+  });
+
+  it('asks for no camera while the usage guard allows audio only', async () => {
+    const { media } = await setup({ tweak: (lk) => lk.videoAllowed.set(false) });
+    expect(media.publishOwnTracks).toHaveBeenCalledWith({ microphone: true, camera: false });
+  });
+
+  it('a failed publish fails the join (Retry), rather than staying half in the call', async () => {
+    const { el, media } = await setup({
+      tweak: (lk) => lk.publishOwnTracks.mockRejectedValue(new Error('Media server unavailable.')),
+    });
+    expect(media.startReceiving).not.toHaveBeenCalled();
+    expect(el.querySelector('.join-error')?.textContent).toContain('Media server unavailable.');
   });
 
   it('sends people without a name to the home screen, keeping the room', async () => {
@@ -298,7 +321,10 @@ describe('Room', () => {
 
   it('turns a denied camera into a toast and stays in the call', async () => {
     const { message, el } = await setup({
-      tweak: (lk) => lk.setCamera.mockRejectedValue(new DOMException('denied', 'NotAllowedError')),
+      tweak: (lk) =>
+        lk.publishOwnTracks.mockResolvedValue({
+          camera: new DOMException('denied', 'NotAllowedError'),
+        }),
     });
     expect(message.error).toHaveBeenCalledWith(
       "Camera blocked — allow it in your browser's site settings.",
@@ -895,8 +921,6 @@ describe('Room', () => {
       await fixture.whenStable();
       vi.useFakeTimers();
       expect(media.micEnabled()).toBe(false);
-      media.setMicrophone.mockClear();
-      media.setCamera.mockClear();
 
       media.state.set('disconnected');
       fixture.detectChanges();
@@ -904,17 +928,16 @@ describe('Room', () => {
 
       expect(media.disconnect).toHaveBeenCalled();
       expect(lobby.enter).toHaveBeenCalledTimes(2);
-      // The muted microphone is published again, then muted: unmuting later needs no new negotiation.
-      expect(media.setMicrophone.mock.calls).toEqual([[true], [false]]);
-      expect(media.setCamera).toHaveBeenCalledWith(true);
+      // The muted microphone is published again, muted: unmuting later needs no new negotiation.
+      expect(media.publishOwnTracks).toHaveBeenLastCalledWith({ microphone: false, camera: true });
     });
 
     it('a rejoin while still starting up keeps the devices asked for, and the abandoned join stays quiet', async () => {
       let finishCamera: () => void = () => undefined;
       const { fixture, media, lobby, message } = await setup({
         tweak: (lk) =>
-          // The first camera start is slow, then fails once the connection under it is gone.
-          lk.setCamera.mockImplementationOnce(
+          // The first publish waits on a slow camera, then fails once the connection under it is gone.
+          lk.publishOwnTracks.mockImplementationOnce(
             () =>
               new Promise(
                 (_, reject) =>
@@ -934,7 +957,7 @@ describe('Room', () => {
 
       expect(lobby.enter).toHaveBeenCalledTimes(2);
       // The camera was still starting when the rejoin began: it's asked for again, not dropped.
-      expect(media.setCamera).toHaveBeenLastCalledWith(true);
+      expect(media.publishOwnTracks).toHaveBeenLastCalledWith({ microphone: true, camera: true });
       expect(media.cameraEnabled()).toBe(true);
       expect(message.error).not.toHaveBeenCalled();
       expect(media.startReceiving).toHaveBeenCalledTimes(1);
@@ -996,6 +1019,42 @@ describe('Room', () => {
 
       expect(lobby.enter).toHaveBeenCalledTimes(4);
       expect(el.querySelector('.join-error')?.textContent).toContain('Connection lost.');
+    });
+
+    it('a loss right after every connect still ends at Try Again (no endless rejoins)', async () => {
+      const { el, fixture, media, lobby } = await setup();
+      vi.useFakeTimers();
+
+      for (let i = 0; i < 4; i++) {
+        media.state.set('connected');
+        fixture.detectChanges();
+        await vi.advanceTimersByTimeAsync(5000);
+        media.state.set('disconnected');
+        fixture.detectChanges();
+        await vi.advanceTimersByTimeAsync(1000);
+      }
+      fixture.detectChanges();
+
+      expect(lobby.enter).toHaveBeenCalledTimes(4);
+      expect(el.querySelector('.join-error')?.textContent).toContain('Connection lost.');
+    });
+
+    it('starts counting again after 30 s connected', async () => {
+      const { el, fixture, media, lobby } = await setup();
+      vi.useFakeTimers();
+
+      for (let i = 0; i < 6; i++) {
+        media.state.set('connected');
+        fixture.detectChanges();
+        await vi.advanceTimersByTimeAsync(30_000);
+        media.state.set('disconnected');
+        fixture.detectChanges();
+        await vi.advanceTimersByTimeAsync(1000);
+      }
+      fixture.detectChanges();
+
+      expect(lobby.enter).toHaveBeenCalledTimes(7);
+      expect(el.querySelector('.join-error')).toBeNull();
     });
   });
 });
