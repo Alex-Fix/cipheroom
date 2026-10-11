@@ -64,7 +64,40 @@ if [[ "$DESTROY" == true ]]; then
   exit 0
 fi
 
-tf apply -input=false "${VARS[@]}"
+hcloud_api() { curl -fsS --max-time 20 -H "Authorization: Bearer $HCLOUD_TOKEN" "$@"; }
+server_status() {
+  hcloud_api "https://api.hetzner.cloud/v1/servers/$1" | python3 -c 'import json, sys; print(json.load(sys.stdin)["server"]["status"])'
+}
+
+# Hetzner powers the server off before it places a new server type; without capacity the resize fails and the server
+# stays off. So check availability first (only a hint, not a guarantee) and power it back on if the apply fails anyway.
+server_id=""
+if tf state show hcloud_server.server >/dev/null 2>&1; then
+  server_id="$(tf output -raw server_id)"
+  state="$(tf state show -no-color hcloud_server.server)"
+  current_type="$(sed -nE 's/^[[:space:]]*server_type[[:space:]]*=[[:space:]]*"(.*)"$/\1/p' <<<"$state" | head -1)"
+  location="$(sed -nE 's/^[[:space:]]*location[[:space:]]*=[[:space:]]*"(.*)"$/\1/p' <<<"$state" | head -1)"
+  wanted_type="$(echo 'var.server_type' | tf console "${VARS[@]}" | tr -d '"')"
+  if [[ -n "$wanted_type" && "$wanted_type" != "$current_type" ]]; then
+    available="$(hcloud_api "https://api.hetzner.cloud/v1/server_types?name=$wanted_type" | LOCATION="$location" python3 -c '
+import json, os, sys
+types = json.load(sys.stdin)["server_types"]
+locations = types[0].get("locations") or [] if types else []
+print("yes" if any(l["name"] == os.environ["LOCATION"] and l.get("available") for l in locations) else "no")')" \
+      || die "couldn't ask Hetzner whether $wanted_type is available in $location"
+    [[ "$available" == yes ]] || die "$wanted_type isn't available in $location right now (the resize would fail with the server powered off) — try again later or set another server_type in terraform.tfvars"
+    warn "Resizing $current_type → $wanted_type: the server is powered off for a minute or two"
+  fi
+fi
+
+if ! tf apply -input=false "${VARS[@]}"; then
+  if [[ -n "$server_id" ]] && [[ "$(server_status "$server_id" || true)" == off ]]; then
+    warn "Terraform failed with the server powered off — powering it back on"
+    hcloud_api -X POST "https://api.hetzner.cloud/v1/servers/$server_id/actions/poweron" >/dev/null \
+      || warn "couldn't power it on: Hetzner Cloud console → the server → Power → Power on"
+  fi
+  die "terraform apply failed (see above)"
+fi
 
 ipv4="$(tf output -raw ipv4)"
 server_id="$(tf output -raw server_id)"
