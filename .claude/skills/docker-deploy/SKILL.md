@@ -54,7 +54,11 @@ isn't pushed. Forks running modified code must push it and set `SOURCE_URL` to t
 `livekit` service, `deploy/livekit/livekit.yaml`, keys `LIVEKIT_API_KEY`/`LIVEKIT_API_SECRET` from `scripts/secrets.sh`,
 `LIVEKIT_NODE_IP` = the machine's public IPv4; publishes only 7881/tcp + 7882/udp — signaling 7880 stays internal and
 is relayed by the api). `scripts/up.sh` checks the chosen mode's settings and adds the profile; the Cloudflare SFU
-values are required only in Cloudflare mode. Design: `docs/plans/2026-10-11-livekit-media-mode-design.md`.
+values are required only in Cloudflare mode. On the server (Ansible): `LIVEKIT_NODE_IP` is set to the server's IP;
+with `LIVEKIT_TURN_DOMAIN` (+ `CF_DNS_API_TOKEN`, DNS-only record) the `certs` role issues Let's Encrypt via the DNS
+check, `livekit.yaml` gets TURN (TLS 443, UDP 3478, relay ports 30000-30100 — published and opened by Terraform's
+`media_mode`), renewal at 04:30 UTC restarts LiveKit only on change. `HCLOUD_READ_TOKEN` + the server id switch the
+usage guard to Hetzner traffic. Design: `docs/plans/2026-10-11-livekit-media-mode-design.md`.
 
 ## Images and the Hetzner server (opt-in, costs money)
 `api` and `web` carry `image: ${CIPHEROOM_IMAGE_PREFIX:-ghcr.io/alex-fix/cipheroom}-<svc>:${CIPHEROOM_TAG:-local}`

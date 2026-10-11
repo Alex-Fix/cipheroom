@@ -1,5 +1,6 @@
-# One VM running the Cloudflare deployment mode (docs/deployment-hetzner.md). The app needs no inbound ports — the
-# Cloudflare tunnel dials out — so the firewall only lets SSH in, and only from allowed_ssh_cidrs.
+# One VM running Cipheroom (docs/deployment-hetzner.md). The website and signaling need no inbound ports — the
+# Cloudflare tunnel dials out — so the firewall lets SSH in from allowed_ssh_cidrs only; in LiveKit mode also the
+# media server's ports and TURN, from anywhere (browsers connect to them directly).
 
 # Looked up first so a wrong or unavailable image name fails at plan time, before anything is created.
 data "hcloud_image" "os" {
@@ -23,6 +24,28 @@ resource "hcloud_firewall" "server" {
     port        = "22"
     source_ips  = var.allowed_ssh_cidrs
   }
+
+  dynamic "rule" {
+    for_each = var.media_mode == "livekit" ? local.livekit_ports : []
+    content {
+      description = rule.value.description
+      direction   = "in"
+      protocol    = rule.value.protocol
+      port        = rule.value.port
+      source_ips  = ["0.0.0.0/0", "::/0"]
+    }
+  }
+}
+
+locals {
+  # LiveKit single-port media and its built-in TURN (deploy/livekit/livekit.yaml).
+  livekit_ports = [
+    { description = "LiveKit media (UDP)", protocol = "udp", port = "7882" },
+    { description = "LiveKit media (TCP fallback)", protocol = "tcp", port = "7881" },
+    { description = "TURN (UDP)", protocol = "udp", port = "3478" },
+    { description = "TURN over TLS", protocol = "tcp", port = "443" },
+    { description = "TURN relay ports", protocol = "udp", port = "30000-30100" },
+  ]
 }
 
 resource "hcloud_server" "server" {

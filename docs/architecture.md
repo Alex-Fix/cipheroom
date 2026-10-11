@@ -241,6 +241,12 @@ and our encrypted payload, a viewer that dropped to a lower simulcast layer neve
 
 ## Media path — free, no public IP
 
+Default (`MEDIA_MODE=cloudflare`, below). The opt-in LiveKit mode runs a self-hosted LiveKit SFU and its built-in TURN
+on a machine with a public IP; browsers send media to it directly, its signaling rides inside SignalR (the api relays
+it with a token it creates), and nothing touches Cloudflare Realtime —
+[`plans/2026-10-11-livekit-media-mode-design.md`](plans/2026-10-11-livekit-media-mode-design.md),
+[`deployment-hetzner.md`](deployment-hetzner.md#livekit-mode-media-on-your-server).
+
 - **Cloudflare Realtime SFU** forwards media at Cloudflare's anycast edge. The home machine needs no inbound
   connectivity at all (works behind CGNAT): the tunnel carries HTTP/WebSocket, the api calls the SFU API outbound.
 - **Cloudflare TURN** (`POST https://rtc.live.cloudflare.com/v1/turn/keys/{keyId}/credentials/generate-ice-servers`,

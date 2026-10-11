@@ -34,6 +34,8 @@ public sealed partial class UsageGuard(
     private double _estimate;
     private long? _cloudflareBytes;
     private DateTimeOffset _cloudflareAt;
+    /// <summary>The allowance the usage source reports (Hetzner's included traffic); null = the configured free tier.</summary>
+    private long? _allowanceBytes;
     private UsageLevel _level;
     /// <summary>The thresholds <see cref="_level"/> was reached under: other thresholds start it over.</summary>
     private string _thresholds = "";
@@ -53,7 +55,7 @@ public sealed partial class UsageGuard(
         ? Options.DataPath
         : Path.GetFullPath(Path.Combine(environment.ContentRootPath, Options.DataPath));
 
-    private long FreeTierBytes => freeTier.Value.FreeTierGb * 1_000_000_000L;
+    private long FreeTierBytes => _allowanceBytes ?? freeTier.Value.FreeTierGb * 1_000_000_000L;
 
     public void RecordReceived(double bytes, double intervalSeconds) =>
         Credit(UsageRules.Credited(bytes, intervalSeconds, Options.MaxReportMbps, Options.EstimateFactor));
@@ -84,6 +86,7 @@ public sealed partial class UsageGuard(
             RollMonth(at);
             _cloudflareBytes = usage.TotalEgressBytes;
             _cloudflareAt = at;
+            _allowanceBytes = usage.AllowanceBytes;
             _dirty = true;
         }
         Evaluate();
@@ -231,6 +234,7 @@ public sealed partial class UsageGuard(
                     _buckets[bucket] = Math.Max(0, bytes);
                 _cloudflareBytes = file.CloudflareBytes;
                 _cloudflareAt = file.CloudflareAt ?? default;
+                _allowanceBytes = file.AllowanceBytes;
                 _level = file.Level;
                 _thresholds = file.Thresholds ?? "";
                 RollMonth(time.GetUtcNow());
@@ -250,7 +254,7 @@ public sealed partial class UsageGuard(
             if (!_dirty)
                 return;
             file = new UsageFile(_month, _estimate, new Dictionary<long, double>(_buckets), _cloudflareBytes,
-                _cloudflareBytes is null ? null : _cloudflareAt, _level, _thresholds);
+                _cloudflareBytes is null ? null : _cloudflareAt, _level, _thresholds, _allowanceBytes);
             _dirty = false;
         }
         try
@@ -291,7 +295,8 @@ internal sealed record UsageFile(
     long? CloudflareBytes,
     DateTimeOffset? CloudflareAt,
     UsageLevel Level,
-    string? Thresholds = null);
+    string? Thresholds = null,
+    long? AllowanceBytes = null);
 
 [JsonSerializable(typeof(UsageFile))]
 [JsonSourceGenerationOptions(WriteIndented = false, UseStringEnumConverter = true)]

@@ -14,6 +14,23 @@ public sealed class RealtimeUsageOptions
     public int PollIntervalMinutes { get; set; } = 15;
 
     public CloudflareAnalyticsOptions Cloudflare { get; set; } = new();
+
+    /// <summary>LiveKit mode on a Hetzner server: its own traffic counts instead (takes precedence when configured).</summary>
+    public HetznerTrafficOptions Hetzner { get; set; } = new();
+}
+
+public sealed class HetznerTrafficOptions
+{
+    [Url]
+    public string ApiBaseUrl { get; set; } = "https://api.hetzner.cloud/v1/";
+
+    /// <summary>This server's id (Terraform output).</summary>
+    public string ServerId { get; set; } = "";
+
+    /// <summary>A read-only project API token. Never logged.</summary>
+    public string ApiToken { get; set; } = "";
+
+    public bool IsConfigured => ServerId.Length > 0 && ServerId.All(char.IsAsciiDigit) && ApiToken.Length > 0;
 }
 
 public sealed class CloudflareAnalyticsOptions

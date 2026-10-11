@@ -7,3 +7,4 @@
 # location            = "nbg1"
 # allowed_ssh_cidrs   = ["203.0.113.7/32"]
 # protection          = true
+# media_mode          = "cloudflare"   # scripts/provision.sh passes MEDIA_MODE from deploy/.env(.hetzner)

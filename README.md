@@ -16,8 +16,9 @@ want private calls without trusting a vendor, and it runs on a home computer wit
 
 ## Features
 
-- 🎥 Group video and audio calls through [Cloudflare Realtime SFU](https://developers.cloudflare.com/realtime/sfu/)
-  (simulcast; Full HD by default, 4K or 720p selectable; each tile receives the size it needs)
+- 🎥 Group video and audio calls through [Cloudflare Realtime SFU](https://developers.cloudflare.com/realtime/sfu/),
+  or a self-hosted [LiveKit](https://livekit.io) server on a machine with a public IP (`MEDIA_MODE=livekit`) —
+  simulcast; Full HD by default, 4K or 720p selectable; each tile receives the size it needs
 - 🖥️ Screen sharing, camera switching (front/rear on phones), active-speaker highlight, automatic reconnect
 - 📶 Connection diagnostics: see whether your own link is the problem — route (direct or via a relay), round trip,
   loss, what you send and what limits it, encryption health; copy a numbers-only report to share. Computed in your
@@ -155,8 +156,11 @@ deployment switch will offer three:
 
 - [x] **Cloudflare** (current): Cloudflare Tunnel for HTTPS/WSS, Cloudflare Realtime SFU and TURN. No public IP,
   free tier only.
-- [ ] **Tunnel + self-hosted media**: Cloudflare Tunnel for HTTPS/WSS, a self-hosted SFU and TURN server on the same
-  machine, reached on its public IP. No Cloudflare Realtime traffic limits.
+- [x] **Tunnel + self-hosted media** (`MEDIA_MODE=livekit`): Cloudflare Tunnel for HTTPS/WSS, a self-hosted
+  [LiveKit](https://livekit.io) SFU with its built-in TURN on the same machine, reached on its public IP — media never
+  touches Cloudflare. Same end-to-end encryption; LiveKit's signaling is relayed over SignalR
+  ([`docs/deployment-hetzner.md`](docs/deployment-hetzner.md#livekit-mode-media-on-your-server)). No Cloudflare
+  Realtime traffic limits.
 - [ ] **Fully self-hosted**: self-hosted SFU and TURN, and the app served directly on the server's public IP with a
   signed certificate. No Cloudflare dependency at all.
 - [x] Infrastructure as code for Hetzner: GitHub Actions publishes the images to GHCR, Terraform creates a firewalled

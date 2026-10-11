@@ -129,6 +129,23 @@ public sealed class UsageGuardTests : IDisposable
     }
 
     [Fact]
+    public async Task A_reported_allowance_replaces_the_free_tier_and_survives_a_restart()
+    {
+        var first = Guard();
+        await first.StartAsync(TestContext.Current.CancellationToken);
+        // A Hetzner server: 16 TB out of 20 TB included — 80 %, not 16× the 1,000 GB free tier.
+        first.CloudflarePolled(new RealtimeUsage(16_000 * GB, 0, AllowanceBytes: 20_000 * GB), _time.GetUtcNow());
+        Assert.Equal((UsageLevel.Saving, 80), Level(first));
+        await first.StopAsync(TestContext.Current.CancellationToken);
+
+        // Restarted, before the first poll: the remembered allowance, not the free tier (which would pause calls).
+        var second = Guard();
+        await second.StartAsync(TestContext.Current.CancellationToken);
+        Assert.Equal((UsageLevel.Saving, 80), Level(second));
+        await second.StopAsync(TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
     public async Task A_file_from_last_month_or_a_corrupt_one_starts_from_zero()
     {
         var first = Guard();

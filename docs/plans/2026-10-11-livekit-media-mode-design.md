@@ -268,6 +268,18 @@ Changes to the design from the spike:
   everyone), encrypted files (20 MB in 9 s; 100 MB twice, no stall), a mixed Chromium + WebKit call (each decrypts the
   other). Known noise: livekit-client logs "error reading from signal stream" when a rejoin tears down the old session.
 
+## Implementation notes (PR 3, 2026-10-11)
+
+- **TURN relay ports**: LiveKit's built-in TURN relays through UDP 30000-40000; in Docker's bridge network LiveKit's
+  replies to a relay address on the public IP need those ports published. Narrowed to 30000-30100
+  (`relay_range_start/end`), published by compose and opened by Terraform. Verified that LiveKit 1.13.9 starts TURN
+  with the rendered config and a certificate in certbot's layout.
+- The media mode comes from `MEDIA_MODE` in the env files everywhere (Terraform via `provision.sh`, Ansible, compose);
+  `cipheroom_mode` is gone. TURN is optional (`LIVEKIT_TURN_DOMAIN`); the DNS record is created by hand.
+- Usage guard: `HetznerRealtimeUsage` (server's `outgoing_traffic` / `included_traffic`) takes over when configured;
+  the reported allowance replaces the free tier and is persisted, so a restart never measures terabytes against 1 TB.
+- Grafana's panel keeps the name "Free tier" (it shows the allowance in either mode).
+
 ## Open questions
 
 - Does LiveKit reload renewed certificates without a restart? (Otherwise the 04:30 restart stays.) — check in PR 3.

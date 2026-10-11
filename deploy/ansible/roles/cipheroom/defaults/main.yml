@@ -1,5 +1,6 @@
 cipheroom_compose: >-
   docker compose --project-directory {{ cipheroom_dir }} -f {{ cipheroom_dir }}/docker-compose.yml
-  --env-file {{ cipheroom_dir }}/.env --profile tunnel{{ ' --profile observability' if cipheroom_observability else '' }}
+  --env-file {{ cipheroom_dir }}/.env --profile tunnel{{ ' --profile observability' if cipheroom_observability else '' }}{{
+  ' --profile livekit' if cipheroom_media_mode == 'livekit' else '' }}
 cipheroom_observability_services:
   [otel-collector, prometheus, loki, tempo, grafana, node-exporter, cadvisor]

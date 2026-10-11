@@ -1,3 +1,8 @@
+output "server_id" {
+  description = "For the usage guard in LiveKit mode (Hetzner traffic of this server)."
+  value       = hcloud_server.server.id
+}
+
 output "server_name" {
   value = hcloud_server.server.name
 }
