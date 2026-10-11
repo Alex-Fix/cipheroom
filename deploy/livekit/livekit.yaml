@@ -1,0 +1,15 @@
+# LiveKit server for MEDIA_MODE=livekit (docs/plans/2026-10-11-livekit-media-mode-design.md). Keys come from the
+# LIVEKIT_KEYS environment variable and the public address from --node-ip (both set in docker-compose.yml).
+port: 7880 # signaling + server API: on the compose network only (the api relays browsers' signaling over SignalR)
+bind_addresses: ["0.0.0.0"]
+rtc:
+  # Single-port media: one UDP port, plus TCP for networks that block UDP.
+  udp_port: 7882
+  tcp_port: 7881
+  use_external_ip: false
+room:
+  auto_create: true
+  empty_timeout: 300
+  departure_timeout: 20
+logging:
+  level: warn

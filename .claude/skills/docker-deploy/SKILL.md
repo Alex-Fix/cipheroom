@@ -49,6 +49,13 @@ The app links to `/source`; nginx redirects it to `SOURCE_URL` (`deploy/.env`, d
 commit only when web/, src/, deploy/ and the build props match it (untracked files included), and warns if that commit
 isn't pushed. Forks running modified code must push it and set `SOURCE_URL` to their repository.
 
+## Media mode (MEDIA_MODE)
+`cloudflare` (default: Cloudflare Realtime SFU + TURN, no public IP needed) or `livekit` (profile `livekit`: the
+`livekit` service, `deploy/livekit/livekit.yaml`, keys `LIVEKIT_API_KEY`/`LIVEKIT_API_SECRET` from `scripts/secrets.sh`,
+`LIVEKIT_NODE_IP` = the machine's public IPv4; publishes only 7881/tcp + 7882/udp — signaling 7880 stays internal and
+is relayed by the api). `scripts/up.sh` checks the chosen mode's settings and adds the profile; the Cloudflare SFU
+values are required only in Cloudflare mode. Design: `docs/plans/2026-10-11-livekit-media-mode-design.md`.
+
 ## Images and the Hetzner server (opt-in, costs money)
 `api` and `web` carry `image: ${CIPHEROOM_IMAGE_PREFIX:-ghcr.io/alex-fix/cipheroom}-<svc>:${CIPHEROOM_TAG:-local}`
 next to `build:` — home builds tag `local`; `.github/workflows/images.yml` pushes `sha-<commit>` / `main` / release

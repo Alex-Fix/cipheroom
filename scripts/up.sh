@@ -14,6 +14,21 @@ for arg in "$@"; do
   esac
 done
 
+# Media provider (MEDIA_MODE): each needs its own settings; checked here, values never printed.
+env_value() { grep -E "^$1=" "$DEPLOY_DIR/.env" | tail -1 | cut -d= -f2- || true; }
+case "$(env_value MEDIA_MODE)" in
+  livekit)
+    [[ -n "$(env_value LIVEKIT_API_KEY)" ]] && grep -Eq '^LIVEKIT_API_SECRET=.{32,}' "$DEPLOY_DIR/.env" \
+      || die "MEDIA_MODE=livekit needs LIVEKIT_API_KEY and LIVEKIT_API_SECRET (32+ characters) — run scripts/secrets.sh"
+    [[ -n "$(env_value LIVEKIT_NODE_IP)" ]] \
+      || warn "LIVEKIT_NODE_IP is empty: LiveKit advertises 127.0.0.1 (fine on this machine only)"
+    COMPOSE+=(--profile livekit) ;;
+  ""|cloudflare)
+    [[ -n "$(env_value CF_SFU_APP_ID)" && -n "$(env_value CF_SFU_APP_SECRET)" ]] \
+      || die "set CF_SFU_APP_ID and CF_SFU_APP_SECRET in deploy/.env (see scripts/secrets.sh)" ;;
+  *) die "MEDIA_MODE must be cloudflare or livekit" ;;
+esac
+
 if [[ "$OBSERVABILITY" == true ]]; then
   # Grafana would otherwise start with its default admin password. Checked, never printed.
   grep -Eq '^GRAFANA_ADMIN_PASSWORD=.{12,}' "$DEPLOY_DIR/.env" \

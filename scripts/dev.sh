@@ -2,6 +2,8 @@
 # Run the API (dotnet watch) and the Angular dev server together. Ctrl+C stops both.
 # Media goes through Cloudflare Realtime SFU, so the API needs its credentials: they are read from deploy/.env
 # (CF_SFU_APP_ID / CF_SFU_APP_SECRET, plus TURN if set). Other LAN devices also need HTTPS: scripts/certs.sh.
+#   --livekit   LiveKit mode instead: a local LiveKit server in Docker (container cipheroom-dev-livekit, media on
+#               localhost 7881/tcp + 7882/udp) and the API pointed at it with throwaway dev keys
 source "$(dirname "$0")/_common.sh"
 require_dir "$API_DIR"
 require_dir "$WEB_DIR"
@@ -13,7 +15,31 @@ env_value() { [[ -f "$DEPLOY_DIR/.env" ]] && grep -E "^$1=" "$DEPLOY_DIR/.env" |
 sfu_app_id="$(env_value CF_SFU_APP_ID)"
 [[ -n "$sfu_app_id" ]] || warn "CF_SFU_APP_ID not set in deploy/.env — calls will fail (run scripts/secrets.sh)"
 
-trap 'kill 0' EXIT INT TERM
+LIVEKIT=false
+for arg in "$@"; do
+  case "$arg" in
+    --livekit) LIVEKIT=true ;;
+    *) die "unknown option: $arg (use --livekit)" ;;
+  esac
+done
+
+if [[ "$LIVEKIT" == true ]]; then
+  # Throwaway keys for this run only (the secret must be 32+ characters).
+  export Media__Provider=LiveKit LiveKit__Url=http://127.0.0.1:7880 LiveKit__ApiKey=devkey
+  LiveKit__ApiSecret="$(openssl rand -hex 32)"
+  export LiveKit__ApiSecret
+  docker rm -f cipheroom-dev-livekit >/dev/null 2>&1 || true
+  docker run -d --name cipheroom-dev-livekit \
+    -p 127.0.0.1:7880:7880 -p 127.0.0.1:7881:7881 -p 127.0.0.1:7882:7882/udp \
+    -e LIVEKIT_KEYS="devkey: $LiveKit__ApiSecret" \
+    -v "$DEPLOY_DIR/livekit/livekit.yaml:/etc/livekit.yaml:ro" \
+    livekit/livekit-server:v1.13.9 --config /etc/livekit.yaml --node-ip 127.0.0.1 >/dev/null \
+    || die "could not start LiveKit (is Docker running?)"
+  info "LiveKit → container cipheroom-dev-livekit (signaling 127.0.0.1:7880, relayed by the API)"
+  trap 'docker rm -f cipheroom-dev-livekit >/dev/null 2>&1; kill 0' EXIT INT TERM
+else
+  trap 'kill 0' EXIT INT TERM
+fi
 
 info "API  → http://localhost:5080"
 ASPNETCORE_ENVIRONMENT=Development ASPNETCORE_URLS=http://localhost:5080 \

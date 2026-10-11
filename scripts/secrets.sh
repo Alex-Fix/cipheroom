@@ -14,13 +14,21 @@ fi
 chmod 600 "$env_file"
 
 # name|where to get it
-required=(
-  "CF_SFU_APP_ID|Cloudflare dashboard → Realtime → SFU → create application"
-  "CF_SFU_APP_SECRET|same SFU application (app secret)"
-  "CF_TURN_KEY_ID|Cloudflare dashboard → Realtime → TURN → create key (fallback for restrictive networks)"
-  "CF_TURN_API_TOKEN|same TURN key (API token)"
-  "TUNNEL_TOKEN|Zero Trust → Networks → Tunnels (only for scripts/up.sh --tunnel)"
-)
+mode="$(grep -E '^MEDIA_MODE=' "$env_file" | tail -1 | cut -d= -f2- || true)"
+if [[ "$mode" == livekit ]]; then
+  required=(
+    "LIVEKIT_NODE_IP|this machine's public IPv4 (LiveKit advertises it to browsers)"
+    "TUNNEL_TOKEN|Zero Trust → Networks → Tunnels (only for scripts/up.sh --tunnel)"
+  )
+else
+  required=(
+    "CF_SFU_APP_ID|Cloudflare dashboard → Realtime → SFU → create application"
+    "CF_SFU_APP_SECRET|same SFU application (app secret)"
+    "CF_TURN_KEY_ID|Cloudflare dashboard → Realtime → TURN → create key (fallback for restrictive networks)"
+    "CF_TURN_API_TOKEN|same TURN key (API token)"
+    "TUNNEL_TOKEN|Zero Trust → Networks → Tunnels (only for scripts/up.sh --tunnel)"
+  )
+fi
 missing=0
 for entry in "${required[@]}"; do
   name="${entry%%|*}"
@@ -45,6 +53,22 @@ if [[ -z "$(value_of TELEMETRY_SECRET)" ]]; then
   fi
   cat "$tmp" > "$env_file"; rm -f "$tmp"
   info "Generated TELEMETRY_SECRET (pseudonymous room ids in logs and traces)"
+fi
+
+# LiveKit keys (MEDIA_MODE=livekit): random, only the api and the LiveKit server use them. Written, never printed.
+set_value() {
+  local tmp; tmp="$(mktemp)"
+  if grep -qE "^$1=" "$env_file"; then
+    awk -v k="$1" -v v="$2" 'index($0, k "=") == 1 { print k "=" v; next } { print }' "$env_file" > "$tmp"
+  else
+    cat "$env_file" > "$tmp"; printf '%s=%s\n' "$1" "$2" >> "$tmp"
+  fi
+  cat "$tmp" > "$env_file"; rm -f "$tmp"
+}
+if [[ -z "$(value_of LIVEKIT_API_KEY)" ]]; then
+  set_value LIVEKIT_API_KEY "cipheroom$(openssl rand -hex 6)"
+  set_value LIVEKIT_API_SECRET "$(openssl rand -hex 32)"
+  info "Generated LIVEKIT_API_KEY / LIVEKIT_API_SECRET (used only with MEDIA_MODE=livekit)"
 fi
 
 optional=(
