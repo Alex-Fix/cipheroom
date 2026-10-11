@@ -1,7 +1,8 @@
+# Socket-activated ssh.service may be idle: then there's nothing to reload and the next connection reads the new
+# config. The systemd module has no try-reload.
 - name: Reload ssh
-  ansible.builtin.systemd_service:
-    name: ssh
-    state: reloaded
+  ansible.builtin.command: systemctl try-reload-or-restart ssh.service # noqa: command-instead-of-module
+  changed_when: true
 
 - name: Restart fail2ban
   ansible.builtin.service:

@@ -1,3 +1,3 @@
 # Docker's release signing key (https://docs.docker.com/engine/install/ubuntu/).
 docker_gpg_fingerprint: 9DC858229FC7DD38854AE2D88D81803C0EBFCD88
-docker_arch: "{{ {'x86_64': 'amd64', 'aarch64': 'arm64'}[ansible_architecture] }}"
+docker_arch: "{{ {'x86_64': 'amd64', 'aarch64': 'arm64'}[ansible_facts['architecture']] }}"

@@ -128,7 +128,7 @@ is ~3.6 GB per viewer-hour against the 1 TB/month free tier. The usage guard enf
 | `scripts/security-check.sh [url]` | Secret scan, dependency audit, security headers |
 | `scripts/secrets.sh` | Create `deploy/.env` and list required values that are still empty |
 | `scripts/provision.sh [--destroy]` | Create or update the Hetzner server (Terraform) — [`docs/deployment-hetzner.md`](docs/deployment-hetzner.md) |
-| `scripts/deploy.sh [--tag <tag>] [--observability]` | Deploy or roll back the server from GHCR images (Ansible) |
+| `scripts/deploy.sh [--tag <tag>] [--no-observability]` | Deploy or roll back the server from GHCR images (Ansible; Grafana on by default) |
 
 ## Roadmap
 

@@ -56,7 +56,7 @@ All scripts run from the repo root.
 - `scripts/secrets.sh` — create `deploy/.env`, list required Cloudflare values that are still empty
 - `scripts/security-check.sh [url]` — secret scan, `.env` hygiene, NuGet/npm audit, live security headers
 - `scripts/certs.sh` — local HTTPS certs via mkcert (needed to test cameras from another LAN device)
-- `scripts/provision.sh [--destroy]` / `scripts/deploy.sh [--tag <tag>] [--observability]` — Hetzner server via
+- `scripts/provision.sh [--destroy]` / `scripts/deploy.sh [--tag <tag>] [--no-observability]` — Hetzner server via
   Terraform, deploy/roll back from GHCR images via Ansible (`docs/deployment-hetzner.md`)
 
 ## Non-negotiable rules

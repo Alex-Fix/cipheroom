@@ -74,8 +74,16 @@
     mode: "0644"
   notify: Reload ssh
 
+# Ubuntu 24.04+ socket-activates ssh: /run/sshd exists only while ssh.service runs, and `sshd -t` needs it (the unit
+# creates it the same way, RuntimeDirectory=sshd).
+- name: Privilege separation directory for the check
+  ansible.builtin.file:
+    path: /run/sshd
+    state: directory
+    mode: "0755"
+
 - name: Check the sshd configuration
-  ansible.builtin.command: sshd -t
+  ansible.builtin.command: /usr/sbin/sshd -t
   changed_when: false
 
 - name: Ban repeated SSH login failures
