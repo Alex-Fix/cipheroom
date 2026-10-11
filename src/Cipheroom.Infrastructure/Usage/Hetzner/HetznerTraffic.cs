@@ -4,7 +4,7 @@ using System.Text.Json.Serialization;
 using Cipheroom.Application.Common.Interfaces;
 using Microsoft.Extensions.Options;
 
-namespace Cipheroom.Infrastructure.Usage;
+namespace Cipheroom.Infrastructure.Usage.Hetzner;
 
 /// <summary>
 /// Typed HttpClient for one Hetzner Cloud server (https://docs.hetzner.cloud/#servers-get-a-server): its outgoing

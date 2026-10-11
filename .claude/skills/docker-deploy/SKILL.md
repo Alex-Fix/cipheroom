@@ -40,7 +40,7 @@ usage from Cloudflare (`RealtimeUsagePoller`) and the Grafana **Free tier** dash
 end) of `REALTIME_FREE_TIER_GB` (1000); `REALTIME_GUARD_ENABLED=false` turns it off. Its estimate lives in the
 `api-data` volume (`/data/usage.json`) — don't delete that volume mid-month without a Cloudflare analytics token.
 To try it out, pin a level with `{"UsageGuard": {"ForceLevel": "Saving"}}` (or `AudioOnly`, `Paused`) in
-`artifacts/dev-settings.json` while `scripts/dev.sh` runs — Development only, applied live; `{}` puts it back.
+`artifacts/dev/dev-settings.json` while `scripts/dev.sh` runs — Development only, applied live; `{}` puts it back.
 Keep a Cloudflare billing notification on as a second net. Don't add paid services or rented VMs without approval.
 
 ## Source link (AGPL §13)
@@ -65,7 +65,7 @@ usage guard to Hetzner traffic. Design: `docs/plans/2026-10-11-livekit-media-mod
 next to `build:` — home builds tag `local`; `.github/workflows/images.yml` pushes `sha-<commit>` / `main` / release
 tags to GHCR (amd64, Source link = that commit). `scripts/provision.sh` (Terraform, `deploy/terraform/hetzner/`:
 `cx23`, Ubuntu 26.04, firewall = 22/tcp from `allowed_ssh_cidrs` only) and `scripts/deploy.sh` (Ansible,
-`deploy/ansible/`: roles base / docker / cipheroom) run the same compose file there. Rules:
+`deploy/ansible/`: roles base / docker / cipheroom, + certs for LiveKit TURN) run the same compose file there. Rules:
 - Secrets: `deploy/.env` + `deploy/.env.hetzner` overlay (only differing keys), merged by Ansible with `no_log`;
   `HCLOUD_TOKEN` only from the environment. Never print values in tasks or scripts.
 - The server needs **its own tunnel** (own `TUNNEL_TOKEN` + `PUBLIC_HOST`): two stacks behind one token split rooms.
@@ -73,7 +73,7 @@ tags to GHCR (amd64, Source link = that commit). `scripts/provision.sh` (Terrafo
 - Deploys verify `https://PUBLIC_HOST/` through the tunnel (`up --wait` alone misses a crash-looping cloudflared) and
   record good tags in `/opt/cipheroom/deployed-tags` (current + previous, kept for rollback).
 - New compose services that the server needs: nothing to add if they're in the compose file; files they mount must be
-  copied by the `cipheroom` role. `cipheroom_mode` reserves room for the self-hosted modes.
+  copied by the `cipheroom` role. The mode is `cipheroom_media_mode`, taken from `MEDIA_MODE` in the merged `.env`.
 - Validate: `scripts/lint.sh` (terraform validate, ansible syntax/lint, shellcheck). Guide: `docs/deployment-hetzner.md`.
 
 ## Commands

@@ -1,7 +1,7 @@
 using Cipheroom.Application.Common.Interfaces;
 using Microsoft.Extensions.Options;
 
-namespace Cipheroom.Infrastructure.Usage;
+namespace Cipheroom.Infrastructure.Usage.Cloudflare;
 
 /// <summary><see cref="IRealtimeUsage"/> from Cloudflare's analytics, for the current calendar month in UTC (as billed).</summary>
 public sealed class CloudflareRealtimeUsage(

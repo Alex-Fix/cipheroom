@@ -1,8 +1,8 @@
 using Cipheroom.Application.Common.Interfaces;
 using Cipheroom.Domain.Rooms;
-using Cipheroom.Infrastructure.Rtc;
+using Cipheroom.Infrastructure.Rtc.Cloudflare;
 
-namespace Cipheroom.Infrastructure.IntegrationTests.Rtc;
+namespace Cipheroom.Infrastructure.IntegrationTests.Rtc.Cloudflare;
 
 public sealed class CloudflareMediaRoomTests
 {

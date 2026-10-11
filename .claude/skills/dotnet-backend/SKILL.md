@@ -22,8 +22,13 @@ src/
     <Feature>/Commands|Queries/<UseCase>/<UseCase>Command.cs   record + validator + handler in one file
     DependencyInjection.cs   AddApplication() (validators)
   Cipheroom.Infrastructure/  → Application. Adapters + options; AddInfrastructure()
-    Rooms/InMemoryRoomStore.cs   Rtc/CloudflareSfu.cs (ISfu)  Rtc/IceServerProviders.cs  Rtc/RtcOptions.cs
-    Rtc/Cloudflare/CloudflareSfuClient.cs CloudflareTurnClient.cs   typed HttpClients + source-generated JSON
+    Rooms/InMemoryRoomStore.cs
+    Rtc/                     shared: MediaOptions (MEDIA_MODE), UnavailableMedia, DirectIceServerProvider
+    Rtc/Cloudflare/          CloudflareSfu (ISfu), CloudflareMediaRoom, CloudflareIceServerProvider, CloudflareOptions,
+                             PendingOffers, SdpCodecs; CloudflareSfuClient + CloudflareTurnClient (typed HttpClients)
+    Rtc/LiveKit/             LiveKitMediaRoom, LiveKitRelay, LiveKitTokens, LiveKitRoomServiceClient, LiveKitOptions
+    Usage/                   shared: UsageGuard, RealtimeUsagePoller, options
+    Usage/Cloudflare/ Usage/Hetzner/   IRealtimeUsage adapters (Cloudflare analytics, Hetzner traffic)
   Cipheroom.Api/             → Application, Infrastructure. Composition root; Mediator.SourceGenerator runs here
     Hubs/RoomHub.cs IRoomClient.cs Contracts/   (wire contract — see signaling-protocol skill)
     Hubs/Filters/HubRateLimitFilter.cs HubExceptionFilter.cs
@@ -55,6 +60,8 @@ tests/                       one project per layer; Directory.Build.props adds x
 - **Options:** `AddOptions<T>().BindConfiguration(...).ValidateDataAnnotations().ValidateOnStart()`. Env vars use `__`
   (`Sfu__Cloudflare__AppSecret`); compose maps `.env` names onto them.
 - **Time:** inject `TimeProvider`; tests use `FakeTimeProvider`.
+- **Provider folders:** code used by one provider lives in `Rtc/<Provider>/` or `Usage/<Provider>/` (namespace
+  follows the folder); shared code stays at the top of the area. Integration tests mirror the same layout.
 - **Outbound HTTP:** one **typed client per external API** in Infrastructure (e.g. `Rtc/Cloudflare/CloudflareTurnClient`):
   it only speaks HTTP and returns the API's DTOs; an adapter maps them to Application types. Base address (from
   options, so tests can point it elsewhere) and auth headers are set once in `AddHttpClient<T>((sp, http) => …)`, plus

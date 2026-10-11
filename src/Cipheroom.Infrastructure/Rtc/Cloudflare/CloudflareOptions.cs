@@ -1,6 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 
-namespace Cipheroom.Infrastructure.Rtc;
+namespace Cipheroom.Infrastructure.Rtc.Cloudflare;
 
 public sealed class TurnOptions
 {

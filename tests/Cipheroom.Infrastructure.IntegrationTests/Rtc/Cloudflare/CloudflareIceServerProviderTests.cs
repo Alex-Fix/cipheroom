@@ -8,7 +8,7 @@ using Cipheroom.Infrastructure.Rtc.Cloudflare;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Cipheroom.Infrastructure.IntegrationTests.Rtc;
+namespace Cipheroom.Infrastructure.IntegrationTests.Rtc.Cloudflare;
 
 /// <summary>Goes through the real AddInfrastructure() registration; only the network handler is stubbed.</summary>
 public sealed class CloudflareIceServerProviderTests

@@ -25,19 +25,21 @@ Cipheroom.slnx                   solution (+ global.json, Directory.Build.props,
 src/                             Clean Architecture — dependencies point inward only:
   Cipheroom.Domain/              entities, value objects, rules (no dependencies)
   Cipheroom.Application/         commands/queries (Mediator), FluentValidation, ports (interfaces)
-  Cipheroom.Infrastructure/      adapters: room store, Cloudflare SFU + TURN clients, options
+  Cipheroom.Infrastructure/      adapters: room store, Rtc/{Cloudflare,LiveKit}/, Usage/{Cloudflare,Hetzner}/ (one folder per provider)
   Cipheroom.Api/                 ASP.NET Core host: SignalR hubs, filters, composition root (+ Dockerfile)
 tests/                           xUnit v3, one project per layer (shared settings in tests/Directory.Build.props)
   Cipheroom.Domain.UnitTests/ .Application.UnitTests/ .Infrastructure.IntegrationTests/ .Api.FunctionalTests/
+  fixtures/                      test vectors shared by backend and web tests (e.g. WebCrypto-signed admission)
 web/                             Angular app (npm, + Dockerfile); src/app/{core,shared,features}, design/ = logo masters
 deploy/
-  docker-compose.yml             api, web (nginx), cloudflared; profile observability (collector, Prometheus, Loki, Tempo, Grafana, exporters)
-  nginx/ cloudflared/            service config
+  docker-compose.yml             api, web (nginx), cloudflared; profiles livekit, observability (collector, Prometheus, Loki, Tempo, Grafana, exporters)
+  nginx/ cloudflared/ livekit/   service config
   observability/                 collector / Prometheus / Loki / Tempo config, Grafana provisioning + generated dashboards
   terraform/hetzner/             Hetzner server + SSH-only firewall (state stays local, gitignored)
-  ansible/                       site.yml + roles base / docker / cipheroom (cipheroom_mode: cloudflare)
+  ansible/                       site.yml + roles base / docker / cipheroom (+ certs for LiveKit TURN); mode from MEDIA_MODE
 .github/workflows/               images.yml: build + push api/web to GHCR (sha-<commit> tags)
 scripts/                         dev/ops scripts (bash, run from repo root)
+artifacts/                       gitignored: .NET build output, dev/ (usage.json, dev-settings.json, logs), e2e/ (local repro scripts + runs)
 docs/                            architecture + protocol docs; plans/ holds approved feature designs
 ```
 

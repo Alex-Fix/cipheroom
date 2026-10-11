@@ -122,10 +122,10 @@ estimates usage from browser reports (media and data channel bytes) and Cloudfla
   (rejoin) recovers, which now happens automatically. The log line carries `SFU refused the answer. Offered: …
   Answered: …` — mids, kinds and codec names only (`SdpCodecs`); the Connection report has the same as "Last
   negotiation failure" (kept across the rejoin).
-- Repro scripts: `artifacts/repro/codec-rejoin.mjs` (codec changes with 2–3 people), `codec-sdp-probe.mjs` (codecs
+- Repro scripts: `artifacts/e2e/repro/codec-rejoin.mjs` (codec changes with 2–3 people), `codec-sdp-probe.mjs` (codecs
   per m-line and what each side really sends), `safety-net-e2e.mjs` (old codec bug injected in one browser).
 - Browser: `[cipheroom] camera failed …` in the console has the real device / negotiation error (Safari: Web
   Inspector over USB for iPhones). `chrome://webrtc-internals` for ICE and codecs.
 - Two-browser checks without devices: headless Chrome (`--use-fake-device-for-media-stream`) or Playwright WebKit
-  with a canvas `getUserMedia` stand-in, against `https://<PUBLIC_HOST>` (keep such scripts under `artifacts/`).
+  with a canvas `getUserMedia` stand-in, against `https://<PUBLIC_HOST>` (keep such scripts under `artifacts/e2e/repro/`, output via `OUT=` under `artifacts/e2e/runs/`).
 - getUserMedia needs a secure context: localhost is fine; LAN devices need `scripts/certs.sh`.

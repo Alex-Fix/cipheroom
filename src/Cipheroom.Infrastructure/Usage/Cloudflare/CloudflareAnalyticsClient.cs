@@ -3,7 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace Cipheroom.Infrastructure.Usage;
+namespace Cipheroom.Infrastructure.Usage.Cloudflare;
 
 /// <summary>
 /// Typed HttpClient for Cloudflare's GraphQL Analytics API: month-to-date Realtime egress. Base address and the

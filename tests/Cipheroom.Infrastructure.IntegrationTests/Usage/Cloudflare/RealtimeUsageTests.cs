@@ -5,13 +5,14 @@ using Cipheroom.Application;
 using Cipheroom.Application.Common.Interfaces;
 using Cipheroom.Application.Common.Telemetry;
 using Cipheroom.Infrastructure.Usage;
+using Cipheroom.Infrastructure.Usage.Cloudflare;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.Metrics.Testing;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Time.Testing;
 
-namespace Cipheroom.Infrastructure.IntegrationTests.Usage;
+namespace Cipheroom.Infrastructure.IntegrationTests.Usage.Cloudflare;
 
 /// <summary>Free-tier usage through the real AddInfrastructure() registration; only the network and the clock are fake.</summary>
 public sealed class RealtimeUsageTests

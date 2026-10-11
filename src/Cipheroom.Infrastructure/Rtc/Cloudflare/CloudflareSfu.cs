@@ -1,9 +1,8 @@
 using Cipheroom.Application.Common.Exceptions;
 using Cipheroom.Application.Common.Interfaces;
 using Cipheroom.Application.Common.Telemetry;
-using Cipheroom.Infrastructure.Rtc.Cloudflare;
 
-namespace Cipheroom.Infrastructure.Rtc;
+namespace Cipheroom.Infrastructure.Rtc.Cloudflare;
 
 /// <summary>
 /// <see cref="ISfu"/> on Cloudflare Realtime SFU. Adapter only: HTTP lives in <see cref="CloudflareSfuClient"/>.
