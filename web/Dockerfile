@@ -1,5 +1,6 @@
 # Build context: repo root (needs deploy/nginx).
-FROM node:lts-alpine AS build
+# Base images are pinned by digest (reproducible builds); Dependabot (.github/dependabot.yml) proposes updates.
+FROM node:24-alpine@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1 AS build
 WORKDIR /app
 COPY web/package.json web/package-lock.json ./
 RUN npm ci
@@ -19,7 +20,7 @@ RUN echo "$SOURCE_URL" | grep -Eq '^https://[A-Za-z0-9._~/-]+$' \
     && sed "s|@SOURCE_TARGET@|$target|" /tmp/default.conf > /tmp/default.conf.out \
     && grep -q "return 302 $target;" /tmp/default.conf.out
 
-FROM nginxinc/nginx-unprivileged:1.31-alpine
+FROM nginxinc/nginx-unprivileged:1.31-alpine@sha256:b9241c6e7b8e9a862f129d8d4199ab64b10390949a78bdd5603379b32c844083
 COPY --from=build /tmp/default.conf.out /etc/nginx/conf.d/default.conf
 COPY --from=build /app/dist/web/browser /usr/share/nginx/html
 EXPOSE 8080
