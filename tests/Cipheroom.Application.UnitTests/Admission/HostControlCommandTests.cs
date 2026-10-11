@@ -25,7 +25,7 @@ public sealed class HostControlCommandTests
     private readonly FakeRoomStore _rooms = new();
     private readonly FakeSignatureVerifier _verifier = new();
     private readonly FakeUsageGuard _usage = new();
-    private readonly ISfu _sfu = Substitute.For<ISfu>();
+    private readonly IMediaRoom _media = Substitute.For<IMediaRoom>();
     private readonly FakeTimeProvider _time = new();
     private readonly CancellationToken _ct = TestContext.Current.CancellationToken;
     private readonly Participant _host;
@@ -124,7 +124,7 @@ public sealed class HostControlCommandTests
         var granted = await new GrantCoHostCommandHandler(_rooms, _verifier).Handle(new("host", bob.Id.Value, Sig), _ct);
         Assert.Contains(granted.Authority.Admitters, a => a.Id == bob.Id);
 
-        var removed = await new RemoveParticipantCommandHandler(_rooms, _verifier, _sfu, Metrics()).Handle(new("bob", carol.Id.Value, Sig), _ct);
+        var removed = await new RemoveParticipantCommandHandler(_rooms, _verifier, _media, Metrics()).Handle(new("bob", carol.Id.Value, Sig), _ct);
         Assert.Equal(carol.Id, removed.Removed.Id);
         Assert.Single(removed.Authority.Revoked);
 
@@ -137,14 +137,14 @@ public sealed class HostControlCommandTests
     }
 
     [Fact]
-    public async Task Removing_someone_stops_their_media_session_receiving()
+    public async Task Removing_someone_stops_their_media()
     {
         var bob = _rooms.Join("bob", sfuSessionId: "sess-b");
         _rooms.InRoom("bob", (room, self) => room.Publish(self.Id, [(TrackSource.Camera, "7")]));
 
-        await new RemoveParticipantCommandHandler(_rooms, _verifier, _sfu, Metrics()).Handle(new("host", bob.Id.Value, Sig), _ct);
+        await new RemoveParticipantCommandHandler(_rooms, _verifier, _media, Metrics()).Handle(new("host", bob.Id.Value, Sig), _ct);
 
-        await _sfu.Received(1).CloseTracksAsync("sess-b", Arg.Is<IReadOnlyList<string>>(m => m.Count == 1 && m[0] == "7"), _ct);
+        await _media.Received(1).RemoveParticipantAsync(_room, Arg.Is<Participant>(p => p.Id == bob.Id && p.SfuSessionId == "sess-b"), _ct);
     }
 
     [Fact]
@@ -152,9 +152,9 @@ public sealed class HostControlCommandTests
     {
         var bob = _rooms.Join("bob", sfuSessionId: "sess-b");
         _rooms.InRoom("bob", (room, self) => room.Publish(self.Id, [(TrackSource.Camera, "7")]));
-        _sfu.CloseTracksAsync(default!, default!, _ct).ReturnsForAnyArgs(Task.FromException(new MediaServerException()));
+        _media.RemoveParticipantAsync(default!, default!, _ct).ReturnsForAnyArgs(Task.FromException(new MediaServerException()));
 
-        var result = await new RemoveParticipantCommandHandler(_rooms, _verifier, _sfu, Metrics()).Handle(new("host", bob.Id.Value, Sig), _ct);
+        var result = await new RemoveParticipantCommandHandler(_rooms, _verifier, _media, Metrics()).Handle(new("host", bob.Id.Value, Sig), _ct);
         Assert.Equal(bob.Id, result.Removed.Id);
     }
 
@@ -188,11 +188,22 @@ public sealed class HostControlCommandTests
         _rooms.Join("bob");
         Waiting("guest");
 
-        var result = await new EndCallCommandHandler(_rooms, _verifier, Metrics()).Handle(new("host", Sig), _ct);
+        var result = await new EndCallCommandHandler(_rooms, _verifier, _media, Metrics()).Handle(new("host", Sig), _ct);
 
         Assert.Equal(["host", "bob", "guest"], result.Connections);
         Assert.Equal(_host.Identity.Ed25519Pub, result.Issuer);
         Assert.Equal(new(0, 0), _rooms.Stats());
+        await _media.Received(1).EndRoomAsync(_room, _ct);
+    }
+
+    [Fact]
+    public async Task A_failing_media_server_does_not_undo_ending_the_call()
+    {
+        _media.EndRoomAsync(default!, _ct).ReturnsForAnyArgs(Task.FromException(new MediaServerException()));
+
+        var result = await new EndCallCommandHandler(_rooms, _verifier, _media, Metrics()).Handle(new("host", Sig), _ct);
+
+        Assert.Equal(["host"], result.Connections);
     }
 
     [Fact]

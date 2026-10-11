@@ -9,8 +9,13 @@ Design: `docs/plans/2026-10-07-cloudflare-sfu-design.md`. Protocol: `docs/signal
 `docs/architecture.md` ("Components", "Media path").
 
 ## Boundaries
-- **Frontend** `web/src/app/core/media/`: `MediaService` (provided per room route) owns the single
-  `RTCPeerConnection` and exposes signals (`tiles`, `participants`, `state`, device flags, `cameras`,
+- **Provider seam** (docs/plans/2026-10-11-livekit-media-mode-design.md): `MediaService` is provider-neutral; the
+  connection belongs to a `MediaTransport` (`media-transport.ts`) chosen by `RtcConfig.provider` —
+  `CloudflareTransport` (`cloudflare-transport.ts`: the single peer connection, negotiation queue, subscriptions,
+  layers, ICE restart, data channels). The api side: `ISfu` (Cloudflare negotiation) + `IMediaRoom` (remove
+  participant / end room, `Provider`). Everything below describes the Cloudflare transport.
+- **Frontend** `web/src/app/core/media/`: `MediaService` (provided per room route) owns the call (through its
+  transport) and exposes signals (`tiles`, `participants`, `state`, device flags, `cameras`,
   `videoQuality`, `availableQualities`, `canPlaybackAudio`, `connection`, `poorConnection`). Components never touch the peer
   connection, tracks' senders or keys. Pure helpers next to it: `serial-queue`, `subscriptions`, `layers`,
   `quality`, `speaking`, `audio-playback`, `cameras`, `ice-path`, `connection-health` — each with a spec.

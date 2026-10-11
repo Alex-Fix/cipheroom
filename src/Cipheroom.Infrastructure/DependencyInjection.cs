@@ -41,6 +41,7 @@ public static class DependencyInjection
             .AddStandardResilienceHandler(o => o.Retry.DisableForUnsafeHttpMethods());
         services.AddSingleton<PendingOffers>();
         services.AddTransient<ISfu, CloudflareSfu>();
+        services.AddTransient<IMediaRoom, CloudflareMediaRoom>();
 
         // Free-tier usage from Cloudflare's GraphQL Analytics (read-only token), polled in the background.
         services.AddOptions<RealtimeUsageOptions>().BindConfiguration(RealtimeUsageOptions.Section).ValidateDataAnnotations().ValidateOnStart();

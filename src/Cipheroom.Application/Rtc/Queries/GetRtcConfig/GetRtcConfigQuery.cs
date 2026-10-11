@@ -12,7 +12,8 @@ namespace Cipheroom.Application.Rtc.Queries.GetRtcConfig;
 /// </summary>
 public sealed record GetRtcConfigQuery(string ConnectionId) : IQuery<RtcConfigResult>;
 
-public sealed record RtcConfigResult(IReadOnlyList<IceServer> IceServers, bool ForceRelay);
+/// <param name="Provider">Which media provider the browser connects through (the rest is that provider's settings).</param>
+public sealed record RtcConfigResult(MediaProvider Provider, IReadOnlyList<IceServer> IceServers, bool ForceRelay);
 
 public sealed class GetRtcConfigQueryValidator : AbstractValidator<GetRtcConfigQuery>
 {
@@ -22,7 +23,8 @@ public sealed class GetRtcConfigQueryValidator : AbstractValidator<GetRtcConfigQ
 public sealed class GetRtcConfigQueryHandler(
     IRoomStore rooms,
     IIceServerProvider iceServers,
-    ISfu sfu) : IQueryHandler<GetRtcConfigQuery, RtcConfigResult>
+    ISfu sfu,
+    IMediaRoom media) : IQueryHandler<GetRtcConfigQuery, RtcConfigResult>
 {
     public async ValueTask<RtcConfigResult> Handle(GetRtcConfigQuery query, CancellationToken cancellationToken)
     {
@@ -32,7 +34,7 @@ public sealed class GetRtcConfigQueryHandler(
         var session = PrepareSessionAsync(query.ConnectionId, cancellationToken);
         var ice = await iceServers.GetAsync(self.Id, cancellationToken);
         await session;
-        return new RtcConfigResult(ice.IceServers, ice.ForceRelay);
+        return new RtcConfigResult(media.Provider, ice.IceServers, ice.ForceRelay);
     }
 
     /// <summary>Best effort: if the media server fails now, the first publish creates the session as before.</summary>

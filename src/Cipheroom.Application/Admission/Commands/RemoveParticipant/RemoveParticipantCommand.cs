@@ -29,7 +29,7 @@ public sealed class RemoveParticipantCommandValidator : AbstractValidator<Remove
     }
 }
 
-public sealed class RemoveParticipantCommandHandler(IRoomStore rooms, ISignatureVerifier verifier, ISfu sfu, CipheroomMetrics metrics)
+public sealed class RemoveParticipantCommandHandler(IRoomStore rooms, ISignatureVerifier verifier, IMediaRoom media, CipheroomMetrics metrics)
     : ICommandHandler<RemoveParticipantCommand, RemoveParticipantResult>
 {
     public async ValueTask<RemoveParticipantResult> Handle(RemoveParticipantCommand command, CancellationToken cancellationToken)
@@ -46,18 +46,13 @@ public sealed class RemoveParticipantCommandHandler(IRoomStore rooms, ISignature
         metrics.Admission(CipheroomMetrics.AdmissionRemoved);
 
         // Stop forwarding to them at once instead of waiting for their browser to leave.
-        var removed = result.Removed;
-        string[] mids = [.. removed.Subscriptions.Select(s => s.Mid), .. removed.Tracks.Select(t => t.Mid)];
-        if (removed.SfuSessionId is { } session && mids.Length > 0)
+        try
         {
-            try
-            {
-                await sfu.CloseTracksAsync(session, [.. mids.Distinct()], cancellationToken);
-            }
-            catch (MediaServerException)
-            {
-                // Best effort: they're out of the room and get no more keys; the session expires on its own.
-            }
+            await media.RemoveParticipantAsync(result.Removed.RoomId, result.Removed, cancellationToken);
+        }
+        catch (MediaServerException)
+        {
+            // Best effort: they're out of the room and get no more keys; the session expires on its own.
         }
         return result;
     }
