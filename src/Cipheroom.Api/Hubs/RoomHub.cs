@@ -12,6 +12,10 @@ using Cipheroom.Application.Admission.Commands.UpdateSettings;
 using Cipheroom.Application.CallStats.Commands.ReportCallStats;
 using Cipheroom.Application.Chat.Commands.SendChat;
 using Cipheroom.Application.Common.Interfaces;
+using Cipheroom.Application.Files.Commands.CloseDataChannel;
+using Cipheroom.Application.Files.Commands.OpenDataTransport;
+using Cipheroom.Application.Files.Commands.PublishDataChannel;
+using Cipheroom.Application.Files.Commands.SubscribeDataChannel;
 using Cipheroom.Application.Keys.Commands.SendKeyEnvelopes;
 using Cipheroom.Application.Media.Commands.PublishTracks;
 using Cipheroom.Application.Media.Commands.Renegotiate;
@@ -214,6 +218,24 @@ public sealed partial class RoomHub(IMediator mediator, IUsageGuard usage, Telem
         await Clients.OthersInGroup(GroupName(result.RoomId.Value)).ChatReceived(result.FromId.Value, blob!);
     }
 
+    // Files: data channels on the media server for end-to-end encrypted file chunks. Who shares what with whom is
+    // agreed inside encrypted chat events; the server only sees channels opening and closing.
+
+    public async Task<DataTransportDto> OpenDataTransport()
+    {
+        var result = await mediator.Send(new OpenDataTransportCommand(Context.ConnectionId), Context.ConnectionAborted);
+        return new DataTransportDto(result.OfferSdp, result.ServerEventsChannelId);
+    }
+
+    public async Task<DataChannelDto> PublishDataChannel(string? name) =>
+        new((await mediator.Send(new PublishDataChannelCommand(Context.ConnectionId, name), Context.ConnectionAborted)).ChannelId);
+
+    public async Task<DataChannelDto> SubscribeDataChannel(string? participantId, string? name) =>
+        new((await mediator.Send(new SubscribeDataChannelCommand(Context.ConnectionId, participantId, name), Context.ConnectionAborted)).ChannelId);
+
+    public async Task CloseDataChannel(string? name, string? participantId) =>
+        await mediator.Send(new CloseDataChannelCommand(Context.ConnectionId, name, participantId), Context.ConnectionAborted);
+
     // Telemetry: a browser's call-quality summary (numbers only), recorded as metrics.
 
     public async Task ReportCallStats(CallStatsDto? stats) =>
@@ -285,7 +307,8 @@ public sealed partial class RoomHub(IMediator mediator, IUsageGuard usage, Telem
             ToInput(s.VideoReceived),
             s.E2ee is { } e
                 ? new E2eeStatsInput(e.FramesEncrypted, e.FramesDecrypted, e.FramesFailed, e.FramesMissingKey, e.EnvelopesDropped, e.SecuringSeconds)
-                : null);
+                : null,
+            s.FileBytesReceived);
 
     private static StreamStatsInput? ToInput(StreamStatsDto? s) =>
         s is null ? null : new StreamStatsInput(s.Bytes, s.Packets, s.PacketsLost, s.JitterMs, s.FreezeSeconds, s.Height, s.Fps);

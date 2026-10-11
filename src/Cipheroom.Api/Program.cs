@@ -49,6 +49,7 @@ builder.Services.AddSignalR(o =>
     o.AddFilter<HubExceptionFilter>();
 });
 builder.Services.AddHostedService<Cipheroom.Api.Usage.UsageGuardNotifier>();
+builder.Services.AddHostedService<Cipheroom.Api.Files.DataChannelExpiry>();
 builder.Services.AddTrustedForwardedHeaders(builder.Configuration);
 builder.Services.AddProblemDetails();
 builder.Services.AddHealthChecks();

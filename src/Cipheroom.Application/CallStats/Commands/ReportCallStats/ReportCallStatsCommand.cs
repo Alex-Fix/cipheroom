@@ -16,6 +16,7 @@ public sealed record ReportCallStatsCommand(string ConnectionId, CallStatsInput?
 /// <param name="Platform">Coarse browser bucket (<see cref="CallStatsRules.Platforms"/>).</param>
 /// <param name="Path">direct / relay / unknown.</param>
 /// <param name="RttMs">Round trip on the connection to Cloudflare (selected ICE candidate pair).</param>
+/// <param name="FileBytesReceived">Encrypted file chunks received on data channels (usage estimate only).</param>
 public sealed record CallStatsInput(
     string? Platform,
     string? Path,
@@ -25,7 +26,8 @@ public sealed record CallStatsInput(
     StreamStatsInput? AudioReceived,
     StreamStatsInput? VideoSent,
     StreamStatsInput? VideoReceived,
-    E2eeStatsInput? E2ee);
+    E2eeStatsInput? E2ee,
+    double? FileBytesReceived = null);
 
 /// <summary>One direction of one media kind, summed over its streams for the interval.</summary>
 /// <param name="FreezeSeconds">Received video only: time frozen during the interval.</param>
@@ -65,7 +67,8 @@ public sealed class ReportCallStatsCommandValidator : AbstractValidator<ReportCa
         && s.IntervalSeconds is > 0 and <= CallStatsRules.MaxIntervalSeconds
         && CallStatsRules.InRange(s.RttMs, CallStatsRules.MaxRttMs)
         && IsValid(s.AudioSent) && IsValid(s.AudioReceived) && IsValid(s.VideoSent) && IsValid(s.VideoReceived)
-        && IsValid(s.E2ee);
+        && IsValid(s.E2ee)
+        && CallStatsRules.InRange(s.FileBytesReceived, CallStatsRules.MaxBytes);
 
     private static bool IsValid(StreamStatsInput? s) =>
         s is null
@@ -100,6 +103,7 @@ public sealed class ReportCallStatsCommandHandler(IRoomStore rooms, CipheroomMet
         metrics.CallReport(stats, platform, path);
         // What Cloudflare sent this browser: the usage guard's estimate of billed egress.
         usage.RecordReceived((stats.AudioReceived?.Bytes ?? 0) + (stats.VideoReceived?.Bytes ?? 0), stats.IntervalSeconds);
+        usage.RecordFilesReceived(stats.FileBytesReceived ?? 0, stats.IntervalSeconds);
         return ValueTask.FromResult(Unit.Value);
     }
 }

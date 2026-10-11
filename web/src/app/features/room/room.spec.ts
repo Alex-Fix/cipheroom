@@ -1,3 +1,4 @@
+import { FileTransferService } from '../../core/files/file-transfer.service';
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter, Router } from '@angular/router';
@@ -171,13 +172,14 @@ async function setup(
   const media = fakeMedia();
   const signaling = fakeSignaling();
   opts.tweak?.(media, signaling);
-  const message = { error: vi.fn(), success: vi.fn() };
+  const message = { error: vi.fn(), success: vi.fn(), warning: vi.fn() };
   const crypto = fakeCrypto();
   opts.crypto?.(crypto);
   const lobby = fakeLobby();
   opts.lobby?.(lobby);
   const chat = fakeChat();
   const contacts = fakeContacts();
+  const files = { files: signal(new Map()), allowed: signal(true), share: vi.fn(), download: vi.fn(), cancel: vi.fn() };
 
   TestBed.configureTestingModule({
     imports: [Room],
@@ -195,6 +197,7 @@ async function setup(
         { provide: CryptoService, useValue: crypto },
         { provide: LobbyService, useValue: lobby },
         { provide: ChatService, useValue: chat },
+        { provide: FileTransferService, useValue: files },
         { provide: CallContactsService, useValue: contacts },
       ],
     },
@@ -224,6 +227,7 @@ async function setup(
     crypto,
     lobby,
     chat,
+    files,
     contacts,
     modal,
   };
@@ -607,6 +611,29 @@ describe('Room', () => {
       fixture.detectChanges();
       expect(notices()).toEqual(['<i>Bob</i>: look at this…']);
       expect(el.querySelector('.notice i')).toBeNull();
+    });
+
+    it('announces a shared file by its name', async () => {
+      const { el, fixture, chat, files } = await setup();
+      files.files.set(new Map([['f1', { name: 'beach.jpg' }]]));
+      chat.latest.set({ authorName: 'Bob', text: '', fileId: 'f1' } as ChatMessage);
+      fixture.detectChanges();
+      expect([...el.querySelectorAll('.notice')].map((n) => n.textContent!.trim())).toEqual(['Bob shared beach.jpg']);
+    });
+
+    it('shares attached files and says why when it can’t', async () => {
+      const { fixture, files, message } = await setup();
+      const panel = fixture.debugElement.query((d) => d.name === 'app-chat-panel').componentInstance;
+      const file = new File(['x'], 'x.txt');
+      files.share.mockReturnValueOnce(undefined).mockReturnValueOnce('too-large');
+
+      panel.attach.emit([file]);
+      panel.attach.emit([file]);
+      panel.download.emit('f1');
+
+      expect(files.share).toHaveBeenCalledWith([file]);
+      expect(message.warning).toHaveBeenCalledExactlyOnceWith('Files can be up to 100 MB each.');
+      expect(files.download).toHaveBeenCalledWith('f1');
     });
 
     it('sends, retries and reacts through ChatService', async () => {

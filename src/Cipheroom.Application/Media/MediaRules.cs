@@ -55,6 +55,12 @@ internal static class MediaSessions
             ?? throw new NotFoundException(MediaRules.NotInRoom);
     }
 
+    /// <summary>Runs <paramref name="action"/> on the caller's room as a member ("Join a room first." if in none).</summary>
+    public static T InRoom<T>(IRoomStore rooms, string connectionId, Func<Room, Participant, T> action) =>
+        (rooms.InRoom(connectionId, (room, self) => new Box<T>(action(room, self))) ?? throw new NotFoundException(MediaRules.NotInRoom)).Value;
+
+    private sealed record Box<T>(T Value);
+
     /// <summary>The caller's existing session (renegotiation and closing need one already).</summary>
     public static string Require(IRoomStore rooms, string connectionId)
     {

@@ -28,6 +28,20 @@ public interface ISfu
 
     /// <summary>Chooses the simulcast layer (<c>f</c>/<c>h</c>/<c>q</c>) forwarded on a received track.</summary>
     Task SelectLayerAsync(string sessionId, string mid, SfuRemoteTrack track, string rid, CancellationToken cancellationToken);
+
+    /// <summary>Sets up the session's data channel transport (once per session): the SFU answers with an offer
+    /// adding an application section, which the client must answer (<see cref="RenegotiateAsync"/>).</summary>
+    Task<SfuDataTransport> EstablishDataTransportAsync(string sessionId, CancellationToken cancellationToken);
+
+    /// <summary>Publishes a reliable, ordered data channel named <paramref name="name"/>. Returns the channel id on
+    /// this session (the browser creates it as a negotiated channel with that id).</summary>
+    Task<int> PublishDataChannelAsync(string sessionId, string name, CancellationToken cancellationToken);
+
+    /// <summary>Receives another session's data channel. Returns the channel id on this session.</summary>
+    Task<int> SubscribeDataChannelAsync(string sessionId, string publisherSessionId, string name, CancellationToken cancellationToken);
+
+    /// <summary>Closes data channels on this session by id, without an SDP exchange. Unknown ids are fine.</summary>
+    Task CloseDataChannelsAsync(string sessionId, IReadOnlyList<int> ids, CancellationToken cancellationToken);
 }
 
 public sealed record SfuLocalTrack(string Mid, string TrackName);
@@ -39,3 +53,8 @@ public sealed record SfuPulledTrack(string PublisherSessionId, string TrackName,
 
 /// <param name="OfferSdp">Null when no renegotiation is needed.</param>
 public sealed record SfuSubscribeResult(string? OfferSdp, IReadOnlyList<SfuPulledTrack> Tracks);
+
+/// <param name="OfferSdp">SFU offer the client must answer.</param>
+/// <param name="ServerEventsChannelId">The SFU's own channel the transport is built on; the browser opens it as a
+/// negotiated channel with this id and ignores what arrives on it.</param>
+public sealed record SfuDataTransport(string OfferSdp, int ServerEventsChannelId);

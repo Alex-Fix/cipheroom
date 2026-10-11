@@ -114,6 +114,8 @@ export class MediaService implements OnDestroy {
   private readonly midToKey = new Map<string, TrackKey>();
   /** Placeholder tracks currently sent instead of a stopped camera / screen. */
   private readonly placeholders = new Map<TrackSource, MediaStreamTrack>();
+  /** Data channel transport (files): set up on first use, once per connection. */
+  private dataTransport?: Promise<void>;
 
   private readonly self = signal<Self | undefined>(undefined);
   /** Pulling others' tracks starts only after our own publishes (see class docs). */
@@ -396,6 +398,30 @@ export class MediaService implements OnDestroy {
     this.screenShareEnabled.set(true);
   }
 
+  /**
+   * Publishes a data channel (one file transfer) under our random `name` and resolves once it's open. Reliable and
+   * ordered; binary messages as ArrayBuffers. Needs receiving to have started: the transport is added by answering an
+   * SFU offer, like a subscribe (negotiation order).
+   */
+  async publishChannel(name: string): Promise<RTCDataChannel> {
+    await this.ensureDataTransport();
+    const { channelId } = await this.queue.runFirst(() => this.signaling.publishDataChannel(name));
+    return opened(this.negotiatedChannel(name, channelId));
+  }
+
+  /** Receives `participantId`'s data channel `name`; resolves once it's open. */
+  async subscribeChannel(participantId: string, name: string): Promise<RTCDataChannel> {
+    await this.ensureDataTransport();
+    const { channelId } = await this.queue.runFirst(() => this.signaling.subscribeDataChannel(participantId, name));
+    return opened(this.negotiatedChannel(name, channelId));
+  }
+
+  /** Closes a channel from publishChannel (`participantId` omitted) or subscribeChannel. */
+  async closeChannel(channel: RTCDataChannel, name: string, participantId?: string): Promise<void> {
+    channel.close();
+    if (this.pc) await this.queue.runFirst(() => this.signaling.closeDataChannel(name, participantId));
+  }
+
   /** Must be called from a user gesture when the browser blocked autoplay. */
   startAudio(): Promise<void> {
     return this.audioPlayback.resume();
@@ -419,6 +445,7 @@ export class MediaService implements OnDestroy {
     this.layers.clear();
     this.restartAttempts = 0;
     document.removeEventListener('visibilitychange', this.onVisibilityChange);
+    this.dataTransport = undefined;
     this.pc?.close();
     this.pc = undefined;
     // The worker belongs to CryptoService (stopped with the call's keys).
@@ -753,6 +780,39 @@ export class MediaService implements OnDestroy {
     );
   }
 
+  private ensureDataTransport(): Promise<void> {
+    if (!this.receiving()) return Promise.reject(new Error('Data channels need receiving to have started.'));
+    let established = false;
+    // runFirst: someone is waiting on this file; video subscriptions queued behind it (or retrying) can wait.
+    this.dataTransport ??= this.queue
+      .runFirst(async () => {
+        const pc = this.requirePc();
+        const transport = await this.signaling.openDataTransport();
+        // From here on the SFU has set up the transport and won't again on this session: if anything below fails,
+        // the failure stands until we reconnect (a new session). Cloudflare also keeps waiting for an answer to its
+        // offer then, refusing other negotiations — retrying couldn't help.
+        established = true;
+        await pc.setRemoteDescription({ type: 'offer', sdp: transport.offerSdp });
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        await this.signaling.renegotiate(answer.sdp!);
+        // The SFU opens its own `server-events` channel in-band (stream transport.serverEventsChannelId): the browser
+        // creates it by itself, and we ignore it. Creating it here too would collide (OperationError). Our file
+        // channels are negotiated on the existing application section and need no further SDP.
+      })
+      .catch((error: unknown) => {
+        if (!established) this.dataTransport = undefined; // e.g. the hub call failed: asking again is fine
+        throw error;
+      });
+    return this.dataTransport;
+  }
+
+  private negotiatedChannel(name: string, id: number): RTCDataChannel {
+    const channel = this.requirePc().createDataChannel(name, { negotiated: true, id, ordered: true });
+    channel.binaryType = 'arraybuffer';
+    return channel;
+  }
+
   private requirePc(): RTCPeerConnection {
     if (!this.pc) throw new Error('Not connected.');
     return this.pc;
@@ -884,6 +944,32 @@ const ICE_RESTART_TIMEOUT_MS = 10_000;
 const MAX_ICE_RESTARTS = 2;
 const PULL_RETRY_BASE_MS = 1000;
 const PULL_RETRY_MAX_MS = 15_000;
+const CHANNEL_OPEN_TIMEOUT_MS = 10_000;
+
+/** Resolves with the channel once it's open; rejects if it closes or doesn't open in time. */
+function opened(channel: RTCDataChannel): Promise<RTCDataChannel> {
+  if (channel.readyState === 'open') return Promise.resolve(channel);
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => fail(new Error('Data channel did not open.')), CHANNEL_OPEN_TIMEOUT_MS);
+    const done = () => {
+      clearTimeout(timer);
+      channel.removeEventListener('open', onOpen);
+      channel.removeEventListener('close', onClose);
+    };
+    const fail = (error: Error) => {
+      done();
+      channel.close();
+      reject(error);
+    };
+    const onOpen = () => {
+      done();
+      resolve(channel);
+    };
+    const onClose = () => fail(new Error('Data channel closed.'));
+    channel.addEventListener('open', onOpen);
+    channel.addEventListener('close', onClose);
+  });
+}
 
 function mediaState(state: RTCPeerConnectionState): MediaState {
   switch (state) {

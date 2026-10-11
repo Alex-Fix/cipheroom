@@ -208,4 +208,41 @@ describe('ChatService', () => {
     expect(chat.items()).toHaveLength(MAX_CHAT_ITEMS);
     expect(chat.items()[0]).toMatchObject({ text: 'n3' });
   });
+
+  describe('files', () => {
+    const card = { type: 'file' as const, id: newChatId(), name: 'a.pdf', size: 10, mime: 'application/pdf', hash: 'h', key: 'k' };
+
+    it('shares a card as a chat item that is sent like a message (and retried the same way)', async () => {
+      sendChat.mockRejectedValueOnce(new Error('offline'));
+      chat.shareFile(card);
+      await flush();
+
+      expect(messages()[0]).toMatchObject({ id: card.id, fileId: card.id, own: true, text: '', status: 'failed' });
+      chat.retry(card.id);
+      await flush();
+      expect(messages()[0].status).toBe('sent');
+      expect(sealed).toEqual([card, card]);
+    });
+
+    it('shows others’ cards, which can be reacted to', () => {
+      fromBob({ ...card, type: 'file' });
+      expect(messages()[0]).toMatchObject({ fileId: card.id, authorName: 'Bob', own: false });
+
+      fromBob({ type: 'reaction', target: card.id, emoji: '👍', on: true }, 'carol');
+      expect(messages()[0].reactions).toMatchObject([{ emoji: '👍', count: 1 }]);
+    });
+
+    it('leaves transfer coordination to FileTransferService', () => {
+      fromBob({ type: 'file-request', file: card.id });
+      expect(chat.items()).toEqual([]);
+      expect(chat.unread()).toBe(0);
+    });
+
+    it('sends other events through the same ordered queue', async () => {
+      chat.send('first');
+      const event = chat.sendEvent({ type: 'file-gone', file: card.id });
+      await event;
+      expect(sealed.map((e) => e.type)).toEqual(['message', 'file-gone']);
+    });
+  });
 });

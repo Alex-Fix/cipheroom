@@ -74,6 +74,22 @@ class FakePeerConnection {
     this.onconnectionstatechange?.();
   }
 
+  readonly dataChannels: { label: string; init: RTCDataChannelInit; readyState: string; binaryType: string; close: () => void }[] = [];
+
+  createDataChannel(label: string, init: RTCDataChannelInit) {
+    const channel = {
+      label,
+      init,
+      readyState: 'open',
+      binaryType: 'blob',
+      close() {
+        this.readyState = 'closed';
+      },
+    };
+    this.dataChannels.push(channel);
+    return channel;
+  }
+
   close() {
     this.closed = true;
   }
@@ -165,6 +181,10 @@ function setup({ inCall = [] as ParticipantDto[] } = {}) {
     selectVideoLayer: vi.fn().mockResolvedValue(undefined),
     restartIce: vi.fn().mockResolvedValue('v=0 restart answer'),
     reportCallStats: vi.fn().mockResolvedValue(undefined),
+    openDataTransport: vi.fn().mockResolvedValue({ offerSdp: 'v=0 data offer', serverEventsChannelId: 0 }),
+    publishDataChannel: vi.fn().mockResolvedValue({ channelId: 3 }),
+    subscribeDataChannel: vi.fn().mockResolvedValue({ channelId: 4 }),
+    closeDataChannel: vi.fn().mockResolvedValue(undefined),
   };
   const mic = fakeTrack('audio');
   const camera = fakeTrack('video', 'FaceTime HD Camera');
@@ -1055,6 +1075,51 @@ describe('MediaService', () => {
       expect(media.sendingCodec()).toBe('vp8');
       expect(media.setVideoCodec('vp9')).toBe(false); // Bob can't play VP9: we'd still send VP8
       expect(media.setVideoCodec('vp8')).toBe(false);
+    });
+  });
+
+  describe('data channels (files)', () => {
+    it('sets up the transport once by answering the SFU offer, then opens negotiated channels', async () => {
+      const { media, signaling, pc } = setup();
+
+      const published = await media.publishChannel('AAAAAAAAAAAAAAAAAAAAAA');
+      const received = await media.subscribeChannel('bob', 'BBBBBBBBBBBBBBBBBBBBBB');
+
+      expect(signaling.openDataTransport).toHaveBeenCalledTimes(1);
+      expect(pc.remoteDescriptions).toContainEqual({ type: 'offer', sdp: 'v=0 data offer' });
+      expect(signaling.renegotiate).toHaveBeenCalledWith('v=0 answer');
+      // server-events is opened in-band by the SFU: never created by us (it would collide).
+      expect(pc.dataChannels.map((c) => [c.label, c.init])).toEqual([
+        ['AAAAAAAAAAAAAAAAAAAAAA', { negotiated: true, id: 3, ordered: true }],
+        ['BBBBBBBBBBBBBBBBBBBBBB', { negotiated: true, id: 4, ordered: true }],
+      ]);
+      expect(published.binaryType).toBe('arraybuffer');
+      expect(signaling.subscribeDataChannel).toHaveBeenCalledWith('bob', 'BBBBBBBBBBBBBBBBBBBBBB');
+
+      await media.closeChannel(received, 'BBBBBBBBBBBBBBBBBBBBBB', 'bob');
+      expect(received.readyState).toBe('closed');
+      expect(signaling.closeDataChannel).toHaveBeenCalledWith('BBBBBBBBBBBBBBBBBBBBBB', 'bob');
+    });
+
+    it('asks for the transport again when the request itself failed', async () => {
+      const { media, signaling } = setup();
+      signaling.openDataTransport.mockRejectedValueOnce(new Error('Media server unavailable.'));
+
+      await expect(media.publishChannel('AAAAAAAAAAAAAAAAAAAAAA')).rejects.toThrow();
+      await media.publishChannel('AAAAAAAAAAAAAAAAAAAAAA');
+
+      expect(signaling.openDataTransport).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not ask again once the SFU set the transport up but our answer was refused (until we reconnect)', async () => {
+      const { media, signaling } = setup();
+      signaling.renegotiate.mockRejectedValueOnce(new Error('Media server unavailable.'));
+
+      await expect(media.publishChannel('AAAAAAAAAAAAAAAAAAAAAA')).rejects.toThrow();
+      await expect(media.subscribeChannel('bob', 'BBBBBBBBBBBBBBBBBBBBBB')).rejects.toThrow();
+
+      expect(signaling.openDataTransport).toHaveBeenCalledTimes(1);
+      expect(signaling.publishDataChannel).not.toHaveBeenCalled();
     });
   });
 });

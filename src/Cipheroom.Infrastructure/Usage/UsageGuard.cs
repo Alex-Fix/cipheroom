@@ -55,9 +55,14 @@ public sealed partial class UsageGuard(
 
     private long FreeTierBytes => freeTier.Value.FreeTierGb * 1_000_000_000L;
 
-    public void RecordReceived(double bytes, double intervalSeconds)
+    public void RecordReceived(double bytes, double intervalSeconds) =>
+        Credit(UsageRules.Credited(bytes, intervalSeconds, Options.MaxReportMbps, Options.EstimateFactor));
+
+    public void RecordFilesReceived(double bytes, double intervalSeconds) =>
+        Credit(UsageRules.Credited(bytes, intervalSeconds, Options.MaxFileReportMbps, Options.EstimateFactor));
+
+    private void Credit(double credited)
     {
-        var credited = UsageRules.Credited(bytes, intervalSeconds, Options.MaxReportMbps, Options.EstimateFactor);
         if (credited <= 0)
             return;
         var now = time.GetUtcNow();

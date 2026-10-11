@@ -158,6 +158,23 @@ public sealed class UsageGuardTests : IDisposable
     }
 
     [Fact]
+    public void File_downloads_have_their_own_higher_cap()
+    {
+        // 3,000 reports claiming 150 Mbit/s for 15 s: media is capped at 50 Mbit/s, files at 200.
+        const double claimed = 150_000_000d / 8 * 15;
+        var media = Guard();
+        var files = Guard();
+        for (var i = 0; i < 3000; i++)
+        {
+            media.RecordReceived(claimed, 15);
+            files.RecordFilesReceived(claimed, 15);
+        }
+
+        Assert.Equal(UsageLevel.Normal, media.Evaluate().Level);
+        Assert.Equal(UsageLevel.Saving, files.Evaluate().Level);
+    }
+
+    [Fact]
     public void Disabled_means_never_limited_and_force_level_works_only_in_development()
     {
         var disabled = Guard(o => o.Enabled = false);

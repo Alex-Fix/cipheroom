@@ -1,0 +1,96 @@
+@let f = file();
+<div class="file-card" [class.own]="f.own" [attr.data-state]="f.state">
+  @if (inline()) {
+    <button type="button" class="image" (click)="view.emit()" [attr.aria-label]="'View ' + f.name">
+      <img [src]="f.url" [alt]="f.name" (error)="broken.set(true)" />
+    </button>
+  } @else if (preview()) {
+    <div class="image preview">
+      <img [src]="f.thumbUrl" alt="" aria-hidden="true" />
+      <div class="overlay">
+        <ng-container *ngTemplateOutlet="action" />
+      </div>
+    </div>
+  } @else {
+    <div class="doc">
+      <nz-icon nzType="file" class="doc-icon" />
+      <div class="meta">
+        <span class="name" [title]="f.name">{{ f.name }}</span>
+        <span class="size">{{ size() }}</span>
+      </div>
+      <ng-container *ngTemplateOutlet="action" />
+    </div>
+  }
+
+  @if (f.own) {
+    <p class="note">
+      @switch (f.state) {
+        @case ('preparing') { Preparing… }
+        @case ('failed') { Couldn’t read this file. }
+        @case ('unavailable') { This file can’t be read any more. }
+        @default {
+          @if (f.progress > 0 && f.progress < 1) {
+            Sending… {{ percent() }}%
+          } @else {
+            Shared from your browser — stay in the call so others can get it.
+          }
+        }
+      }
+      @if (f.metadataKept) {
+        <span class="warn" nz-tooltip nzTooltipTitle="Cipheroom can remove location and camera details from JPEG, PNG and WebP photos only.">
+          Photo details (like location) were not removed.
+        </span>
+      }
+    </p>
+  }
+</div>
+
+<ng-template #action>
+  @switch (f.state) {
+    @case ('available') {
+      <button type="button" class="action download" (click)="download.emit()" [attr.aria-label]="'Download ' + f.name">
+        <nz-icon nzType="download" />
+        @if (preview()) { <span>{{ size() }}</span> }
+      </button>
+    }
+    @case ('queued') {
+      <button type="button" class="action" (click)="cancel.emit()" aria-label="Cancel">
+        <span class="label">Waiting…</span><nz-icon nzType="close" />
+      </button>
+    }
+    @case ('waiting') {
+      <button type="button" class="action" (click)="cancel.emit()" aria-label="Cancel">
+        <span class="label">Asking…</span><nz-icon nzType="close" />
+      </button>
+    }
+    @case ('downloading') {
+      <button type="button" class="action progress" (click)="cancel.emit()" aria-label="Cancel" [style.--progress]="percent() + '%'">
+        <span class="label">{{ percent() }}%</span><nz-icon nzType="close" />
+      </button>
+    }
+    @case ('done') {
+      <a class="action save" [href]="f.url" [download]="f.name" [attr.aria-label]="'Save ' + f.name">
+        <nz-icon nzType="download" /><span class="label">Save</span>
+      </a>
+    }
+    @case ('failed') {
+      <button type="button" class="action retry" (click)="download.emit()">
+        <nz-icon nzType="reload" /><span class="label">Retry</span>
+      </button>
+    }
+    @case ('corrupted') {
+      <span class="state error">File changed or corrupted</span>
+    }
+    @case ('unavailable') {
+      <span class="state">No longer available</span>
+    }
+    @case ('paused') {
+      <span class="state" nz-tooltip nzTooltipTitle="To stay within the free tier">File sharing paused</span>
+    }
+    @case ('shared') {
+      @if (f.url) {
+        <a class="action save" [href]="f.url" [download]="f.name" [attr.aria-label]="'Save ' + f.name"><nz-icon nzType="download" /></a>
+      }
+    }
+  }
+</ng-template>

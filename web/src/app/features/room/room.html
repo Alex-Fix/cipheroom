@@ -186,5 +186,10 @@
     (send)="chat.send($event)"
     (retry)="chat.retry($event)"
     (react)="chat.react($event.id, $event.emoji)"
+    [files]="files.files()"
+    [canShare]="files.allowed()"
+    (attach)="shareFiles($event)"
+    (download)="files.download($event)"
+    (cancelDownload)="files.cancel($event)"
   />
 </div>

@@ -184,6 +184,7 @@ public sealed class MediaHubTests(WebApplicationFactory<Program> factory) : ICla
     {
         public const string Answer = "v=0 fake answer";
         public const string SubscribeOffer = "v=0 fake offer";
+        public const string DataTransportOffer = "v=0 fake data offer";
 
         private int _next;
 
@@ -205,6 +206,30 @@ public sealed class MediaHubTests(WebApplicationFactory<Program> factory) : ICla
         public Task CloseTracksAsync(string sessionId, IReadOnlyList<string> mids, CancellationToken cancellationToken) => Result(0);
 
         public Task SelectLayerAsync(string sessionId, string mid, SfuRemoteTrack track, string rid, CancellationToken cancellationToken) => Result(0);
+
+        public Task<SfuDataTransport> EstablishDataTransportAsync(string sessionId, CancellationToken cancellationToken) =>
+            Result(new SfuDataTransport(DataTransportOffer, 0));
+
+        public Task<int> PublishDataChannelAsync(string sessionId, string name, CancellationToken cancellationToken) =>
+            Result(Interlocked.Increment(ref _next));
+
+        public Task<int> SubscribeDataChannelAsync(string sessionId, string publisherSessionId, string name, CancellationToken cancellationToken)
+        {
+            SubscribedDataChannels.Enqueue((sessionId, publisherSessionId, name));
+            return Result(Interlocked.Increment(ref _next));
+        }
+
+        public Task CloseDataChannelsAsync(string sessionId, IReadOnlyList<int> ids, CancellationToken cancellationToken)
+        {
+            foreach (var id in ids)
+                ClosedDataChannels.Enqueue((sessionId, id));
+            return Result(0);
+        }
+
+        /// <summary>(subscriber session, publisher session, SFU channel name) per subscribe call.</summary>
+        public System.Collections.Concurrent.ConcurrentQueue<(string Session, string Publisher, string Name)> SubscribedDataChannels { get; } = new();
+
+        public System.Collections.Concurrent.ConcurrentQueue<(string Session, int Id)> ClosedDataChannels { get; } = new();
 
         private Task<T> Result<T>(T value) =>
             Fail ? Task.FromException<T>(new MediaServerException(new HttpRequestException("HTTP 503"))) : Task.FromResult(value);

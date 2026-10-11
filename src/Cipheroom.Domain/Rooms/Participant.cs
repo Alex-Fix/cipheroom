@@ -21,6 +21,11 @@ public sealed record Participant(ParticipantId Id, RoomId RoomId, string Connect
 
     public IReadOnlyList<Subscription> Subscriptions { get; init; } = [];
 
+    /// <summary>The media session's data channel transport has been set up (once per session).</summary>
+    public bool HasDataTransport { get; init; }
+
+    public IReadOnlyList<DataChannel> DataChannels { get; init; } = [];
+
     public bool IsAdmitter => Role is ParticipantRole.Host or ParticipantRole.CoHost;
 
     public PublishedTrack? Track(TrackSource source) => Tracks.FirstOrDefault(t => t.Source == source);

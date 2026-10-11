@@ -15,6 +15,9 @@ public sealed class CloudflareSfu(CloudflareSfuClient cloudflare, CipheroomMetri
     // Highest quality first; Cloudflare steps down (asciibetical: f → h → q) when the receiver can't keep up.
     private const string FirstLayer = "f";
 
+    // The only channel the establish call may pull: the SFU's own events channel.
+    private const string ServerEventsChannel = "server-events";
+
     public Task<string> CreateSessionAsync(CancellationToken cancellationToken) =>
         Call("create_session", async () => (await cloudflare.NewSessionAsync(cancellationToken)).SessionId, cancellationToken);
 
@@ -76,6 +79,43 @@ public sealed class CloudflareSfu(CloudflareSfuClient cloudflare, CipheroomMetri
             EnsureNoTrackErrors(response.Tracks);
             return response;
         }, cancellationToken);
+
+    public Task<SfuDataTransport> EstablishDataTransportAsync(string sessionId, CancellationToken cancellationToken) =>
+        Call("establish_data_transport", async () =>
+        {
+            // "Ask for an offer": the SFU adds the application section, like a subscribe, so the browser only ever
+            // answers — no new local offer after receiving started (negotiation-order rule).
+            var response = await cloudflare.EstablishDataTransportAsync(
+                sessionId,
+                new EstablishDataTransportRequest(new SfuDataChannel(Location: "remote", DataChannelName: ServerEventsChannel)),
+                cancellationToken);
+            var id = response.DataChannel is { ErrorCode: null, Id: { } channelId } ? channelId : throw new MediaServerException();
+            return new SfuDataTransport(Sdp(response.SessionDescription), id);
+        }, cancellationToken);
+
+    public Task<int> PublishDataChannelAsync(string sessionId, string name, CancellationToken cancellationToken) =>
+        Call("publish_data_channel", async () => ChannelId(await cloudflare.NewDataChannelsAsync(
+            sessionId,
+            new DataChannelsRequest([new SfuDataChannel(Location: "local", DataChannelName: name)]),
+            cancellationToken)), cancellationToken);
+
+    public Task<int> SubscribeDataChannelAsync(string sessionId, string publisherSessionId, string name, CancellationToken cancellationToken) =>
+        Call("subscribe_data_channel", async () => ChannelId(await cloudflare.NewDataChannelsAsync(
+            sessionId,
+            new DataChannelsRequest([new SfuDataChannel(Location: "remote", SessionId: publisherSessionId, DataChannelName: name)]),
+            cancellationToken)), cancellationToken);
+
+    public Task CloseDataChannelsAsync(string sessionId, IReadOnlyList<int> ids, CancellationToken cancellationToken) =>
+        // Per-channel errors mean "already closed / absent" — fine for a close.
+        Call("close_data_channels", () => cloudflare.CloseDataChannelsAsync(
+            sessionId,
+            new DataChannelsRequest([.. ids.Select(id => new SfuDataChannel(Id: id))]),
+            cancellationToken), cancellationToken);
+
+    private static int ChannelId(DataChannelsResponse response) =>
+        response.DataChannels is [{ ErrorCode: null, Id: { } id }]
+            ? id
+            : throw new MediaServerException(new CloudflareSfuException(200, response.DataChannels is [var first, ..] ? first.ErrorCode : null));
 
     private static SfuTrack Remote(SfuRemoteTrack track, string? preferredRid) => new(
         Location: "remote",

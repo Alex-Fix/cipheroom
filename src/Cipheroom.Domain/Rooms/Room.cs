@@ -22,6 +22,16 @@ public sealed class Room(RoomId id)
     public const string AskedTooOften = "Already asked, try again later.";
     public const string UnknownParticipant = "Unknown participant.";
     public const string InvalidKnock = "Invalid knock.";
+    public const string InvalidDataChannel = "Invalid data channel.";
+    public const string TooManyDataChannels = "Too many data channels.";
+    public const string NoDataTransport = "Open the data transport first.";
+    public const string DataTransportAlreadyOpen = "Data transport already open.";
+
+    /// <summary>Data channels one participant may publish at a time (one file transfer each).</summary>
+    public const int MaxPublishedDataChannels = 4;
+
+    /// <summary>Data channels one participant may receive at a time.</summary>
+    public const int MaxSubscribedDataChannels = 8;
 
     /// <summary>People waiting at once.</summary>
     public const int MaxLobby = 20;
@@ -285,6 +295,8 @@ public sealed class Room(RoomId id)
         var participant = _participants[index];
         _participants.RemoveAt(index);
         DropSubscriptions(s => s.PublisherId == participant.Id);
+        // Their media session goes away with them, and with it what others received from it.
+        DropDataChannelSubscriptions(participant.Id, name: null);
         return participant;
     }
 
@@ -392,6 +404,132 @@ public sealed class Room(RoomId id)
             throw new DomainException(UnknownTrack);
 
         return new RemoteTrack(publisher.Id, publisher.SfuSessionId, track);
+    }
+
+    /// <summary>Records that the participant's media session has its data channel transport. Once per session.</summary>
+    public Participant AttachDataTransport(ParticipantId id)
+    {
+        var participant = Get(id);
+        if (participant.SfuSessionId is null)
+            throw new InvalidOperationException("A data transport requires a media session.");
+        if (participant.HasDataTransport)
+            throw new DomainException(DataTransportAlreadyOpen);
+        return Replace(participant with { HasDataTransport = true });
+    }
+
+    /// <summary>Throws unless the participant can publish a new data channel under <paramref name="name"/>.</summary>
+    public void EnsureCanPublishDataChannel(ParticipantId id, string name)
+    {
+        var participant = RequireDataTransport(id);
+        if (participant.DataChannels.Count(c => c.IsPublished) >= MaxPublishedDataChannels)
+            throw new DomainException(TooManyDataChannels);
+        if (participant.DataChannels.Any(c => c.IsPublished && c.Name == name))
+            throw new DomainException(InvalidDataChannel);
+    }
+
+    public DataChannel PublishDataChannel(ParticipantId id, string name, int channelId, DateTimeOffset now)
+    {
+        EnsureCanPublishDataChannel(id, name);
+        var participant = Get(id);
+        var channel = new DataChannel(name, channelId, PublisherId: null, now);
+        Replace(participant with { DataChannels = [.. participant.DataChannels, channel] });
+        return channel;
+    }
+
+    /// <summary>
+    /// Resolves a data channel to receive: it must be published by someone else in this room under
+    /// <paramref name="name"/>, and the subscriber must have room for another one.
+    /// </summary>
+    public RemoteDataChannel ResolveDataChannel(ParticipantId subscriberId, ParticipantId publisherId, string name)
+    {
+        var subscriber = RequireDataTransport(subscriberId);
+        var publisher = publisherId == subscriberId ? null : Find(publisherId);
+        if (publisher?.SfuSessionId is null || !publisher.DataChannels.Any(c => c.IsPublished && c.Name == name))
+            throw new DomainException(InvalidDataChannel);
+        if (subscriber.DataChannels.Any(c => c.PublisherId == publisherId && c.Name == name))
+            throw new DomainException(InvalidDataChannel);
+        if (subscriber.DataChannels.Count(c => !c.IsPublished) >= MaxSubscribedDataChannels)
+            throw new DomainException(TooManyDataChannels);
+
+        return new RemoteDataChannel(publisher.Id, publisher.SfuSessionId, DataChannel.SfuNameFor(publisher.Id, name));
+    }
+
+    /// <summary>
+    /// Records a received data channel. Returns null if the publisher closed it in the meantime — the caller then
+    /// closes the subscription on the media server.
+    /// </summary>
+    public DataChannel? SubscribeDataChannel(ParticipantId subscriberId, ParticipantId publisherId, string name, int channelId, DateTimeOffset now)
+    {
+        var subscriber = Get(subscriberId);
+        if (Find(publisherId)?.DataChannels.Any(c => c.IsPublished && c.Name == name) != true)
+            return null;
+
+        var channel = new DataChannel(name, channelId, publisherId, now);
+        Replace(subscriber with { DataChannels = [.. subscriber.DataChannels, channel] });
+        return channel;
+    }
+
+    /// <summary>
+    /// Closes one of the participant's data channels: their own (<paramref name="publisherId"/> null) — and with it
+    /// everyone's subscriptions to it — or their subscription to <paramref name="publisherId"/>'s. Unknown ones are
+    /// ignored. Returns what the media server must close.
+    /// </summary>
+    public IReadOnlyList<DataChannelClosure> CloseDataChannel(ParticipantId id, string name, ParticipantId? publisherId)
+    {
+        var participant = Get(id);
+        var channel = participant.DataChannels.FirstOrDefault(c => c.Name == name && c.PublisherId == publisherId);
+        return channel is null ? [] : Close(participant, channel);
+    }
+
+    /// <summary>Closes every data channel opened at or before <paramref name="openedBefore"/>.</summary>
+    public IReadOnlyList<DataChannelClosure> CloseDataChannelsOpenedBefore(DateTimeOffset openedBefore)
+    {
+        var closures = new List<DataChannelClosure>();
+        foreach (var id in _participants.Select(p => p.Id).ToArray())
+        {
+            // Re-read each time: closing a published channel also changes its subscribers.
+            while (Find(id) is { } participant
+                && participant.DataChannels.FirstOrDefault(c => c.OpenedAt <= openedBefore) is { } expired)
+            {
+                closures.AddRange(Close(participant, expired));
+            }
+        }
+
+        return closures;
+    }
+
+    private Participant RequireDataTransport(ParticipantId id)
+    {
+        var participant = Get(id);
+        return participant.HasDataTransport && participant.SfuSessionId is not null
+            ? participant
+            : throw new DomainException(NoDataTransport);
+    }
+
+    private List<DataChannelClosure> Close(Participant participant, DataChannel channel)
+    {
+        Replace(participant with { DataChannels = [.. participant.DataChannels.Where(c => c != channel)] });
+        var closures = new List<DataChannelClosure> { new(participant.SfuSessionId!, channel.Id) };
+        if (channel.IsPublished)
+            closures.AddRange(DropDataChannelSubscriptions(participant.Id, channel.Name));
+        return closures;
+    }
+
+    private List<DataChannelClosure> DropDataChannelSubscriptions(ParticipantId publisherId, string? name)
+    {
+        var closures = new List<DataChannelClosure>();
+        for (var i = 0; i < _participants.Count; i++)
+        {
+            var p = _participants[i];
+            DataChannel[] dropped = [.. p.DataChannels.Where(c => c.PublisherId == publisherId && (name is null || c.Name == name))];
+            if (dropped.Length == 0)
+                continue;
+
+            _participants[i] = p with { DataChannels = [.. p.DataChannels.Except(dropped)] };
+            closures.AddRange(dropped.Select(c => new DataChannelClosure(p.SfuSessionId!, c.Id)));
+        }
+
+        return closures;
     }
 
     /// <summary>

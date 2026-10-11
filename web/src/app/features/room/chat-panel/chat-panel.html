@@ -9,7 +9,16 @@
   (nzOnClose)="closed.emit()"
 >
   <ng-container *nzDrawerContent>
-    <div class="messages" #messages (scroll)="onScroll(messages)" aria-live="polite">
+    <div
+      class="messages"
+      #messages
+      [class.dragging]="dragging()"
+      (scroll)="onScroll(messages)"
+      (dragover)="onDragOver($event)"
+      (dragleave)="dragging.set(false)"
+      (drop)="onDrop($event)"
+      aria-live="polite"
+    >
       <p class="intro">
         <nz-icon nzType="lock" />
         Messages are end-to-end encrypted and disappear when you leave.
@@ -28,17 +37,28 @@
               </header>
             }
             <div class="bubble-row">
-              <p class="bubble">
-                @for (segment of item.segments; track $index) {
-                  @if (segment.href; as href) {
-                    <a [href]="href" target="_blank" rel="noopener noreferrer">{{
-                      segment.text
-                    }}</a>
-                  } @else {
-                    <span>{{ segment.text }}</span>
-                  }
+              @if (item.fileId) {
+                @if (files().get(item.fileId); as file) {
+                  <app-file-card
+                    [file]="file"
+                    (download)="download.emit(file.id)"
+                    (cancel)="cancelDownload.emit(file.id)"
+                    (view)="viewing.set(file.id)"
+                  />
                 }
-              </p>
+              } @else {
+                <p class="bubble">
+                  @for (segment of item.segments; track $index) {
+                    @if (segment.href; as href) {
+                      <a [href]="href" target="_blank" rel="noopener noreferrer">{{
+                        segment.text
+                      }}</a>
+                    } @else {
+                      <span>{{ segment.text }}</span>
+                    }
+                  }
+                </p>
+              }
               @if (item.status === 'sent') {
                 <button
                   type="button"
@@ -111,6 +131,17 @@
       <ng-template #pickerTpl>
         <app-emoji-picker (picked)="insert($event, field)" />
       </ng-template>
+      <button
+        type="button"
+        class="icon-button attach"
+        aria-label="Attach files"
+        [attr.title]="canShare() ? 'Attach files (up to 100 MB each)' : 'File sharing is paused to stay within the free tier'"
+        [disabled]="!ready() || !canShare()"
+        (click)="picker.click()"
+      >
+        <nz-icon nzType="paper-clip" />
+      </button>
+      <input #picker type="file" multiple hidden (change)="pick(picker)" />
       <textarea
         #field
         rows="1"
@@ -121,6 +152,7 @@
         [value]="draft()"
         (input)="draft.set(field.value)"
         (keydown.enter)="onEnter($event, field)"
+        (paste)="onPaste($event)"
       ></textarea>
       <button
         type="submit"
@@ -133,3 +165,5 @@
     </form>
   </ng-container>
 </nz-drawer>
+
+<app-image-lightbox [file]="viewed()" (closed)="viewing.set(undefined)" />

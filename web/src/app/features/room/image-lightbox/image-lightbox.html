@@ -1,0 +1,16 @@
+<nz-modal
+  [nzVisible]="!!file()?.url"
+  [nzTitle]="file()?.name"
+  [nzFooter]="null"
+  [nzWidth]="'min(960px, 96vw)'"
+  nzCentered
+  nzWrapClassName="image-lightbox"
+  (nzOnCancel)="closed.emit()"
+>
+  <ng-container *nzModalContent>
+    @if (file(); as f) {
+      <img class="full" [src]="f.url" [alt]="f.name" />
+      <a class="save" [href]="f.url" [download]="f.name"><nz-icon nzType="download" /> Save</a>
+    }
+  </ng-container>
+</nz-modal>

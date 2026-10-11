@@ -141,6 +141,17 @@ export interface SubscribedTrackDto {
 }
 
 /** `offerSdp` must be answered with Renegotiate; null when nothing new was added. */
+/** SFU offer adding the data channel transport (answer with Renegotiate) and the SFU's own channel id. */
+export interface DataTransportDto {
+  offerSdp: string;
+  serverEventsChannelId: number;
+}
+
+/** Negotiated id for `createDataChannel(name, { negotiated: true, id })`. */
+export interface DataChannelDto {
+  channelId: number;
+}
+
 export interface SubscribeResult {
   offerSdp: string | null;
   tracks: SubscribedTrackDto[];
@@ -193,6 +204,8 @@ export interface CallStatsDto {
   videoSent: StreamStatsDto | null;
   videoReceived: StreamStatsDto | null;
   e2ee: E2eeStatsDto | null;
+  /** Encrypted file chunks received on data channels (counts towards the usage estimate). */
+  fileBytesReceived?: number | null;
 }
 
 /** The usage guard's level (server-wide): how close this month's Cloudflare traffic is to the free tier. */
@@ -231,6 +244,10 @@ export const HubMethods = {
   SelectVideoLayer: 'SelectVideoLayer',
   SendKeyEnvelopes: 'SendKeyEnvelopes',
   SendChat: 'SendChat',
+  OpenDataTransport: 'OpenDataTransport',
+  PublishDataChannel: 'PublishDataChannel',
+  SubscribeDataChannel: 'SubscribeDataChannel',
+  CloseDataChannel: 'CloseDataChannel',
   ReportCallStats: 'ReportCallStats',
 } as const;
 

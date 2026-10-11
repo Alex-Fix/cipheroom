@@ -34,4 +34,8 @@ public interface IUsageLedger
 {
     /// <summary>Bytes a participant received over <paramref name="intervalSeconds"/> (capped and weighted inside).</summary>
     void RecordReceived(double bytes, double intervalSeconds);
+
+    /// <summary>File bytes (data channels) a participant received over <paramref name="intervalSeconds"/>. Capped on
+    /// their own: a download can run much faster than a call's media.</summary>
+    void RecordFilesReceived(double bytes, double intervalSeconds);
 }

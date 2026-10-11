@@ -16,6 +16,7 @@ import { NzIconModule } from 'ng-zorro-antd/icon';
 import { NzMessageService } from 'ng-zorro-antd/message';
 import { NzModalModule, NzModalService } from 'ng-zorro-antd/modal';
 import { ChatService } from '../../core/chat/chat.service';
+import { FileTransferService, ShareRejection } from '../../core/files/file-transfer.service';
 import { CallContactsService } from '../../core/contacts/call-contacts.service';
 import { CryptoService } from '../../core/crypto/crypto.service';
 import { LobbyClosedError, LobbyService } from '../../core/lobby/lobby.service';
@@ -77,7 +78,7 @@ import { ParticipantAction, ParticipantsPanel } from './participants-panel/parti
     ParticipantsPanel,
     UsageBanner,
   ],
-  providers: [MediaService, CryptoService, LobbyService, ChatService, CallContactsService],
+  providers: [MediaService, CryptoService, LobbyService, ChatService, FileTransferService, CallContactsService],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './room.html',
   styleUrl: './room.less',
@@ -95,6 +96,7 @@ export class Room implements OnInit, OnDestroy {
   protected readonly crypto = inject(CryptoService);
   protected readonly lobby = inject(LobbyService);
   protected readonly chat = inject(ChatService);
+  protected readonly files = inject(FileTransferService);
   protected readonly callContacts = inject(CallContactsService);
 
   protected readonly error = signal<string | undefined>(undefined);
@@ -260,7 +262,14 @@ export class Room implements OnInit, OnDestroy {
     effect(() => {
       const message = this.chat.latest();
       if (!message || untracked(() => this.showChat())) return;
-      untracked(() => this.notify(`${message.authorName}: ${chatPreview(message.text)}`));
+      const file = message.fileId ? untracked(() => this.files.files().get(message.fileId!)) : undefined;
+      untracked(() =>
+        this.notify(
+          message.fileId
+            ? `${message.authorName} shared ${chatPreview(file?.name ?? 'a file')}`
+            : `${message.authorName}: ${chatPreview(message.text)}`,
+        ),
+      );
     });
 
     // A new safety code means the set of keys in the call changed: invite everyone to compare again.
@@ -482,6 +491,11 @@ export class Room implements OnInit, OnDestroy {
     } catch {
       this.manualReport.set(text);
     }
+  }
+
+  protected shareFiles(files: File[]): void {
+    const rejection = this.files.share(files);
+    if (rejection) this.message.warning(SHARE_REJECTIONS[rejection]);
   }
 
   protected leave(): void {
@@ -743,3 +757,11 @@ const SPEAKER_TICK_MS = 250;
 const HIDDEN_PLACEMENT: Placement = { role: 'hidden', rect: { x: 0, y: 0, w: 0, h: 0 } };
 /** How long a join announcement waits for the newcomer's name. */
 const NAME_WAIT_MS = 5000;
+
+const SHARE_REJECTIONS: Record<ShareRejection, string> = {
+  'too-large': 'Files can be up to 100 MB each.',
+  empty: 'That file is empty.',
+  'too-many': 'Share up to 10 files at a time.',
+  'not-ready': 'Chat is still securing — try again in a moment.',
+  paused: 'File sharing is paused to stay within the free tier.',
+};

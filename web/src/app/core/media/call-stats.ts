@@ -40,6 +40,8 @@ export interface StatsSnapshot {
   gauges: StreamGauges[];
   rttMs?: number;
   path: CallStatsDto['path'];
+  /** Data channel (file) bytes received, per channel id. */
+  dataReceived: Map<string, number>;
 }
 
 /** E2EE counters since the call's encryption started (CryptoService.telemetry). */
@@ -51,7 +53,9 @@ export const MAX_REPORT_INTERVAL_S = 120;
 export function statsSnapshot(report: StatsLike, at: number): StatsSnapshot {
   const counters = new Map<string, StreamCounters>();
   const gauges: StreamGauges[] = [];
+  const dataReceived = new Map<string, number>();
   report.forEach((s) => {
+    if (s.type === 'data-channel') dataReceived.set(s.id, num(s.bytesReceived));
     const kind: Kind | undefined = s.kind === 'audio' || s.kind === 'video' ? s.kind : undefined;
     if (!kind || (s.type !== 'inbound-rtp' && s.type !== 'outbound-rtp')) return;
     const direction: Direction = s.type === 'inbound-rtp' ? 'received' : 'sent';
@@ -79,6 +83,7 @@ export function statsSnapshot(report: StatsLike, at: number): StatsSnapshot {
     gauges,
     rttMs: ice?.rttMs,
     path: !ice ? 'unknown' : ice.localType === 'relay' ? 'relay' : 'direct',
+    dataReceived,
   };
 }
 
@@ -133,6 +138,7 @@ export function callStats(
     videoSent: stream('video', 'sent'),
     videoReceived: stream('video', 'received'),
     e2ee: e2ee ? e2eeDelta(e2ee.prev, e2ee.next) : null,
+    fileBytesReceived: [...next.dataReceived].reduce((n, [id, bytes]) => n + delta(bytes, prev.dataReceived.get(id)), 0),
   };
 }
 

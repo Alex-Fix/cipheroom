@@ -26,7 +26,7 @@ Payloads never contain plaintext keys: only public keys and opaque signed envelo
 | C→S | `LeaveRoom` | — | — (also on disconnect; also leaves the lobby) |
 | C→S | `PublishTracks` | `offerSdp`, `tracks[{ mid, source }]` (1–3, distinct mids and sources) | `AnswerDto { answerSdp }` |
 | C→S | `SubscribeTracks` | `tracks[{ participantId, source }]` (1–64, same room only) | `SubscribeResult { offerSdp \| null, tracks[{ participantId, source, mid }] }` |
-| C→S | `Renegotiate` | `answerSdp` (answer to a `SubscribeTracks` offer) | — |
+| C→S | `Renegotiate` | `answerSdp` (answer to a `SubscribeTracks` or `OpenDataTransport` offer) | — |
 | C→S | `RestartIce` | `offerSdp` (ICE-restart offer) | `AnswerDto { answerSdp }` |
 | C→S | `UnpublishTracks` | `sources[]` | — |
 | C→S | `UnsubscribeTracks` | `mids[]` (own receiving mids, 1–64) | — |
@@ -34,6 +34,10 @@ Payloads never contain plaintext keys: only public keys and opaque signed envelo
 | C→S | `SelectVideoLayer` | `mid` (received camera track), `rid` (`f` / `h` / `q`) | — |
 | C→S | `SendKeyEnvelopes` | `envelopes[{ toId, blob }]` (1–64, distinct `toId`s, each another participant of the caller's room; `blob` base64url, 1–2048 chars) | — (each relayed to its `toId` only) |
 | C→S | `SendChat` | `blob` (base64url, 1–22,528 chars) | — (relayed to everyone else in the caller's room) |
+| C→S | `OpenDataTransport` | — (once per media session) | `DataTransportDto { offerSdp, serverEventsChannelId }` — answer with `Renegotiate` |
+| C→S | `PublishDataChannel` | `name` (22 base64url chars) | `DataChannelDto { channelId }` |
+| C→S | `SubscribeDataChannel` | `participantId`, `name` (published by them, same room only) | `DataChannelDto { channelId }` |
+| C→S | `CloseDataChannel` | `name`, `participantId \| null` (null = own channel) | — |
 | C→S | `ReportCallStats` | `CallStatsDto` (numbers only — see "Call-quality reports") | — |
 | S→C | `ParticipantJoined` | `ParticipantDto { id, tracks[], identity, videoCodecs[], ticket }` (no name: names travel encrypted) | |
 | S→C | `ParticipantLeft` | `id` | |
@@ -54,7 +58,8 @@ Payloads never contain plaintext keys: only public keys and opaque signed envelo
 
 Values: `source` ∈ `microphone` / `camera` / `screen`; `kind` ∈ `audio` / `video` (follows from the source); SDP ≤ 32 KB
 and starts with `v=0`; `mid` matches `^[A-Za-z0-9_-]{1,16}$`. Media events go to the **other** participants in the room;
-the caller already knows its own state. The media session is created on the first `PublishTracks` / `SubscribeTracks`.
+the caller already knows its own state. The media session is created by `GetRtcConfig` (best effort, in parallel with the ICE servers) or else on the first
+`PublishTracks` / `SubscribeTracks`.
 
 ### Lobby and admission
 
@@ -122,6 +127,27 @@ checks the shape only, relays it to the room's other members (never the lobby), 
 Receivers check the AES-GCM tag (AAD binds room, relayed `fromId` and key index), the author's Ed25519 signature and a
 per-author sequence number. Newcomers can only read events sent after they joined (keys rotate on join).
 
+### Encrypted files (data channels)
+
+Design: `docs/plans/2026-10-10-encrypted-files-design.md`. File bytes never pass through the api: the sender's
+browser streams encrypted 16 KiB chunks over a Cloudflare SFU data channel to whoever asked. Who shares what, file
+keys and transfer coordination travel only inside `SendChat` events; the api sees channels open and close, nothing
+else.
+
+- `OpenDataTransport` (once, after our own tracks are published): the SFU's offer adds the data channel transport;
+  answer it with `Renegotiate`. The SFU then opens its `server-events` channel in-band (stream `serverEventsChannelId`);
+  clients must not create it themselves (it would collide). Creates
+  the media session if needed.
+- `PublishDataChannel(name)`: `name` is the client's random channel name; the SFU name is `{participantId}-{name}`, so
+  nobody can publish into someone else's channel. `SubscribeDataChannel(participantId, name)`: the server resolves
+  the publisher's session (never shown to clients). Both return the negotiated id for
+  `createDataChannel(name, { negotiated: true, id: channelId, ordered: true })`.
+- `CloseDataChannel(name, null)` closes our own channel and everyone's subscriptions to it;
+  `CloseDataChannel(name, participantId)` closes our subscription. Unknown channels are ignored. Leaving drops them all.
+- Limits: ≤ 4 published and ≤ 8 received channels per participant; the api closes every channel **5 minutes** after it
+  was opened (the server can't see what flows, so this bounds traffic from a modified client). Publishing and
+  subscribing are refused while the usage guard is at audio-only or paused.
+
 ### Video codecs
 
 Designs: `docs/plans/2026-10-08-video-compression-design.md`, `docs/plans/2026-10-08-remove-av1-design.md`.
@@ -161,7 +187,8 @@ its last report, computed from `getStats()` per stream and from `CryptoService`'
 ```
 CallStatsDto { platform, path, intervalSeconds, rttMs?,
                audioSent?, audioReceived?, videoSent?, videoReceived?,   // StreamStatsDto
-               e2ee? }                                                    // E2eeStatsDto
+               e2ee?,                                                     // E2eeStatsDto
+               fileBytesReceived? }                                       // data channel (file) bytes
 StreamStatsDto { bytes, packets, packetsLost, jitterMs?, freezeSeconds?, height?, fps? }
 E2eeStatsDto   { framesEncrypted, framesDecrypted, framesFailed, framesMissingKey, envelopesDropped, securingSeconds }
 ```
@@ -172,6 +199,8 @@ E2eeStatsDto   { framesEncrypted, framesDecrypted, framesFailed, framesMissingKe
   a cap (`CallStatsRules`); `intervalSeconds` is 0–120.
 - Members only, no reply, nothing is broadcast or stored: the api records it as `cipheroom_call_*` /
   `cipheroom_e2ee_*` metrics (labels: platform, path, kind, direction). Accepted even when telemetry export is off.
+- Received audio + video bytes, and `fileBytesReceived` separately (capped at `Usage:MaxFileReportMbps`, 200 Mbit/s,
+  instead of `MaxReportMbps`), feed the usage guard's estimate of Cloudflare egress.
 
 ### Errors
 
@@ -189,15 +218,20 @@ echo input. Mapped centrally by `HubExceptionFilter`; pinned by `Cipheroom.Api.F
 | `Unknown participant.` | No such guest in the lobby / member in the room |
 | `Invalid settings.` | `UpdateSettings` with `seq` outside 1–2³²−1 |
 | `Invalid knock.` | `Knock` with no / over 16 knocks, a malformed or over-long blob, a duplicate `toId`, or a `toId` that isn't an admitter in the call |
-| `Not admitted.` | A lobby guest calling `GetRtcConfig`, a media method, `SendKeyEnvelopes`, `SendChat`, `ReportCallStats` or a host control |
+| `Not admitted.` | A lobby guest calling `GetRtcConfig`, a media or data channel method, `SendKeyEnvelopes`, `SendChat`, `ReportCallStats` or a host control |
 | `Not allowed.` | A host control by someone without the role (co-host removing a host or co-host, guest admitting, non-host settings or grants), a stale settings `seq`, `Knock` from a member, or a removed identity trying to come back |
 | `Lobby is full.` | `JoinLobby` when 20 people already wait |
 | `Already asked, try again later.` | `JoinLobby` within 30 s of being denied, on the same connection |
 | `Invalid key envelope.` | `SendKeyEnvelopes` with no / over 64 envelopes, a malformed or over-long blob, a duplicate `toId`, or a `toId` that isn't another participant of the caller's room |
 | `Invalid chat message.` | `SendChat` with a missing, malformed or over-long blob |
+| `Invalid data channel.` | A malformed channel name or participant id; publishing a name twice; subscribing to a channel not published by someone else in the caller's room, or one already received |
+| `Too many data channels.` | Over 4 published or 8 received data channels |
+| `Open the data transport first.` | `PublishDataChannel` / `SubscribeDataChannel` before `OpenDataTransport` |
+| `Data transport already open.` | `OpenDataTransport` a second time on the same media session |
+| `File sharing is paused.` | Usage guard: `PublishDataChannel` / `SubscribeDataChannel` at audio-only or paused |
 | `Already in a room.` | `JoinLobby` on a connection that is already in a room or lobby |
 | `Calls are paused.` | Usage guard: `JoinLobby` at audio-only (except reconnects into a running call) or paused; `Admit` at audio-only or paused |
-| `Join a room first.` | `GetRtcConfig`, any media method, `SendKeyEnvelopes`, `SendChat` or `ReportCallStats` before joining |
+| `Join a room first.` | `GetRtcConfig`, any media or data channel method, `SendKeyEnvelopes`, `SendChat` or `ReportCallStats` before joining |
 | `Invalid stats.` | `ReportCallStats` with a missing report, a bad platform/path string, an interval outside 0–120 s, or a number that's negative, not finite or over its cap |
 | `Invalid session description.` | SDP missing, over 32 KB or not starting with `v=0` |
 | `Invalid track.` | Bad track list, mid, source or participant id |
@@ -205,6 +239,6 @@ echo input. Mapped centrally by `HubExceptionFilter`; pinned by `Cipheroom.Api.F
 | `Track already published.` | `PublishTracks` for a source that is already published (or listed twice) |
 | `Unknown track.` | Track not published in the caller's room (incl. own tracks), mute of an unpublished source, layer for a non-camera track |
 | `No media session.` | `Renegotiate` / `RestartIce` before publishing or subscribing |
-| `Media server unavailable.` | Cloudflare refused or failed the request (cause logged as status / error code only) |
+| `Media server unavailable.` | Cloudflare refused or failed the request (cause logged as status, error code and Cloudflare's reason with SDP lines and IP addresses removed) |
 | `Too many requests.` | More than 20 calls in a burst / 5 per second on one connection (`RateLimiting:Hub`) |
 | `Something went wrong.` | Any unexpected server error (details only in the server log) |

@@ -32,7 +32,7 @@ public sealed partial class HubExceptionFilter(ILogger<HubExceptionFilter> logge
         }
         catch (MediaServerException ex)
         {
-            // The cause carries only status / error codes (never SDP or secrets).
+            // The cause carries only status, error code and Cloudflare's reason made safe (never SDP, addresses or secrets).
             LogMediaServerFailed(logger, ex.InnerException ?? ex, invocationContext.HubMethodName);
             throw new HubException(ex.Message);
         }

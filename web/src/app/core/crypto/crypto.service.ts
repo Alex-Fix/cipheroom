@@ -73,9 +73,9 @@ export const MAX_PENDING_CHAT = 64;
 export const PENDING_CHAT_MS = 10_000;
 
 /** A chat event to send; CryptoService adds the version and our sequence number. */
-export type ChatEventBody =
-  | { type: 'message'; id: string; text: string }
-  | { type: 'reaction'; target: string; emoji: string; on: boolean };
+export type ChatEventBody = DistributiveOmit<ChatEvent, 'v' | 'seq'>;
+
+type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
 
 export type ChatEventListener = (received: ReceivedChatEvent) => void;
 
@@ -190,6 +190,10 @@ export class CryptoService implements OnDestroy {
   readonly identityPub = this.selfPub.asReadonly();
   /** We hold a chat key: messages can be sent. */
   readonly chatReady = signal(false);
+  /** Our participant id in the current call (undefined between calls). */
+  readonly selfId = signal<string | undefined>(undefined);
+  /** The current call's room id (undefined between calls). */
+  readonly roomId = signal<string | undefined>(undefined);
   /** We may admit, deny, remove, ask to mute and end the call. */
   readonly canAdmit = computed(() => {
     const pub = this.selfPub();
@@ -381,6 +385,8 @@ export class CryptoService implements OnDestroy {
       unsubscribeChat();
     };
     this.session = session;
+    this.selfId.set(selfId);
+    this.roomId.set(roomId);
     this.names.set(new Map([[selfId, session.name]]));
     this.syncPeers(session, this.signaling.participants(), false);
     void this.updateSafetyCode(session, this.signaling.participants());
@@ -402,6 +408,8 @@ export class CryptoService implements OnDestroy {
     session.pendingChat = [];
     [...this.securingSince.keys()].forEach((id) => this.stopWaiting(id));
     this.session = undefined;
+    this.selfId.set(undefined);
+    this.roomId.set(undefined);
     this.chatReady.set(false);
     this.safetyCodeRun++;
     this.safetyCode.set(undefined);
