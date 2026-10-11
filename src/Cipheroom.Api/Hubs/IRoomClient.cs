@@ -14,6 +14,12 @@ public interface IRoomClient
     /// <param name="sources">microphone / camera / screen.</param>
     Task TracksUnpublished(string participantId, IReadOnlyList<string> sources);
 
+    /// <summary>LiveKit mode: one signaling message from the LiveKit server on relay <paramref name="relayId"/> (base64).</summary>
+    Task MediaRelayReceived(string relayId, string message, bool text);
+
+    /// <summary>LiveKit mode: the LiveKit server (or the api) closed relay <paramref name="relayId"/>.</summary>
+    Task MediaRelayClosed(string relayId, int code);
+
     Task TrackMuted(string participantId, string source, bool muted);
 
     /// <summary>A sender-key envelope for this client only; <paramref name="fromId"/> is set by the server.</summary>

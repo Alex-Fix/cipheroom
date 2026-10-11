@@ -7,6 +7,9 @@ public enum MediaProvider
 {
     /// <summary>Cloudflare Realtime SFU, negotiated through <see cref="ISfu"/>.</summary>
     Cloudflare,
+
+    /// <summary>A self-hosted LiveKit server: its signaling is relayed over SignalR (<see cref="IMediaRelay"/>).</summary>
+    LiveKit,
 }
 
 /// <summary>

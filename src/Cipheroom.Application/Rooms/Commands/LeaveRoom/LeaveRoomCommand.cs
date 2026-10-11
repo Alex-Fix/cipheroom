@@ -17,13 +17,18 @@ public sealed class LeaveRoomCommandValidator : AbstractValidator<LeaveRoomComma
     public LeaveRoomCommandValidator() => RuleFor(c => c.ConnectionId).NotEmpty();
 }
 
-public sealed class LeaveRoomCommandHandler(IRoomStore rooms) : ICommandHandler<LeaveRoomCommand, LeaveRoomResult?>
+public sealed class LeaveRoomCommandHandler(IRoomStore rooms, IMediaRelay relay) : ICommandHandler<LeaveRoomCommand, LeaveRoomResult?>
 {
-    public ValueTask<LeaveRoomResult?> Handle(LeaveRoomCommand command, CancellationToken cancellationToken) =>
-        ValueTask.FromResult(rooms.InAnyRoom(command.ConnectionId, room =>
+    public async ValueTask<LeaveRoomResult?> Handle(LeaveRoomCommand command, CancellationToken cancellationToken)
+    {
+        var result = rooms.InAnyRoom(command.ConnectionId, room =>
         {
             var left = room.Leave(command.ConnectionId);
             var leftLobby = left is null ? room.LeaveLobby(command.ConnectionId) : null;
             return new LeaveRoomResult(room.Id, left, leftLobby, room.Authority());
-        }));
+        });
+        // LiveKit mode: their signaling relays go too (a no-op on Cloudflare).
+        await relay.CloseConnectionAsync(command.ConnectionId);
+        return result;
+    }
 }

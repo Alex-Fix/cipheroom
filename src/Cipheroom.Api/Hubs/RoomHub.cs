@@ -17,10 +17,14 @@ using Cipheroom.Application.Files.Commands.OpenDataTransport;
 using Cipheroom.Application.Files.Commands.PublishDataChannel;
 using Cipheroom.Application.Files.Commands.SubscribeDataChannel;
 using Cipheroom.Application.Keys.Commands.SendKeyEnvelopes;
+using Cipheroom.Application.Media.Commands.AnnounceTracks;
+using Cipheroom.Application.Media.Commands.CloseMediaRelay;
+using Cipheroom.Application.Media.Commands.OpenMediaRelay;
 using Cipheroom.Application.Media.Commands.PublishTracks;
 using Cipheroom.Application.Media.Commands.Renegotiate;
 using Cipheroom.Application.Media.Commands.RestartIce;
 using Cipheroom.Application.Media.Commands.SelectVideoLayer;
+using Cipheroom.Application.Media.Commands.SendMediaRelay;
 using Cipheroom.Application.Media.Commands.SetTrackMuted;
 using Cipheroom.Application.Media.Commands.SubscribeTracks;
 using Cipheroom.Application.Media.Commands.UnpublishTracks;
@@ -198,6 +202,25 @@ public sealed partial class RoomHub(IMediator mediator, IUsageGuard usage, Telem
 
     public async Task SelectVideoLayer(string? mid, string? rid) =>
         await mediator.Send(new SelectVideoLayerCommand(Context.ConnectionId, mid, rid), Context.ConnectionAborted);
+
+    // Media (LiveKit mode): livekit-client's signaling socket relayed to the LiveKit server. Messages are opaque (SDP,
+    // ICE candidates) and never logged; the access token is created server-side and never reaches the browser.
+
+    public async Task OpenMediaRelay(string? relayId, string? path, string? query) =>
+        await mediator.Send(new OpenMediaRelayCommand(Context.ConnectionId, relayId, path, query), Context.ConnectionAborted);
+
+    public async Task SendMediaRelay(string? relayId, string? message, bool text) =>
+        await mediator.Send(new SendMediaRelayCommand(Context.ConnectionId, relayId, message, text), Context.ConnectionAborted);
+
+    public async Task CloseMediaRelay(string? relayId) =>
+        await mediator.Send(new CloseMediaRelayCommand(Context.ConnectionId, relayId), Context.ConnectionAborted);
+
+    /// <summary>LiveKit mode: what the browser published on LiveKit, so the room (tiles, mute state) knows it.</summary>
+    public async Task AnnounceTracks(IReadOnlyList<string?>? sources)
+    {
+        var result = await mediator.Send(new AnnounceTracksCommand(Context.ConnectionId, sources), Context.ConnectionAborted);
+        await Clients.OthersInGroup(GroupName(result.Self)).TracksPublished(result.Self.Id.Value, [.. result.Tracks.Select(TrackDto.From)]);
+    }
 
     // End-to-end keys. Envelopes are relayed to their recipient only; they are never stored or logged.
 

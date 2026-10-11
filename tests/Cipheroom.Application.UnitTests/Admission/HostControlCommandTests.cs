@@ -26,6 +26,7 @@ public sealed class HostControlCommandTests
     private readonly FakeSignatureVerifier _verifier = new();
     private readonly FakeUsageGuard _usage = new();
     private readonly IMediaRoom _media = Substitute.For<IMediaRoom>();
+    private readonly IMediaRelay _relay = Substitute.For<IMediaRelay>();
     private readonly FakeTimeProvider _time = new();
     private readonly CancellationToken _ct = TestContext.Current.CancellationToken;
     private readonly Participant _host;
@@ -210,10 +211,11 @@ public sealed class HostControlCommandTests
     public async Task Leaving_reports_members_and_lobby_guests_separately()
     {
         var guest = Waiting("guest");
-        var handler = new LeaveRoomCommandHandler(_rooms);
+        var handler = new LeaveRoomCommandHandler(_rooms, _relay);
 
         var leftLobby = await handler.Handle(new("guest"), _ct);
         Assert.Equal(guest.Id, leftLobby!.LeftLobby!.Id);
+        await _relay.Received(1).CloseConnectionAsync("guest");
         Assert.Null(leftLobby.Left);
 
         var left = await handler.Handle(new("host"), _ct);

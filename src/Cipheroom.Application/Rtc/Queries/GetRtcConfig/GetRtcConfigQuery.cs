@@ -31,6 +31,10 @@ public sealed class GetRtcConfigQueryHandler(
         // Only admitted participants get media access.
         var self = MediaSessions.Member(rooms, query.ConnectionId);
 
+        // LiveKit mode: the browser connects through the relay; LiveKit hands out its own TURN credentials.
+        if (media.Provider == MediaProvider.LiveKit)
+            return new RtcConfigResult(MediaProvider.LiveKit, [], ForceRelay: false);
+
         var session = PrepareSessionAsync(query.ConnectionId, cancellationToken);
         var ice = await iceServers.GetAsync(self.Id, cancellationToken);
         await session;

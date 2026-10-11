@@ -331,6 +331,19 @@ public sealed class Room(RoomId id)
         return added;
     }
 
+    /// <summary>
+    /// Records tracks published on a media server the room doesn't negotiate with (LiveKit mode): no media session,
+    /// and the source's wire name stands in for a transceiver mid. The rest of the call reads them like any track.
+    /// </summary>
+    public IReadOnlyList<PublishedTrack> Announce(ParticipantId id, IReadOnlyCollection<TrackSource> sources)
+    {
+        EnsureCanPublish(id, sources);
+        var participant = Get(id);
+        PublishedTrack[] added = [.. sources.Select(s => new PublishedTrack(PublishedTrack.NameFor(id, s), s, s.ToWire()))];
+        Replace(participant with { Tracks = [.. participant.Tracks, .. added] });
+        return added;
+    }
+
     /// <summary>Removes the participant's tracks for these sources (unknown ones are ignored) and everyone's
     /// subscriptions to them. Returns what was removed.</summary>
     public IReadOnlyList<PublishedTrack> Unpublish(ParticipantId id, IReadOnlyCollection<TrackSource> sources)
