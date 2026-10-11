@@ -49,6 +49,17 @@ variable "allowed_ssh_cidrs" {
   }
 }
 
+variable "media_mode" {
+  description = "cloudflare (only SSH is open) or livekit (also LiveKit's media ports and TURN, from anywhere). scripts/provision.sh passes MEDIA_MODE."
+  type        = string
+  default     = "cloudflare"
+
+  validation {
+    condition     = contains(["cloudflare", "livekit"], var.media_mode)
+    error_message = "media_mode is cloudflare or livekit."
+  }
+}
+
 variable "protection" {
   description = "Delete + rebuild protection (Hetzner requires both to match). Set false and apply before destroying."
   type        = bool

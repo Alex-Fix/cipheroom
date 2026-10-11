@@ -89,6 +89,37 @@ which `scripts/provision.sh` creates on the first run (choose a passphrase; `CIP
    scripts/security-check.sh https://cipheroom-beta.alexfix.dev
    ```
 
+## LiveKit mode: media on your server
+
+By default the server uses Cloudflare Realtime for media, like home. With `MEDIA_MODE=livekit` it runs its own
+[LiveKit](https://livekit.io) SFU instead (deployment mode 2): media goes from browsers straight to this server's
+public IP and never touches Cloudflare; the website and signaling still go through the tunnel — LiveKit's own
+signaling is relayed by the api over SignalR, so its port (7880) is never reachable from outside. Encryption is the
+same (keys never reach LiveKit). Traffic counts against the server's included 20 TB a month (about €1 per extra TB),
+not Cloudflare's 1 TB; with `HCLOUD_READ_TOKEN` set, the usage guard follows that allowance.
+
+1. **(Optional) TURN over TLS** — for networks that allow only HTTPS. In Cloudflare DNS add an **A** record
+   `turn-beta` → the server's IPv4 with the proxy **off** (grey cloud: TURN can't go through Cloudflare's proxy).
+   Create a Cloudflare API token with only *Zone → DNS → Edit* on `alexfix.dev` (Let's Encrypt's DNS check; port 80
+   stays closed).
+2. **(Recommended) Usage guard** — Hetzner Cloud console → Security → API tokens → a **Read** token.
+3. In `deploy/.env.hetzner`:
+   ```
+   MEDIA_MODE=livekit
+   LIVEKIT_TURN_DOMAIN=turn-beta.alexfix.dev   # only with step 1
+   CF_DNS_API_TOKEN=…                          # only with step 1
+   HCLOUD_READ_TOKEN=…                         # step 2
+   ```
+   `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` come from `scripts/secrets.sh` (in `deploy/.env`).
+4. `scripts/provision.sh` — opens LiveKit's ports in the Hetzner firewall: `7882/udp` + `7881/tcp` (media), and for
+   TURN `3478/udp`, `443/tcp` and the relay ports `30000-30100/udp`. SSH stays restricted to your IP.
+5. `scripts/deploy.sh` — writes `livekit.yaml` (with TURN when a domain is set), issues the certificate the first time,
+   starts LiveKit and checks the site through the tunnel.
+
+The certificate renews at 04:30 UTC (systemd timer `cipheroom-cert-renew`); LiveKit restarts only when it changed.
+Back to Cloudflare: `MEDIA_MODE=cloudflare` (or remove it) in `deploy/.env.hetzner`, `scripts/provision.sh` (closes the
+ports), `scripts/deploy.sh` (stops LiveKit). Try it locally first: `scripts/dev.sh --livekit`.
+
 ## Updating and rolling back
 
 ```bash

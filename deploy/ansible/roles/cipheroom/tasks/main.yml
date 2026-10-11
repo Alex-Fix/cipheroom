@@ -10,13 +10,18 @@
 - name: Required settings present
   ansible.builtin.assert:
     that:
-      - cipheroom_env_check.sfu
+      - cipheroom_env_check.mode
+      - cipheroom_env_check.sfu or cipheroom_media_mode != 'cloudflare'
+      - cipheroom_env_check.livekit or cipheroom_media_mode != 'livekit'
+      - cipheroom_env_check.turn
       - cipheroom_env_check.tunnel
       - cipheroom_env_check.host
       - cipheroom_env_check.grafana or not cipheroom_observability
     fail_msg: >-
-      deploy/.env (+ .env.hetzner) needs CF_SFU_APP_ID and CF_SFU_APP_SECRET, a TUNNEL_TOKEN, a PUBLIC_HOST, and with
-      --observability a GRAFANA_ADMIN_PASSWORD of 12+ characters (scripts/secrets.sh lists what's missing)
+      deploy/.env (+ .env.hetzner) needs MEDIA_MODE cloudflare or livekit; for cloudflare CF_SFU_APP_ID and
+      CF_SFU_APP_SECRET, for livekit LIVEKIT_API_KEY and LIVEKIT_API_SECRET (32+ characters), with LIVEKIT_TURN_DOMAIN
+      also CF_DNS_API_TOKEN; always a TUNNEL_TOKEN and PUBLIC_HOST, and with observability a GRAFANA_ADMIN_PASSWORD of
+      12+ characters (scripts/secrets.sh lists what's missing)
     quiet: true
 
 # ── Files ────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -43,6 +48,31 @@
     owner: root
     group: root
     mode: u=rwX,go=rX
+
+- name: LiveKit configuration directory
+  ansible.builtin.file:
+    path: "{{ cipheroom_dir }}/livekit"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+# The repo's file, plus built-in TURN over TLS when a TURN domain is set (certificate from the certs role).
+- name: LiveKit configuration
+  ansible.builtin.template:
+    src: livekit.yaml.j2
+    dest: "{{ cipheroom_dir }}/livekit/livekit.yaml"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: TURN certificate
+  ansible.builtin.include_role:
+    name: certs
+  vars:
+    certs_domain: "{{ cipheroom_turn_domain }}"
+    certs_dns_token: "{{ cipheroom_env.CF_DNS_API_TOKEN }}"
+  when: cipheroom_media_mode == 'livekit' and cipheroom_turn_domain != ''
 
 # Tags that passed the checks below, newest first: the running one and the one before it (a fast rollback). Not the
 # tag in .env, which a failed deploy has already changed.
@@ -81,6 +111,14 @@
 - name: Pull images
   ansible.builtin.command: "{{ cipheroom_compose }} pull --quiet"
   changed_when: false
+
+- name: Stop the LiveKit server in Cloudflare mode
+  ansible.builtin.command: >-
+    docker compose --project-directory {{ cipheroom_dir }} -f {{ cipheroom_dir }}/docker-compose.yml
+    --env-file {{ cipheroom_dir }}/.env --profile livekit rm --stop --force livekit
+  register: cipheroom_livekit_rm
+  changed_when: "'Removed' in cipheroom_livekit_rm.stderr"
+  when: cipheroom_media_mode != 'livekit'
 
 - name: Stop observability services when it's off
   ansible.builtin.command: >-

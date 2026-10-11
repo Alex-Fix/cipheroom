@@ -1,0 +1,16 @@
+# Managed by Ansible: deploy/livekit/livekit.yaml{{ ' plus TURN for ' ~ cipheroom_turn_domain if cipheroom_turn_domain else '' }}.
+{{ lookup('ansible.builtin.file', playbook_dir ~ '/../livekit/livekit.yaml') }}
+{% if cipheroom_turn_domain %}
+# Built-in TURN for networks that block UDP or allow only HTTPS: TLS on 443 (Let's Encrypt, renewed at night), UDP 3478.
+turn:
+  enabled: true
+  domain: {{ cipheroom_turn_domain }}
+  tls_port: 443
+  udp_port: 3478
+  cert_file: /certs/live/{{ cipheroom_turn_domain }}/fullchain.pem
+  key_file: /certs/live/{{ cipheroom_turn_domain }}/privkey.pem
+  # Relayed media leaves through these ports (published by compose, opened by Terraform): LiveKit's default 30000-40000
+  # is far more than a home-scale server needs and too many for Docker to publish.
+  relay_range_start: 30000
+  relay_range_end: 30100
+{% endif %}

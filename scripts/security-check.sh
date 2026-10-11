@@ -11,7 +11,7 @@ good() { printf '  \033[32m✓\033[0m %s\n' "$*"; }
 info "Secrets in tracked files"
 # Cloudflare tunnel tokens (base64 JSON starting {"a":), private keys, filled-in secret assignments (8+ characters, so
 # scripts that merely mention a variable — quoted patterns, placeholders — don't match).
-patterns='eyJhIjoi[A-Za-z0-9+/=_-]{40,}|-----BEGIN [A-Z ]*PRIVATE KEY-----|(TUNNEL_TOKEN|HCLOUD_TOKEN|CF_TURN_API_TOKEN|CF_TURN_KEY_ID|CF_SFU_APP_SECRET|CF_ANALYTICS_API_TOKEN|GRAFANA_ADMIN_PASSWORD|TELEMETRY_SECRET)=[A-Za-z0-9_+/-][^[:space:]$\x27\x22]{7,}'
+patterns='eyJhIjoi[A-Za-z0-9+/=_-]{40,}|-----BEGIN [A-Z ]*PRIVATE KEY-----|(TUNNEL_TOKEN|HCLOUD_TOKEN|HCLOUD_READ_TOKEN|CF_DNS_API_TOKEN|LIVEKIT_API_SECRET|CF_TURN_API_TOKEN|CF_TURN_KEY_ID|CF_SFU_APP_SECRET|CF_ANALYTICS_API_TOKEN|GRAFANA_ADMIN_PASSWORD|TELEMETRY_SECRET)=[A-Za-z0-9_+/-][^[:space:]$\x27\x22]{7,}'
 if hits="$(git grep -nIE "$patterns" -- . ':!*.lock' ':!**/package-lock.json' 2>/dev/null)"; then
   bad "possible secrets committed:"; printf '%s\n' "$hits" | sed -E 's/(=|eyJhIjoi)[^[:space:]]{6}[^[:space:]]*/\1…<redacted>/' | sed 's/^/      /'
 else

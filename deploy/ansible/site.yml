@@ -5,12 +5,6 @@
   hosts: servers
   become: true
   pre_tasks:
-    - name: Only the Cloudflare deployment mode exists so far
-      ansible.builtin.assert:
-        that: cipheroom_mode == "cloudflare"
-        fail_msg: "cipheroom_mode '{{ cipheroom_mode }}' is not implemented yet (only: cloudflare)"
-        quiet: true
-
     - name: The roles target Ubuntu 26.04 LTS (24.04 works too)
       ansible.builtin.assert:
         that: ansible_facts["distribution"] == "Ubuntu" and ansible_facts["distribution_version"] is version("24.04", ">=")

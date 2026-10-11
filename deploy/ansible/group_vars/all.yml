@@ -1,6 +1,6 @@
-# Deployment mode. Only "cloudflare" exists: Cloudflare Tunnel for HTTPS/WSS, Cloudflare Realtime SFU and TURN.
-# The self-hosted modes (README → Deployment modes) will add values here.
-cipheroom_mode: cloudflare
+# The media provider comes from MEDIA_MODE in deploy/.env(.hetzner): cloudflare (Cloudflare Realtime SFU and TURN) or
+# livekit (LiveKit on this server's public IP; TURN over TLS when LIVEKIT_TURN_DOMAIN is set). The website always goes
+# through the Cloudflare tunnel.
 
 # Image tag in GHCR (sha-<commit>, main, or a release tag); scripts/deploy.sh sets it.
 cipheroom_tag: ""
@@ -18,3 +18,7 @@ cipheroom_env_overlay: "{{ playbook_dir }}/../.env.hetzner"
 # by themselves and people in a call rejoin.
 base_reboot_time: "04:30"
 base_swap_mb: 2048 # 0 = no swap file
+
+# LiveKit mode with TURN: Let's Encrypt via the DNS check (certbot's Cloudflare plugin), renewed at this time (UTC).
+certs_certbot_image: certbot/dns-cloudflare:v5.8.0
+certs_renew_time: "04:30"

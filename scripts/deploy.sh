@@ -70,6 +70,10 @@ info "Images $IMAGE_PREFIX-{api,web}:$TAG are in GHCR"
 # Two stacks behind one tunnel token get requests balanced between them, and each keeps its own in-memory rooms, so
 # calls break at random. Compared without printing either value.
 value_in() { [[ -f "$2" ]] && grep -E "^$1=" "$2" | tail -1 | cut -d= -f2- || true; }
+mode="$(value_in MEDIA_MODE "$OVERLAY")"
+[[ -n "$mode" ]] || mode="$(value_in MEDIA_MODE "$DEPLOY_DIR/.env")"
+info "Media mode: ${mode:-cloudflare}$([[ "$mode" == livekit ]] && echo " (run scripts/provision.sh first if you just switched: it opens LiveKit's ports)")"
+
 home_token="$(value_in TUNNEL_TOKEN "$DEPLOY_DIR/.env")"
 server_token="$(value_in TUNNEL_TOKEN "$OVERLAY")"
 if [[ -z "$server_token" || "$server_token" == "$home_token" ]]; then

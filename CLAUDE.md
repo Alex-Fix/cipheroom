@@ -9,7 +9,7 @@ The server must never be able to see or hear call content. Treat that as the pro
 |---|---|
 | Backend | .NET 10, ASP.NET Core, SignalR (signaling, presence, room state) |
 | Frontend | Angular (standalone components, signals), plain WebRTC browser APIs |
-| Media | Cloudflare Realtime SFU (free tier, shared with TURN); plain WebRTC in the browser (`MediaService`), SFU calls proxied by the api |
+| Media | Per deployment (`MEDIA_MODE`): Cloudflare Realtime SFU (default; free tier, shared with TURN, SFU calls proxied by the api) or LiveKit (self-hosted on a public IP, built-in TURN; its signaling relayed over SignalR). Browser: `MediaService` + a `MediaTransport` per provider |
 | E2EE | **Our** frame encryption (one worker, AES-GCM via WebCrypto, encoded transforms) + **our** key management (`CryptoService`): per-call identities (Ed25519/X25519), sender keys in signed envelopes over SignalR, rotation on join/leave, safety codes |
 | NAT traversal | No public IP needed: media goes browser ⇄ Cloudflare edge; Cloudflare TURN as fallback for restrictive networks |
 | Runtime | Docker Compose; Cloudflare Tunnel (`cloudflared`) for HTTPS/WSS ingress |

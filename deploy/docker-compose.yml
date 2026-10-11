@@ -69,9 +69,15 @@ services:
       LIVEKIT_KEYS: "${LIVEKIT_API_KEY:-}: ${LIVEKIT_API_SECRET:-}"
     volumes:
       - ./livekit/livekit.yaml:/etc/livekit.yaml:ro
+      # TURN over TLS (server, LIVEKIT_TURN_DOMAIN): Let's Encrypt's directory; empty and unused otherwise.
+      - ${LIVEKIT_CERTS_DIR:-./livekit/certs}:/certs:ro
     ports:
       - "7881:7881/tcp"
       - "7882:7882/udp"
+      # Built-in TURN (only listening when livekit.yaml enables it): UDP and TLS on 443, and its relay ports.
+      - "3478:3478/udp"
+      - "443:443/tcp"
+      - "30000-30100:30000-30100/udp"
     restart: unless-stopped
     profiles: [livekit]
 
