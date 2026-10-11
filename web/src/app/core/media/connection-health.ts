@@ -68,6 +68,20 @@ export interface EncryptionHealth {
 }
 
 /** What MediaService knows besides the stats. */
+/** Which negotiation with the SFU failed: our own offer, or our answer to one of its offers. */
+export type NegotiationStep = 'publish' | 'subscribe-answer' | 'data-transport' | 'ice-restart';
+
+/** The last negotiation that failed in this call (kept across rejoins). Codec summaries only (sdp-codecs.ts). */
+export interface NegotiationFailure {
+  step: NegotiationStep;
+  /** Wall-clock time (ms). */
+  at: number;
+  /** What the other side offered (the SFU's offer, or `none` for our own offer). */
+  offered: string;
+  /** What we sent: our answer, or our offer. */
+  answered: string;
+}
+
 export interface HealthContext {
   state: MediaState;
   forceRelay: boolean;
@@ -80,6 +94,7 @@ export interface HealthContext {
   /** Camera height we aim for (the quality picker's tick). */
   targetHeight: number;
   encryption: EncryptionHealth;
+  negotiationFailure?: NegotiationFailure;
 }
 
 export interface Route {
@@ -124,6 +139,7 @@ export interface ConnectionReport {
   network: Network;
   sending: SendingStream[];
   encryption: EncryptionHealth;
+  negotiationFailure?: NegotiationFailure;
 }
 
 export function healthSnapshot(report: StatsLike, at: number): HealthSnapshot {
@@ -195,6 +211,7 @@ export function connectionReport(
     network,
     sending,
     encryption: context.encryption,
+    negotiationFailure: context.negotiationFailure,
   };
   if (context.state !== 'connected' || !route) return report;
 
@@ -284,6 +301,17 @@ export function keysText(e: EncryptionHealth): string {
   return e.participants ? `from ${e.secured} of ${e.participants} people` : 'no one else here yet';
 }
 
+/** "Last negotiation failure" lines of the report: step, time of day and codec summaries. */
+export function negotiationText(failure: NegotiationFailure | undefined): string[] {
+  if (!failure) return ['Last negotiation failure: none'];
+  const time = new Date(failure.at).toTimeString().slice(0, 8);
+  return [
+    `Last negotiation failure: ${failure.step} at ${time}`,
+    `  Offered: ${failure.offered}`,
+    `  Answered: ${failure.answered}`,
+  ];
+}
+
 /** Dropped-envelope reasons, readable. */
 export function dropText(reason: string): string {
   return reason.replace(/-/g, ' ');
@@ -328,6 +356,8 @@ export function reportText(report: ConnectionReport, platform: CallPlatform): st
     ...Object.entries(e.dropped).map(
       ([reason, count]) => `  Dropped envelopes (${dropText(reason)}): ${count}`,
     ),
+    '',
+    ...negotiationText(report.negotiationFailure),
   ];
   return lines.join('\n');
 }

@@ -295,6 +295,29 @@ describe('MediaService', () => {
     expect(media.micEnabled()).toBe(false);
   });
 
+  it('a failed publish is recorded but needs no rejoin (our own offer, rolled back)', async () => {
+    const { media, signaling, pc } = setup();
+    pc.setConnectionState('connected');
+    signaling.publishTracks.mockRejectedValueOnce(new Error('Media server unavailable.'));
+
+    await expect(media.setMicrophone(true)).rejects.toThrow();
+
+    expect(media.state()).toBe('connected');
+    expect(media.negotiationFailure()).toEqual(
+      expect.objectContaining({ step: 'publish', offered: 'none' }),
+    );
+  });
+
+  it('keeps the last negotiation failure across a disconnect (it explains the rejoin)', async () => {
+    const { media, signaling } = setup();
+    signaling.publishTracks.mockRejectedValueOnce(new Error('Media server unavailable.'));
+    await expect(media.setMicrophone(true)).rejects.toThrow();
+
+    await media.disconnect();
+
+    expect(media.negotiationFailure()?.step).toBe('publish');
+  });
+
   it('pulls tracks others publish, answers the SFU offer and shows them', async () => {
     const { media, signaling, participants, pc } = setup();
     signaling.subscribeTracks.mockResolvedValue({
@@ -705,6 +728,31 @@ describe('MediaService', () => {
       await vi.advanceTimersByTimeAsync(60_000);
       expect(signaling.subscribeTracks).toHaveBeenCalledTimes(3);
     });
+
+    it('a refused answer leaves the session stuck: records it, stops retrying and asks the room to rejoin', async () => {
+      const { media, signaling, participants, pc } = setup();
+      vi.useFakeTimers();
+      pc.setConnectionState('connected');
+      const offer = 'v=0\r\nm=video 9 X 98\r\na=mid:3\r\na=rtpmap:98 VP9/90000\r\n';
+      signaling.subscribeTracks.mockResolvedValue({
+        offerSdp: offer,
+        tracks: [{ participantId: 'bob', source: 'microphone', mid: '5' }],
+      });
+      signaling.renegotiate.mockRejectedValueOnce(new Error('Media server unavailable.'));
+
+      participants.set([bob]);
+      await settle();
+
+      expect(media.state()).toBe('disconnected');
+      expect(media.negotiationFailure()).toEqual({
+        step: 'subscribe-answer',
+        at: expect.any(Number),
+        offered: '3:video[VP9]',
+        answered: 'none', // the fake's answer has no media sections
+      });
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(signaling.subscribeTracks).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('negotiation order', () => {
@@ -1110,6 +1158,17 @@ describe('MediaService', () => {
       await media.publishChannel('AAAAAAAAAAAAAAAAAAAAAA');
 
       expect(signaling.openDataTransport).toHaveBeenCalledTimes(2);
+    });
+
+    it('a refused transport answer makes the room rejoin (the session refuses everything after it)', async () => {
+      const { media, signaling, pc } = setup();
+      pc.setConnectionState('connected');
+      signaling.renegotiate.mockRejectedValueOnce(new Error('Media server unavailable.'));
+
+      await expect(media.publishChannel('AAAAAAAAAAAAAAAAAAAAAA')).rejects.toThrow();
+
+      expect(media.state()).toBe('disconnected');
+      expect(media.negotiationFailure()?.step).toBe('data-transport');
     });
 
     it('does not ask again once the SFU set the transport up but our answer was refused (until we reconnect)', async () => {

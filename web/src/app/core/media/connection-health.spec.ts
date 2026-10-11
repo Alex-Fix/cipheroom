@@ -358,5 +358,24 @@ describe('reportText', () => {
     expect(text).toContain('Dropped envelopes (stale epoch): 1');
     expect(text).not.toContain('198.51.100.1');
     expect(text).not.toMatch(/\d+\.\d+\.\d+\.\d+/);
+    expect(text).toContain('Last negotiation failure: none');
+  });
+
+  it('names the last negotiation failure with codec summaries only', () => {
+    const [before, after] = healthy();
+    const negotiationFailure = {
+      step: 'subscribe-answer' as const,
+      at: new Date(2026, 9, 11, 9, 41, 7).getTime(),
+      offered: '0:audio[opus] 3:video[VP9]',
+      answered: '0:audio[opus] 3:video[VP8]',
+    };
+    const text = reportText(
+      reading(before, after, context({ negotiationFailure })),
+      'desktop-chrome',
+    );
+
+    expect(text).toContain('Last negotiation failure: subscribe-answer at 09:41:07');
+    expect(text).toContain('  Offered: 0:audio[opus] 3:video[VP9]');
+    expect(text).toContain('  Answered: 0:audio[opus] 3:video[VP8]');
   });
 });

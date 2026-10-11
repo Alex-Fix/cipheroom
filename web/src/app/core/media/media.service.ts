@@ -8,10 +8,13 @@ import {
   ConnectionReport,
   HealthContext,
   HealthSnapshot,
+  NegotiationFailure,
+  NegotiationStep,
   PoorStreak,
   connectionReport,
   healthSnapshot,
 } from './connection-health';
+import { sdpCodecs } from './sdp-codecs';
 import { StatsLike } from './ice-path';
 import { callPlatform } from './platform';
 import { loadVideoCodec, saveVideoCodec } from '../settings/video-codec';
@@ -73,7 +76,8 @@ export interface Self {
  *   codecs.ts). Cloudflare doesn't forward a codec change on a published track, so a different codec means
  *   rejoining: `codecUnsupported` tells the room when someone who joined can't play ours.
  * - Recovery: ICE restart on connection loss; after two failed attempts `state` becomes 'disconnected' and the
- *   room rejoins.
+ *   room rejoins. A failed answer to an SFU offer does the same at once: Cloudflare keeps waiting for an answer and
+ *   refuses every later negotiation on that session, so only a new session helps (`answerOffer`).
  * - E2EE: every sender and receiver gets CryptoService's frame transform as it's created, before any frame flows
  *   (`FrameCrypto`, passed to `connect`). Media is never sent or played unencrypted; remote tiles show `securing`
  *   until that participant's key arrived.
@@ -116,6 +120,8 @@ export class MediaService implements OnDestroy {
   private readonly placeholders = new Map<TrackSource, MediaStreamTrack>();
   /** Data channel transport (files): set up on first use, once per connection. */
   private dataTransport?: Promise<void>;
+  /** An answer to an SFU offer failed: the session refuses further negotiations until we rejoin. */
+  private stuck = false;
 
   private readonly self = signal<Self | undefined>(undefined);
   /** Pulling others' tracks starts only after our own publishes (see class docs). */
@@ -133,6 +139,8 @@ export class MediaService implements OnDestroy {
   readonly canPlaybackAudio = computed(() => !this.audioPlayback.blocked());
   /** Our own link to the SFU, every 2 s (docs/plans/2026-10-10-connection-diagnostics-design.md). */
   readonly connection = signal<ConnectionReport | undefined>(undefined);
+  /** The last negotiation that failed in this call, for the Connection report (kept across rejoins). */
+  readonly negotiationFailure = signal<NegotiationFailure | undefined>(undefined);
   /** The connection has been poor for a while (the header's chip). */
   readonly poorConnection = signal(false);
 
@@ -446,6 +454,7 @@ export class MediaService implements OnDestroy {
     this.restartAttempts = 0;
     document.removeEventListener('visibilitychange', this.onVisibilityChange);
     this.dataTransport = undefined;
+    this.stuck = false;
     this.pc?.close();
     this.pc = undefined;
     // The worker belongs to CryptoService (stopped with the call's keys).
@@ -549,6 +558,7 @@ export class MediaService implements OnDestroy {
         ]);
         await pc.setRemoteDescription({ type: 'answer', sdp: answer });
       } catch (e) {
+        this.recordFailure('publish', undefined, pc.localDescription?.sdp);
         // Leave the connection ready for the next negotiation.
         if (pc.signalingState === 'have-local-offer')
           await pc.setLocalDescription({ type: 'rollback' });
@@ -563,7 +573,7 @@ export class MediaService implements OnDestroy {
   }
 
   private syncSubscriptions(participants: readonly ParticipantDto[]): void {
-    if (!this.pc) return;
+    if (!this.pc || this.stuck) return;
     const { subscribe, drop } = subscriptionDiff(participants, new Set(this.subscriptions.keys()));
 
     if (drop.length) {
@@ -597,10 +607,7 @@ export class MediaService implements OnDestroy {
     }
 
     if (result.offerSdp) {
-      await pc.setRemoteDescription({ type: 'offer', sdp: result.offerSdp });
-      const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
-      await this.signaling.renegotiate(answer.sdp!);
+      await this.answerOffer(pc, result.offerSdp, 'subscribe-answer');
       this.tagReceivers(pc);
     }
     if (stale.length) await this.signaling.unsubscribeTracks(stale);
@@ -623,7 +630,7 @@ export class MediaService implements OnDestroy {
    */
   private retryLater(tracks: TrackRefDto[]): void {
     tracks.forEach((t) => this.subscriptions.delete(trackKey(t.participantId, t.source)));
-    if (this.resyncTimer) return;
+    if (this.resyncTimer || this.stuck) return;
     const delay = Math.min(PULL_RETRY_BASE_MS * 2 ** this.pullFailures++, PULL_RETRY_MAX_MS);
     this.resyncTimer = setTimeout(() => {
       this.resyncTimer = undefined;
@@ -702,6 +709,7 @@ export class MediaService implements OnDestroy {
       // If ICE hasn't recovered by then, try again (or give up).
       this.recoveryTimer = setTimeout(() => void this.restartIce(), ICE_RESTART_TIMEOUT_MS);
     } catch {
+      this.recordFailure('ice-restart', undefined, pc.localDescription?.sdp);
       if (pc.signalingState === 'have-local-offer') {
         await pc.setLocalDescription({ type: 'rollback' }).catch(() => undefined);
       }
@@ -789,13 +797,9 @@ export class MediaService implements OnDestroy {
         const pc = this.requirePc();
         const transport = await this.signaling.openDataTransport();
         // From here on the SFU has set up the transport and won't again on this session: if anything below fails,
-        // the failure stands until we reconnect (a new session). Cloudflare also keeps waiting for an answer to its
-        // offer then, refusing other negotiations — retrying couldn't help.
+        // only a new session helps — answerOffer makes the room rejoin.
         established = true;
-        await pc.setRemoteDescription({ type: 'offer', sdp: transport.offerSdp });
-        const answer = await pc.createAnswer();
-        await pc.setLocalDescription(answer);
-        await this.signaling.renegotiate(answer.sdp!);
+        await this.answerOffer(pc, transport.offerSdp, 'data-transport');
         // The SFU opens its own `server-events` channel in-band (stream transport.serverEventsChannelId): the browser
         // creates it by itself, and we ignore it. Creating it here too would collide (OperationError). Our file
         // channels are negotiated on the existing application section and need no further SDP.
@@ -911,7 +915,50 @@ export class MediaService implements OnDestroy {
         totals: this.crypto.telemetry(),
         dropped,
       },
+      negotiationFailure: this.negotiationFailure(),
     };
+  }
+
+  /**
+   * Answers an SFU offer. If any step fails, Cloudflare keeps waiting for an answer and refuses every later
+   * negotiation on this session: the failure is recorded, subscriptions stop retrying, and `state` becomes
+   * 'disconnected' so the room rejoins with a new session.
+   */
+  private async answerOffer(
+    pc: RTCPeerConnection,
+    offerSdp: string,
+    step: NegotiationStep,
+  ): Promise<void> {
+    try {
+      await pc.setRemoteDescription({ type: 'offer', sdp: offerSdp });
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      await this.signaling.renegotiate(answer.sdp!);
+    } catch (e) {
+      const answer = pc.localDescription?.type === 'answer' ? pc.localDescription.sdp : undefined;
+      this.recordFailure(step, offerSdp, answer);
+      if (this.pc === pc) {
+        this.stuck = true;
+        clearTimeout(this.resyncTimer);
+        this.resyncTimer = undefined;
+        this.state.set('disconnected');
+      }
+      throw e;
+    }
+  }
+
+  /** Codec summaries only (sdp-codecs.ts): never the SDP itself. */
+  private recordFailure(
+    step: NegotiationStep,
+    offered: string | undefined,
+    sent: string | undefined,
+  ): void {
+    this.negotiationFailure.set({
+      step,
+      at: Date.now(),
+      offered: sdpCodecs(offered),
+      answered: sdpCodecs(sent),
+    });
   }
 
   /**
