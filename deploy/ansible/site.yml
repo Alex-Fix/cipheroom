@@ -1,0 +1,22 @@
+# Installs and runs Cipheroom on the hosts in inventory.ini: hardening, Docker, then the compose stack.
+# Run it through scripts/deploy.sh (picks the image tag, checks GHCR, warns about a shared tunnel).
+# Guide: docs/deployment-hetzner.md · design: docs/plans/2026-10-11-iac-hetzner-design.md
+- name: Cipheroom
+  hosts: servers
+  become: true
+  pre_tasks:
+    - name: Only the Cloudflare deployment mode exists so far
+      ansible.builtin.assert:
+        that: cipheroom_mode == "cloudflare"
+        fail_msg: "cipheroom_mode '{{ cipheroom_mode }}' is not implemented yet (only: cloudflare)"
+        quiet: true
+
+    - name: The roles target Ubuntu 24.04
+      ansible.builtin.assert:
+        that: ansible_distribution == "Ubuntu" and ansible_distribution_version is version("24.04", ">=")
+        fail_msg: "Ubuntu 24.04 or newer expected, found {{ ansible_distribution }} {{ ansible_distribution_version }}"
+        quiet: true
+  roles:
+    - base
+    - docker
+    - cipheroom

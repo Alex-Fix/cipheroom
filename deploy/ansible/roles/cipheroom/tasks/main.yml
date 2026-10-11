@@ -1,0 +1,136 @@
+- name: Image tag given
+  ansible.builtin.assert:
+    that: cipheroom_tag is match('^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$')
+    fail_msg: "set cipheroom_tag (scripts/deploy.sh does), e.g. sha-<commit>"
+    quiet: true
+
+- name: Environment
+  ansible.builtin.include_tasks: env.yml
+
+- name: Required settings present
+  ansible.builtin.assert:
+    that:
+      - cipheroom_env_check.sfu
+      - cipheroom_env_check.tunnel
+      - cipheroom_env_check.grafana or not cipheroom_observability
+    fail_msg: >-
+      deploy/.env (+ .env.hetzner) needs CF_SFU_APP_ID and CF_SFU_APP_SECRET, a TUNNEL_TOKEN, and with
+      --observability a GRAFANA_ADMIN_PASSWORD of 12+ characters (scripts/secrets.sh lists what's missing)
+    quiet: true
+
+# ── Files ────────────────────────────────────────────────────────────────────────────────────────────────────────────
+- name: Stack directory
+  ansible.builtin.file:
+    path: "{{ cipheroom_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Compose file
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../docker-compose.yml"
+    dest: "{{ cipheroom_dir }}/docker-compose.yml"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Observability configuration
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../observability"
+    dest: "{{ cipheroom_dir }}/"
+    owner: root
+    group: root
+    mode: u=rwX,go=rX
+
+- name: Tag running now (kept for a fast rollback)
+  ansible.builtin.shell: set -o pipefail; sed -n 's/^CIPHEROOM_TAG=//p' {{ cipheroom_dir }}/.env 2>/dev/null || true
+  args:
+    executable: /bin/bash
+  register: cipheroom_previous_tag
+  changed_when: false
+
+- name: Environment file
+  ansible.builtin.copy:
+    dest: "{{ cipheroom_dir }}/.env"
+    content: |
+      # Managed by Ansible from deploy/.env (+ deploy/.env.hetzner) on the operator's machine — edit those.
+      {% for key, value in cipheroom_env.items() %}
+      {{ key }}={{ value }}
+      {% endfor %}
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  diff: false
+
+# ── Run ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+- name: Containers before
+  ansible.builtin.command: "{{ cipheroom_compose }} ps -q"
+  register: cipheroom_before
+  changed_when: false
+
+- name: Pull images
+  ansible.builtin.command: "{{ cipheroom_compose }} pull --quiet"
+  changed_when: false
+
+- name: Stop observability services when it's off
+  ansible.builtin.command: >-
+    docker compose --project-directory {{ cipheroom_dir }} -f {{ cipheroom_dir }}/docker-compose.yml
+    --env-file {{ cipheroom_dir }}/.env --profile observability rm --stop --force
+    {{ cipheroom_observability_services | join(' ') }}
+  register: cipheroom_obs_rm
+  changed_when: "'Removed' in cipheroom_obs_rm.stderr"
+  when: not cipheroom_observability
+
+- name: Deploy and verify
+  block:
+    - name: Start the stack
+      ansible.builtin.command: "{{ cipheroom_compose }} up -d --no-build --remove-orphans --wait --wait-timeout 180"
+      changed_when: false
+
+    - name: Containers after
+      ansible.builtin.command: "{{ cipheroom_compose }} ps -q"
+      register: cipheroom_after
+      changed_when: (cipheroom_after.stdout_lines | sort) != (cipheroom_before.stdout_lines | sort)
+
+    # Through nginx to the api: the public health endpoints are blocked by design, so check on the server itself.
+    - name: The app answers
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ cipheroom_env.WEB_PORT | default('8080') }}/"
+        status_code: 200
+      register: cipheroom_http
+      retries: 10
+      delay: 3
+      until: cipheroom_http.status == 200
+  rescue:
+    - name: Recent logs (no settings are printed)
+      ansible.builtin.command: "{{ cipheroom_compose }} logs --no-color --tail 50 api web cloudflared"
+      register: cipheroom_logs
+      changed_when: false
+      failed_when: false
+
+    - name: Show logs
+      ansible.builtin.debug:
+        msg: "{{ cipheroom_logs.stdout_lines }}"
+
+    - name: Deploy failed
+      ansible.builtin.fail:
+        msg: >-
+          The stack didn't come up healthy with tag {{ cipheroom_tag }}.
+          Roll back: scripts/deploy.sh --tag {{ cipheroom_previous_tag.stdout | default('<previous tag>', true) }}
+
+# ── Tidy up: keep the current and the previous tag ───────────────────────────────────────────────────────────────────
+- name: Remove older app images
+  ansible.builtin.shell: |
+    set -o pipefail
+    docker image ls --format '{{ '{{' }}.Repository{{ '}}' }} {{ '{{' }}.Tag{{ '}}' }}' \
+      | awk -v p={{ cipheroom_image_prefix | quote }} -v cur={{ cipheroom_tag | quote }} \
+            -v prev={{ cipheroom_previous_tag.stdout | quote }} \
+          '($1 == p "-api" || $1 == p "-web") && $2 != cur && $2 != prev { print $1 ":" $2 }' \
+      | xargs -r docker image rm
+    docker image prune --force --filter dangling=true >/dev/null
+  args:
+    executable: /bin/bash
+  register: cipheroom_prune
+  changed_when: "'Untagged' in cipheroom_prune.stdout"

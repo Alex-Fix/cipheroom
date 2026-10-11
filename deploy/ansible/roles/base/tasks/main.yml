@@ -1,0 +1,112 @@
+- name: Upgrade packages
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+    upgrade: safe
+
+- name: Install base packages
+  ansible.builtin.apt:
+    name: [ca-certificates, curl, fail2ban, python3-debian, ufw, unattended-upgrades]
+    state: present
+
+- name: Timezone UTC
+  community.general.timezone:
+    name: Etc/UTC
+
+# ── Swap (the observability stack is memory-hungry on a 4 GB server) ──────────────────────────────────────────────
+- name: Check the swap file
+  ansible.builtin.stat:
+    path: /swapfile
+  register: base_swapfile
+
+- name: Create the swap file
+  when: not base_swapfile.stat.exists
+  block:
+    - name: Allocate the swap file
+      ansible.builtin.command: fallocate -l {{ base_swap_mb }}M /swapfile
+      changed_when: true
+
+    - name: Restrict the swap file
+      ansible.builtin.file:
+        path: /swapfile
+        mode: "0600"
+
+    - name: Format the swap file
+      ansible.builtin.command: mkswap /swapfile
+      changed_when: true
+
+    - name: Enable the swap file
+      ansible.builtin.command: swapon /swapfile
+      changed_when: true
+
+- name: Swap on boot
+  ansible.builtin.lineinfile:
+    path: /etc/fstab
+    line: /swapfile none swap sw 0 0
+
+- name: Prefer RAM over swap
+  ansible.posix.sysctl:
+    name: vm.swappiness
+    value: "10"
+    sysctl_file: /etc/sysctl.d/90-cipheroom.conf
+
+# ── SSH ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# sshd uses the first value it reads, and drop-ins are read in name order: 10- wins over Ubuntu's 50-cloud-init.conf.
+- name: Harden sshd
+  ansible.builtin.template:
+    src: sshd.conf.j2
+    dest: /etc/ssh/sshd_config.d/10-cipheroom.conf
+    mode: "0644"
+  notify: Reload ssh
+
+- name: Check the sshd configuration
+  ansible.builtin.command: sshd -t
+  changed_when: false
+
+- name: Ban repeated SSH login failures
+  ansible.builtin.copy:
+    dest: /etc/fail2ban/jail.d/cipheroom.local
+    mode: "0644"
+    content: |
+      [sshd]
+      enabled = true
+      backend = systemd
+      maxretry = 5
+      findtime = 10m
+      bantime = 1h
+  notify: Restart fail2ban
+
+- name: Fail2ban running
+  ansible.builtin.service:
+    name: fail2ban
+    state: started
+    enabled: true
+
+# ── Firewall (second layer behind Hetzner's: web publishes on 127.0.0.1 only, so Docker's ufw bypass exposes nothing) ─
+- name: Allow SSH
+  community.general.ufw:
+    rule: allow
+    port: "22"
+    proto: tcp
+
+- name: Deny other incoming traffic
+  community.general.ufw:
+    state: enabled
+    direction: incoming
+    policy: deny
+
+# ── Automatic security updates ───────────────────────────────────────────────────────────────────────────────────────
+- name: Enable unattended upgrades
+  ansible.builtin.copy:
+    dest: /etc/apt/apt.conf.d/20auto-upgrades
+    mode: "0644"
+    content: |
+      APT::Periodic::Update-Package-Lists "1";
+      APT::Periodic::Unattended-Upgrade "1";
+      APT::Periodic::AutocleanInterval "7";
+
+- name: Reboot for updates at a quiet hour
+  ansible.builtin.template:
+    src: unattended-upgrades.conf.j2
+    dest: /etc/apt/apt.conf.d/52cipheroom-unattended-upgrades
+    mode: "0644"

@@ -1,0 +1,4 @@
+// Managed by Ansible (deploy/ansible/roles/base). Security updates only (Ubuntu's default origins).
+Unattended-Upgrade::Automatic-Reboot "true";
+Unattended-Upgrade::Automatic-Reboot-Time "{{ base_reboot_time }}";
+Unattended-Upgrade::Remove-Unused-Dependencies "true";

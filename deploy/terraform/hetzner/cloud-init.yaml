@@ -18,4 +18,4 @@ write_files:
       PasswordAuthentication no
       KbdInteractiveAuthentication no
 runcmd:
-  - systemctl reload ssh
+  - systemctl try-reload-or-restart ssh

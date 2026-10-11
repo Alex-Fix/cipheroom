@@ -1,0 +1,61 @@
+- name: Remove distribution Docker packages that conflict with Docker's
+  ansible.builtin.apt:
+    name: [docker.io, docker-compose, docker-compose-v2, docker-doc, podman-docker, containerd, runc]
+    state: absent
+
+- name: Keyring directory
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: "0755"
+
+- name: Download Docker's signing key
+  ansible.builtin.get_url:
+    url: https://download.docker.com/linux/ubuntu/gpg
+    dest: /etc/apt/keyrings/docker.asc
+    mode: "0644"
+
+- name: Read the key's fingerprint
+  ansible.builtin.command: gpg --show-keys --with-colons /etc/apt/keyrings/docker.asc
+  register: docker_key
+  changed_when: false
+
+- name: The key is Docker's
+  ansible.builtin.assert:
+    that: ("fpr:::::::::" ~ docker_gpg_fingerprint ~ ":") in docker_key.stdout
+    fail_msg: /etc/apt/keyrings/docker.asc doesn't have the expected fingerprint {{ docker_gpg_fingerprint }}
+    quiet: true
+
+- name: Docker apt repository
+  ansible.builtin.deb822_repository:
+    name: docker
+    types: deb
+    uris: https://download.docker.com/linux/ubuntu
+    suites: "{{ ansible_distribution_release }}"
+    components: stable
+    architectures: "{{ docker_arch }}"
+    signed_by: /etc/apt/keyrings/docker.asc
+
+- name: Install Docker Engine and the compose plugin
+  ansible.builtin.apt:
+    name: [docker-ce, docker-ce-cli, containerd.io, docker-buildx-plugin, docker-compose-plugin]
+    state: present
+    update_cache: true
+
+# Rotated logs can't fill the disk. The admin user is deliberately not in the docker group (that's root-equivalent).
+- name: Docker daemon settings
+  ansible.builtin.copy:
+    dest: /etc/docker/daemon.json
+    mode: "0644"
+    content: "{{ {'log-driver': 'json-file', 'log-opts': {'max-size': '10m', 'max-file': '3'}} | to_nice_json }}\n"
+  notify: Restart docker
+
+- name: Docker running
+  ansible.builtin.service:
+    name: docker
+    state: started
+    enabled: true
+
+# Before the stack starts, so a daemon restart can't interrupt the deploy's checks.
+- name: Apply Docker changes now
+  ansible.builtin.meta: flush_handlers
