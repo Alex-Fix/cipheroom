@@ -5,7 +5,8 @@ cipheroom_mode: cloudflare
 # Image tag in GHCR (sha-<commit>, main, or a release tag); scripts/deploy.sh sets it.
 cipheroom_tag: ""
 cipheroom_image_prefix: ghcr.io/alex-fix/cipheroom
-cipheroom_observability: false
+# Telemetry stack (Grafana at /grafana/, needs GRAFANA_ADMIN_PASSWORD); scripts/deploy.sh --no-observability turns it off.
+cipheroom_observability: true
 cipheroom_dir: /opt/cipheroom
 
 # Secrets come from the operator's machine: deploy/.env, then deploy/.env.hetzner (optional) overrides keys in it —

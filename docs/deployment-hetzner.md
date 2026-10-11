@@ -76,11 +76,12 @@ which `scripts/provision.sh` creates on the first run (choose a passphrase; `CIP
 
 5. **Deploy.**
    ```bash
-   scripts/deploy.sh                    # or: scripts/deploy.sh --observability
+   scripts/deploy.sh                    # with Grafana; --no-observability for the app only
    ```
    Deploys the images of the last pushed commit that changed the app. Before touching the server it checks that both
    images exist in GHCR and are public. The playbook then hardens the server, installs Docker, copies the compose
-   files and the merged `.env` (mode 600, never printed), starts the stack and checks that
+   files and the merged `.env` (mode 600, never printed), starts the stack — including the observability stack
+   (needs `GRAFANA_ADMIN_PASSWORD`, 12+ characters, in `deploy/.env` or `deploy/.env.hetzner`) — and checks that
    `https://<PUBLIC_HOST>/` answers through the tunnel.
 
 6. **Check it.** Open the hostname, start a meeting, join from a phone on mobile data. Then:
@@ -111,7 +112,8 @@ Re-running `scripts/deploy.sh` is safe: it changes only what differs. Changing a
 - **Your IP changed?** SSH (and so `deploy.sh`) can't connect. Run `scripts/provision.sh` again: it updates the
   firewall to your new address.
 - **Logs:** `ssh -i ~/.ssh/id_cipheroom cipheroom@<ip>` then `sudo docker compose --project-directory /opt/cipheroom logs -f api`.
-  With `--observability`, Grafana is at `https://<PUBLIC_HOST>/grafana/`.
+  Grafana is at `https://<PUBLIC_HOST>/grafana/` (user `admin`); `--no-observability` removes the telemetry services,
+  keeping their data volumes.
 - **What's on the server:** `/opt/cipheroom` (compose file, observability config, `.env`, `deployed-tags`) and
   Docker volumes — the usage guard's estimate and, with observability, 7 days of telemetry. No database; nothing
   needs backing up.
@@ -148,4 +150,4 @@ Then delete the server's tunnel in Cloudflare Zero Trust if you don't need it an
 | `deploy/ansible/site.yml` | playbook: roles `base`, `docker`, `cipheroom`; `cipheroom_mode` reserves room for the self-hosted modes |
 | `deploy/.env.hetzner.example` | template for the server's own keys (tunnel, hostname) |
 | `scripts/provision.sh` | Terraform wrapper (`--destroy`) |
-| `scripts/deploy.sh` | Ansible wrapper (`--tag`, `--observability`, `--yes`) |
+| `scripts/deploy.sh` | Ansible wrapper (`--tag`, `--no-observability`, `--yes`) |

@@ -58,6 +58,7 @@ tags to GHCR (amd64, Source link = that commit). `scripts/provision.sh` (Terrafo
 - Secrets: `deploy/.env` + `deploy/.env.hetzner` overlay (only differing keys), merged by Ansible with `no_log`;
   `HCLOUD_TOKEN` only from the environment. Never print values in tasks or scripts.
 - The server needs **its own tunnel** (own `TUNNEL_TOKEN` + `PUBLIC_HOST`): two stacks behind one token split rooms.
+- Observability is on by default on the server (`deploy.sh --no-observability` removes it, volumes stay).
 - Deploys verify `https://PUBLIC_HOST/` through the tunnel (`up --wait` alone misses a crash-looping cloudflared) and
   record good tags in `/opt/cipheroom/deployed-tags` (current + previous, kept for rollback).
 - New compose services that the server needs: nothing to add if they're in the compose file; files they mount must be

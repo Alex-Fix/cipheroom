@@ -2,7 +2,7 @@
 # Deploy (or update) Cipheroom on the server(s) in deploy/ansible/inventory.ini with images prebuilt in GHCR.
 #   --tag <tag>       image tag: sha-<commit> (default: the last commit that changed the images), main, or a release tag
 #                     — an older sha-<commit> rolls back
-#   --observability   also run the telemetry stack (Grafana at /grafana/)
+#   --no-observability  without the telemetry stack (on by default: Grafana at /grafana/; needs GRAFANA_ADMIN_PASSWORD)
 #   --yes             don't ask before deploying without a separate tunnel
 # Secrets: deploy/.env, with keys in deploy/.env.hetzner (optional) taking precedence. Guide: docs/deployment-hetzner.md
 source "$(dirname "$0")/_common.sh"
@@ -12,14 +12,15 @@ ANSIBLE_DIR="$DEPLOY_DIR/ansible"
 OVERLAY="$DEPLOY_DIR/.env.hetzner"
 IMAGE_PREFIX="${CIPHEROOM_IMAGE_PREFIX:-ghcr.io/alex-fix/cipheroom}"
 TAG=""
-OBSERVABILITY=false
+OBSERVABILITY=true
 YES=false
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --tag) [[ $# -ge 2 ]] || die "--tag needs a value"; TAG="$2"; shift ;;
-    --observability) OBSERVABILITY=true ;;
+    --no-observability) OBSERVABILITY=false ;;
+    --observability) OBSERVABILITY=true ;; # the default; kept so older commands still work
     --yes) YES=true ;;
-    *) die "unknown option: $1 (use --tag <tag>, --observability, --yes)" ;;
+    *) die "unknown option: $1 (use --tag <tag>, --no-observability, --yes)" ;;
   esac
   shift
 done
