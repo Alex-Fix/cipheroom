@@ -9,10 +9,21 @@ want private calls without trusting a vendor, and it runs on a home computer wit
 
 > [!WARNING]
 > **Status: early development.** Every call is end-to-end encrypted: audio and video are encrypted in the browser,
-> so neither your server nor Cloudflare's media server can see or hear them. The encryption is our own design on
+> so neither your server nor the media server (Cloudflare's or your own LiveKit) can see or hear them. The encryption is our own design on
 > standard WebCrypto primitives and **hasn't been independently audited** yet. Compare the in-call safety code
 > out loud when it matters, and remember that metadata (who, when, IP addresses) stays visible to the servers.
 > See the [roadmap](#roadmap).
+
+## Why
+
+Most video calls run through someone else's servers, and you have to take the vendor's word for what those servers
+can see. Self-hosting usually swaps that for a different problem: your own server becomes the thing that can watch, and
+running one needs a public IP, open ports and a monthly bill.
+
+Cipheroom was built to remove both: calls that are end-to-end encrypted against **every** server in the path (your
+own included), on a computer at home with **no public IP and no running cost**, with open source code that anyone
+can read and run. Every design decision is checked against that: no feature may need plaintext media or keys on a
+server, and a browser that can't encrypt can't join.
 
 ## Features
 
@@ -46,23 +57,41 @@ want private calls without trusting a vendor, and it runs on a home computer wit
 
 ## How it works
 
+The website and all signaling always go through a Cloudflare Tunnel to one hostname, so the server needs no inbound
+web ports. Media goes to an SFU (a server that forwards each person's encrypted streams to the others), chosen per
+deployment with `MEDIA_MODE`:
+
+**Cloudflare mode** (default, at home, free): media goes to Cloudflare's edge, and nothing at home is reachable from
+the internet.
+
 ```
-Browser ──HTTPS/WSS──▶ Cloudflare Tunnel ──▶ nginx ──▶ .NET API (SignalR: rooms, media negotiation)
+Browser ──HTTPS/WSS──▶ Cloudflare Tunnel ──▶ nginx ──▶ .NET api (SignalR: rooms, lobby, key envelopes, negotiation)
    │                                                     │ HTTPS (app secret, server-side only)
-   └──media (WebRTC; TURN fallback)──▶ Cloudflare Realtime SFU ◀──┘
+   └── encrypted media (WebRTC; Cloudflare TURN fallback) ──▶ Cloudflare Realtime SFU ◀──┘
 ```
 
-The API runs at home and only makes outbound connections. It relays each browser's WebRTC offers to Cloudflare's SFU
-and checks that people only receive tracks from their own room; the media itself never passes through your machine.
+**LiveKit mode** (a server with a public IP, e.g. Hetzner; this is how the beta runs): media goes to a self-hosted
+LiveKit SFU on the same server and never touches Cloudflare. LiveKit's own signaling is relayed by the api over
+SignalR, so its signaling/API port is never public; only its media and TURN ports are open.
+
+```
+Browser ──HTTPS/WSS──▶ Cloudflare Tunnel ──▶ nginx ──▶ .NET api ──(internal)──▶ LiveKit signaling
+   │                                                                               │
+   └── encrypted media (UDP 7882 / TCP 7881; TURN on 3478/udp, TLS 443) ──▶ LiveKit SFU (same server)
+```
+
+In both modes the api checks that people only receive tracks from their own room, and the media server only ever
+sees encrypted frames.
 
 | Component | Tech |
 |---|---|
-| Backend | .NET 10, ASP.NET Core, SignalR |
-| Frontend | Angular 22, plain WebRTC |
-| Media server | Cloudflare Realtime SFU (free tier: 1 TB/month egress, shared with TURN) |
+| Backend | .NET 10, ASP.NET Core, SignalR (Clean Architecture, Mediator, FluentValidation) |
+| Frontend | Angular 22, plain WebRTC; our own frame encryption (WebCrypto AES-GCM in a worker) |
+| Media server | Cloudflare Realtime SFU (free tier: 1 TB/month, shared with TURN), **or** self-hosted LiveKit with built-in TURN |
 | Ingress | Cloudflare Tunnel (`cloudflared`) on one hostname |
-| NAT traversal | Not needed at home; Cloudflare Realtime TURN as fallback for restrictive client networks |
-| Runtime | Docker Compose |
+| Runtime | Docker Compose: api, web (nginx), cloudflared; profiles for LiveKit and the observability stack |
+| Observability (optional) | OpenTelemetry → collector, Prometheus, Loki, Tempo, Grafana; pseudonymous, 7 days |
+| Infrastructure (optional) | GitHub Actions → GHCR images; Terraform (Hetzner server + firewall) and Ansible (hardening + stack) |
 
 **Privacy model:** the API, Cloudflare's SFU and the TURN relay are all treated as untrusted. Every participant
 encrypts media in the browser with keys exchanged as signed, encrypted envelopes. Servers only relay ciphertext.
@@ -113,7 +142,8 @@ You need a domain on Cloudflare (the free plan is fine) and a machine running Do
    ```
 
 No machine at home to leave running? The same stack runs on a rented Hetzner server (billed by Hetzner), created with
-Terraform and deployed with Ansible from prebuilt images: [`docs/deployment-hetzner.md`](docs/deployment-hetzner.md).
+Terraform and deployed with Ansible from prebuilt images, in Cloudflare mode or with its own LiveKit media server
+(`MEDIA_MODE=livekit`): [`docs/deployment-hetzner.md`](docs/deployment-hetzner.md).
 
 To check it from real networks, join from a phone on mobile data (Wi-Fi off) and a laptop in the same meeting. To test
 the TURN fallback, set `TURN_FORCE_RELAY=true` and run `scripts/up.sh --tunnel` again. Keep an eye on usage: 4K video
@@ -154,10 +184,9 @@ is ~3.6 GB per viewer-hour against the 1 TB/month free tier. The usage guard enf
 
 ### Deployment modes
 
-Today Cipheroom runs in one mode: at home, behind Cloudflare Tunnel, with Cloudflare Realtime SFU and TURN. A
-deployment switch will offer three:
+Two modes work today, chosen per deployment with `MEDIA_MODE`; a third is planned:
 
-- [x] **Cloudflare** (current): Cloudflare Tunnel for HTTPS/WSS, Cloudflare Realtime SFU and TURN. No public IP,
+- [x] **Cloudflare** (default): Cloudflare Tunnel for HTTPS/WSS, Cloudflare Realtime SFU and TURN. No public IP,
   free tier only.
 - [x] **Tunnel + self-hosted media** (`MEDIA_MODE=livekit`): Cloudflare Tunnel for HTTPS/WSS, a self-hosted
   [LiveKit](https://livekit.io) SFU with its built-in TURN on the same machine, reached on its public IP — media never
@@ -167,8 +196,10 @@ deployment switch will offer three:
 - [ ] **Fully self-hosted**: self-hosted SFU and TURN, and the app served directly on the server's public IP with a
   signed certificate. No Cloudflare dependency at all.
 - [x] Infrastructure as code for Hetzner: GitHub Actions publishes the images to GHCR, Terraform creates a firewalled
-  server, Ansible hardens it and runs the stack — the Cloudflare mode today, the self-hosted modes once they exist
-  ([`docs/deployment-hetzner.md`](docs/deployment-hetzner.md)).
+  server, Ansible hardens it and runs the stack in either mode
+  ([`docs/deployment-hetzner.md`](docs/deployment-hetzner.md)). The beta runs this way: Hetzner cpx42, LiveKit mode.
+- [x] Security audit of the app and the live server (2026-10-11): all findings fixed or mitigated
+  ([`docs/security/audits/`](docs/security/audits/README.md)).
 
 The self-hosted modes need a public IP (and open UDP ports for media). On Hetzner they also cost money, unlike the
 default mode at home, which stays free.
@@ -176,12 +207,13 @@ default mode at home, which stays free.
 ## Project layout
 
 ```
-src/          .NET API (Domain, Application, Infrastructure, Api)
-tests/        .NET tests, one project per layer
-web/          Angular app
-deploy/       Docker Compose, nginx
-scripts/      dev and ops scripts
-docs/         architecture, signaling protocol, design plans
+src/          .NET api (Domain, Application, Infrastructure, Api)
+tests/        .NET tests, one project per layer; shared test vectors
+web/          Angular app (crypto in src/app/core/crypto/)
+deploy/       Docker Compose, nginx, cloudflared, LiveKit, observability config; terraform/hetzner, ansible
+scripts/      dev and ops scripts (dev, up/down, test, lint, security-check, provision, deploy)
+docs/         architecture, signaling protocol, Hetzner guide, design plans, security audits, wiki sources
+.github/      image builds to GHCR, Dependabot
 .claude/      Claude Code skills and settings used to develop this project
 ```
 
@@ -199,7 +231,7 @@ New features start as a short design in [`docs/plans/`](docs/plans/).
 ## Security
 
 Please **don't** open public issues for vulnerabilities. Report them privately via GitHub's
-"Report a vulnerability" (Security tab) once the repository is public.
+"Report a vulnerability" (Security tab).
 
 Audit reports — what was checked on the app and a live server, what was found and fixed — are in
 [`docs/security/audits/`](docs/security/audits/README.md).
