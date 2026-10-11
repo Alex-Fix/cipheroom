@@ -13,8 +13,10 @@ The server must never be able to see or hear call content. Treat that as the pro
 | E2EE | **Our** frame encryption (one worker, AES-GCM via WebCrypto, encoded transforms) + **our** key management (`CryptoService`): per-call identities (Ed25519/X25519), sender keys in signed envelopes over SignalR, rotation on join/leave, safety codes |
 | NAT traversal | No public IP needed: media goes browser ⇄ Cloudflare edge; Cloudflare TURN as fallback for restrictive networks |
 | Runtime | Docker Compose; Cloudflare Tunnel (`cloudflared`) for HTTPS/WSS ingress |
+| IaC (opt-in) | GitHub Actions → GHCR images; Terraform (Hetzner) + Ansible run the same compose stack on a rented server |
 
 Hard constraints: runs at home, **no public IP**, **$0 running cost** (free tiers only, usage guard, no rented VMs).
+The Hetzner path (`docs/deployment-hetzner.md`) knowingly relaxes cost for those who opt in; the default never needs it.
 
 ## Layout (target — create projects here, don't invent new top-level dirs)
 
@@ -32,6 +34,9 @@ deploy/
   docker-compose.yml             api, web (nginx), cloudflared; profile observability (collector, Prometheus, Loki, Tempo, Grafana, exporters)
   nginx/ cloudflared/            service config
   observability/                 collector / Prometheus / Loki / Tempo config, Grafana provisioning + generated dashboards
+  terraform/hetzner/             Hetzner server + SSH-only firewall (state stays local, gitignored)
+  ansible/                       site.yml + roles base / docker / cipheroom (cipheroom_mode: cloudflare)
+.github/workflows/               images.yml: build + push api/web to GHCR (sha-<commit> tags)
 scripts/                         dev/ops scripts (bash, run from repo root)
 docs/                            architecture + protocol docs; plans/ holds approved feature designs
 ```
@@ -43,13 +48,16 @@ All scripts run from the repo root.
 - `scripts/doctor.sh` — check required toolchain
 - `scripts/dev.sh` — API :5080 (`dotnet watch`, SFU/TURN credentials from `deploy/.env`) + Angular :4200
 - `scripts/test.sh` — backend + frontend tests (`--server` / `--web` to run one side)
-- `scripts/lint.sh` — `dotnet format --verify-no-changes` + `ng lint` (if configured)
+- `scripts/lint.sh` — `dotnet format --verify-no-changes`, compose/observability config, terraform validate, ansible
+  syntax + lint, shellcheck (each when installed), `ng lint` (if configured)
 - `scripts/up.sh [--tunnel] [--observability]` / `scripts/down.sh` — docker compose stack in `deploy/` (observability:
   `docs/observability.md`)
 - `scripts/logs.sh [service]` — follow compose logs
 - `scripts/secrets.sh` — create `deploy/.env`, list required Cloudflare values that are still empty
 - `scripts/security-check.sh [url]` — secret scan, `.env` hygiene, NuGet/npm audit, live security headers
 - `scripts/certs.sh` — local HTTPS certs via mkcert (needed to test cameras from another LAN device)
+- `scripts/provision.sh [--destroy]` / `scripts/deploy.sh [--tag <tag>] [--observability]` — Hetzner server via
+  Terraform, deploy/roll back from GHCR images via Ansible (`docs/deployment-hetzner.md`)
 
 ## Non-negotiable rules
 

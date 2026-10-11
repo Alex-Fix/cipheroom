@@ -63,6 +63,8 @@ for image in api web; do
 done
 info "Images $IMAGE_PREFIX-{api,web}:$TAG are in GHCR"
 
+[[ -f "$OVERLAY" ]] && chmod 600 "$OVERLAY"
+
 # ── One tunnel per deployment ────────────────────────────────────────────────────────────────────────────────────────
 # Two stacks behind one tunnel token get requests balanced between them, and each keeps its own in-memory rooms, so
 # calls break at random. Compared without printing either value.

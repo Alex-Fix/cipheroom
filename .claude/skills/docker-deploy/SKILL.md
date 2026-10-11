@@ -49,6 +49,21 @@ The app links to `/source`; nginx redirects it to `SOURCE_URL` (`deploy/.env`, d
 commit only when web/, src/, deploy/ and the build props match it (untracked files included), and warns if that commit
 isn't pushed. Forks running modified code must push it and set `SOURCE_URL` to their repository.
 
+## Images and the Hetzner server (opt-in, costs money)
+`api` and `web` carry `image: ${CIPHEROOM_IMAGE_PREFIX:-ghcr.io/alex-fix/cipheroom}-<svc>:${CIPHEROOM_TAG:-local}`
+next to `build:` — home builds tag `local`; `.github/workflows/images.yml` pushes `sha-<commit>` / `main` / release
+tags to GHCR (amd64, Source link = that commit). `scripts/provision.sh` (Terraform, `deploy/terraform/hetzner/`:
+`cx23`, Ubuntu 26.04, firewall = 22/tcp from `allowed_ssh_cidrs` only) and `scripts/deploy.sh` (Ansible,
+`deploy/ansible/`: roles base / docker / cipheroom) run the same compose file there. Rules:
+- Secrets: `deploy/.env` + `deploy/.env.hetzner` overlay (only differing keys), merged by Ansible with `no_log`;
+  `HCLOUD_TOKEN` only from the environment. Never print values in tasks or scripts.
+- The server needs **its own tunnel** (own `TUNNEL_TOKEN` + `PUBLIC_HOST`): two stacks behind one token split rooms.
+- Deploys verify `https://PUBLIC_HOST/` through the tunnel (`up --wait` alone misses a crash-looping cloudflared) and
+  record good tags in `/opt/cipheroom/deployed-tags` (current + previous, kept for rollback).
+- New compose services that the server needs: nothing to add if they're in the compose file; files they mount must be
+  copied by the `cipheroom` role. `cipheroom_mode` reserves room for the self-hosted modes.
+- Validate: `scripts/lint.sh` (terraform validate, ansible syntax/lint, shellcheck). Guide: `docs/deployment-hetzner.md`.
+
 ## Commands
 - `scripts/secrets.sh` — create `deploy/.env` from example, list required values that are still empty
 - `scripts/up.sh [--tunnel] [--observability]` (also removes containers of services that were dropped; refuses

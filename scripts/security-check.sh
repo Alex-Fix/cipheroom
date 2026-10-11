@@ -11,21 +11,29 @@ good() { printf '  \033[32m✓\033[0m %s\n' "$*"; }
 info "Secrets in tracked files"
 # Cloudflare tunnel tokens (base64 JSON starting {"a":), private keys, filled-in secret assignments (8+ characters, so
 # scripts that merely mention a variable — quoted patterns, placeholders — don't match).
-patterns='eyJhIjoi[A-Za-z0-9+/=_-]{40,}|-----BEGIN [A-Z ]*PRIVATE KEY-----|(TUNNEL_TOKEN|CF_TURN_API_TOKEN|CF_TURN_KEY_ID|CF_SFU_APP_SECRET|CF_ANALYTICS_API_TOKEN|GRAFANA_ADMIN_PASSWORD|TELEMETRY_SECRET)=[A-Za-z0-9_+/-][^[:space:]$\x27\x22]{7,}'
+patterns='eyJhIjoi[A-Za-z0-9+/=_-]{40,}|-----BEGIN [A-Z ]*PRIVATE KEY-----|(TUNNEL_TOKEN|HCLOUD_TOKEN|CF_TURN_API_TOKEN|CF_TURN_KEY_ID|CF_SFU_APP_SECRET|CF_ANALYTICS_API_TOKEN|GRAFANA_ADMIN_PASSWORD|TELEMETRY_SECRET)=[A-Za-z0-9_+/-][^[:space:]$\x27\x22]{7,}'
 if hits="$(git grep -nIE "$patterns" -- . ':!*.lock' ':!**/package-lock.json' 2>/dev/null)"; then
   bad "possible secrets committed:"; printf '%s\n' "$hits" | sed -E 's/(=|eyJhIjoi)[^[:space:]]{6}[^[:space:]]*/\1…<redacted>/' | sed 's/^/      /'
 else
   good "no secret patterns in tracked files"
 fi
 
-info "deploy/.env"
-if [[ -f "$DEPLOY_DIR/.env" ]]; then
-  git check-ignore -q "$DEPLOY_DIR/.env" && good "ignored by git" || bad "NOT ignored by git"
-  perms="$(stat -f '%Lp' "$DEPLOY_DIR/.env" 2>/dev/null || stat -c '%a' "$DEPLOY_DIR/.env")"
-  [[ "$perms" == 600 ]] && good "permissions 600" || bad "permissions $perms (want 600: chmod 600 deploy/.env)"
-else
-  good "not present (nothing to check)"
-fi
+# deploy/.env.hetzner: the server's own tunnel token and overrides (docs/deployment-hetzner.md).
+for env_file in .env .env.hetzner; do
+  info "deploy/$env_file"
+  if [[ -f "$DEPLOY_DIR/$env_file" ]]; then
+    git check-ignore -q "$DEPLOY_DIR/$env_file" && good "ignored by git" || bad "NOT ignored by git"
+    perms="$(stat -f '%Lp' "$DEPLOY_DIR/$env_file" 2>/dev/null || stat -c '%a' "$DEPLOY_DIR/$env_file")"
+    [[ "$perms" == 600 ]] && good "permissions 600" || bad "permissions $perms (want 600: chmod 600 deploy/$env_file)"
+  else
+    good "not present (nothing to check)"
+  fi
+done
+
+info "Terraform state and inventory"
+for f in deploy/terraform/hetzner/terraform.tfstate deploy/terraform/hetzner/terraform.tfvars deploy/ansible/inventory.ini; do
+  git check-ignore -q "$ROOT/$f" && good "$f ignored by git" || bad "$f NOT ignored by git"
+done
 
 info "NuGet vulnerabilities"
 if out="$(dotnet list "$ROOT/Cipheroom.slnx" package --vulnerable --include-transitive 2>&1)"; then
