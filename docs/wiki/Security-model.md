@@ -37,7 +37,7 @@ out of scope.
 - **Audits**, covering the app and a live server, with reports in
   [`docs/security/audits/`](https://github.com/Alex-Fix/cipheroom/blob/main/docs/security/audits/README.md). Latest, **2026-10-11**: no Critical or High
   findings; three Medium deployment-hardening gaps (container capabilities, SSH host-key pinning, HSTS), all fixed;
-  seven Low items tracked as follow-ups.
+  the seven Low items were fixed or mitigated the same day (separate telemetry networks, Dependabot, SSH hardening).
 
 Found a vulnerability? Please report it privately through GitHub's "Report a vulnerability" (Security tab), not in
 a public issue.

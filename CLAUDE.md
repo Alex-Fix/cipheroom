@@ -37,7 +37,7 @@ deploy/
   observability/                 collector / Prometheus / Loki / Tempo config, Grafana provisioning + generated dashboards
   terraform/hetzner/             Hetzner server (cpx42 default, in-place resizes) + firewall (state stays local, gitignored)
   ansible/                       site.yml + roles base / docker / cipheroom (+ certs for LiveKit TURN); mode from MEDIA_MODE
-.github/workflows/               images.yml: build + push api/web to GHCR (sha-<commit> tags)
+.github/                         workflows/images.yml: build + push api/web to GHCR (sha-<commit> tags); dependabot.yml
 scripts/                         dev/ops scripts (bash, run from repo root)
 artifacts/                       gitignored: .NET build output, dev/ (usage.json, dev-settings.json, logs), e2e/ (local repro scripts + runs)
 docs/                            architecture + protocol docs; plans/ = approved designs; security/audits/ = audit reports;
