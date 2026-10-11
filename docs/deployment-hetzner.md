@@ -178,7 +178,7 @@ Then delete the server's tunnel in Cloudflare Zero Trust if you don't need it an
 |---|---|
 | `.github/workflows/images.yml` | builds and publishes the images (`sha-<commit>`, `main`, release tags) |
 | `deploy/terraform/hetzner/` | server, firewall, SSH key, cloud-init; `terraform.tfvars.example` |
-| `deploy/ansible/site.yml` | playbook: roles `base`, `docker`, `cipheroom`; `cipheroom_mode` reserves room for the self-hosted modes |
+| `deploy/ansible/site.yml` | playbook: roles `base`, `docker`, `cipheroom` (includes `certs` for LiveKit TURN); the media mode comes from `MEDIA_MODE` in `.env` |
 | `deploy/.env.hetzner.example` | template for the server's own keys (tunnel, hostname) |
 | `scripts/provision.sh` | Terraform wrapper (`--destroy`) |
 | `scripts/deploy.sh` | Ansible wrapper (`--tag`, `--no-observability`, `--yes`) |
