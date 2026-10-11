@@ -26,9 +26,9 @@ Design: `docs/plans/2026-10-07-cloudflare-sfu-design.md`. Protocol: `docs/signal
 ## Flow
 1. `LobbyService.enter` (`CryptoService.identityBundle` → `JoinLobby`, waits for admission) → `CryptoService.start` → `GetRtcConfig` (ICE servers) →
    `MediaService.connect(config, self, frames)`.
-2. **Publish own tracks first** (room `publishOwnTracks`): microphone and camera via `PublishTracks(offer, [{mid,
-   source}])`; devices that are off are still published (mic muted, camera as placeholder frames via
-   `reserveCamera()`).
+2. **Publish own tracks first** (`MediaService.publishOwnTracks`): microphone and camera in **one** negotiation —
+   one offer, one `PublishTracks(offer, [{mid, source}, …])`; devices that are off are still published (mic muted,
+   camera as placeholder frames). Capture failures come back per device; a failed negotiation fails the join.
 3. Then `startReceiving()`: subscriptions follow `SignalingService.participants` — `SubscribeTracks` → SFU offer →
    answer → `Renegotiate`. Tracks the SFU couldn't add yet are retried with backoff (1 s … 15 s).
 4. `TracksPublished` / `TracksUnpublished` / `TrackMuted` / `ParticipantLeft` keep `participants` current.
@@ -42,11 +42,18 @@ Design: `docs/plans/2026-10-07-cloudflare-sfu-design.md`. Protocol: `docs/signal
 - **Never leave an SFU offer unanswered:** per-track errors in `tracks/new` (e.g. `empty_track_error`) don't fail the
   batch; the adapter returns what succeeded plus the offer. An unanswered offer makes the next negotiation fail with
   `406 invalid_session_description`.
+- **A refused answer wedges the session:** if answering an SFU offer fails (`MediaService.answerOffer`), Cloudflare
+  keeps waiting and refuses everything after it. Don't retry on that session: `state` → `disconnected`, the room
+  rejoins with a new one. A failed *publish* (our own offer) is rolled back and doesn't need that.
 - **Keep published tracks alive:** Cloudflare garbage-collects tracks after 30 s without packets. Muted mic =
   `track.enabled = false` (silence keeps flowing); camera/screen off = 1 fps black canvas placeholder.
 - **SFU mutations aren't idempotent:** the SFU HTTP client never retries POST/PUT.
 - **Codec:** chosen per sender at join (`codecs.ts`): the user's pick (VP9 default, or VP8) if everyone in the call
-  can decode it, else VP8. Each video transceiver negotiates only that codec. Cloudflare does **not** forward a
+  can decode it, else VP8. Each video transceiver lists that codec **first, then our other codecs** (VP9/VP8):
+  Cloudflare offers a subscriber only the codecs its session advertised when publishing, so listing just the sending
+  codec made anyone sending VP8 unable to receive VP9 and vice versa ("subscriber's SDP is missing the published
+  track's codec"; docs/plans/2026-10-11-call-reliability-design.md). Cloudflare keeps our order, so we still send the
+  first. H.264/AV1 stay out (unknown to the frame layout). Cloudflare does **not** forward a
   codec change on a published track (`encodings[].codec` switches the encoder but viewers get nothing), so a
   different codec = rejoin. VP9 needs `scalabilityMode: 'L1T3'` on every simulcast layer — without it Chrome sends
   VP9 as SVC (`L3T3_KEY`) and rid-based layer selection breaks; Chrome doesn't list scalability modes in
@@ -66,8 +73,10 @@ Design: `docs/plans/2026-10-07-cloudflare-sfu-design.md`. Protocol: `docs/signal
 
 ## Recovery
 ICE `disconnected` → restart after 2 s; `failed` → restart now (`RestartIce` with an ICE-restart offer; Cloudflare
-keeps the session 30 s). After two failed restarts `state` = `disconnected` → the room rejoins (same devices), up to
-3 times in a row, then shows "Connection lost." with Try Again. A dropped SignalR connection also triggers a rejoin.
+keeps the session 30 s). After two failed restarts — or at once when an answer to an SFU offer is refused — `state` =
+`disconnected` → the room rejoins (same devices), up to 3 times in a row, then shows "Connection lost." with Try
+Again. Attempts only start over after 30 s connected, so a fault that strikes right after every connect can't loop.
+A dropped SignalR connection also triggers a rejoin.
 
 ## ICE / TURN
 `GetRtcConfig` returns Cloudflare STUN/TURN (`CloudflareIceServerProvider`, short-lived credentials). Media normally
@@ -99,7 +108,11 @@ estimates usage from browser reports (media and data channel bytes) and Cloudfla
   Cloudflare's status, error code and reason (SDP lines and addresses stripped). A refused answer
   (`invalid_session_description` on Renegotiate) wedges the session: Cloudflare then answers every other negotiation
   with `406 sessionDescription.type=answer is expected` and won't set up a second data transport — only a new session
-  (rejoin) recovers.
+  (rejoin) recovers, which now happens automatically. The log line carries `SFU refused the answer. Offered: …
+  Answered: …` — mids, kinds and codec names only (`SdpCodecs`); the Connection report has the same as "Last
+  negotiation failure" (kept across the rejoin).
+- Repro scripts: `artifacts/repro/codec-rejoin.mjs` (codec changes with 2–3 people), `codec-sdp-probe.mjs` (codecs
+  per m-line and what each side really sends), `safety-net-e2e.mjs` (old codec bug injected in one browser).
 - Browser: `[cipheroom] camera failed …` in the console has the real device / negotiation error (Safari: Web
   Inspector over USB for iPhones). `chrome://webrtc-internals` for ICE and codecs.
 - Two-browser checks without devices: headless Chrome (`--use-fake-device-for-media-stream`) or Playwright WebKit

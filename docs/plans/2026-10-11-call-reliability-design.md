@@ -1,5 +1,5 @@
 # Call reliability — design
-Status: approved · Date: 2026-10-11
+Status: implemented · Date: 2026-10-11
 
 ## Problem
 Three open follow-ups from #22 hurt every call:
@@ -91,7 +91,8 @@ lacks the published codec.
 not needed).
 
 **Safety net.** Any failure while answering an SFU offer (subscribe, data transport, unsubscribe) means the session
-is stuck: `MediaService` sets `state` to `disconnected` with reason `negotiation` and stops the pull retry loop. The
+is stuck: `MediaService` sets `state` to `disconnected` and stops the pull retry loop (the reason lives in
+`negotiationFailure` for the report; the room needs none). The
 room's existing rejoin takes over (teardown → 1 s → join with the wanted devices; others see leave/join; keys
 rotate). A failed *publish* (our own offer) is rolled back and does not trigger it.
 
@@ -100,9 +101,9 @@ After 3 quick failures the user sees "Connection lost" with Try Again.
 
 ### 3. Single publish at join
 1. Capture mic and camera in parallel, independently (a denied camera doesn't fail the mic).
-2. `MediaService.publishInitial({ microphone?, camera })`: add both send transceivers, attach the frame transform to
-   each before `createOffer`, set the codec preference on video, one `PublishTracks` with two `{ mid, source }`
-   entries (server already allows 3 per publish).
+2. `MediaService.publishOwnTracks({ microphone, camera })` (designed as `publishInitial`): add both send
+   transceivers, attach the frame transform to each before `createOffer`, set the codec preference on video, one
+   `PublishTracks` with two `{ mid, source }` entries (server already allows 3 per publish).
 3. Camera = real track or muted placeholder (off, denied, or audio-only under the usage guard). A mic the user
    wants off is published disabled, then `setTrackMuted`.
 4. On failure, roll back both transceivers; the join fails into the normal error / Retry path.
@@ -123,9 +124,10 @@ None (the confirmed fix is client-side codec preferences).
 ## Testing
 - Backend: codec summary parser (output is only mids + codec names; junk SDP), bounded map eviction, refused-answer
   exception cause; functional hub tests for `UnsubscribeTracks` if it changes.
-- Frontend: failed answer → `disconnected`/`negotiation`, no retry loop; failed publish → still usable;
-  `publishInitial` → one offer, two mids, frames attached before `createOffer`; room loop guard (fake timers).
-- E2E: `codec-rejoin` (fails before the fix, passes after); lobby, layouts, files scripts as regression.
+- Frontend: failed answer → `disconnected`, no retry loop; failed publish → still usable;
+  `publishOwnTracks` → one offer, two mids, frames attached before `createOffer`; room loop guard (fake timers).
+- E2E: `codec-rejoin` (fails before the fix, passes after); `safety-net-e2e` (old bug injected in one browser:
+  refused answer logged as codec summaries, rejoins, ends at "Connection lost."); lobby, layouts, files as regression.
 - Manual on the home stack (`scripts/up.sh --tunnel`): Mac Chrome ↔ iPhone, codec change both ways, join with camera
   off.
 
@@ -134,11 +136,11 @@ None (the confirmed fix is client-side codec preferences).
 
 ## Implementation steps
 1. ✅ `codec-rejoin.mjs` repro script (reproduced: 14 failures).
-2. Codec summary parser + bounded pending-offer map in `CloudflareSfu`; refused-answer cause logged (+ tests).
-3. Client: record the last negotiation failure; "Last negotiation failure" line in the Connection report (+ specs).
+2. ✅ Codec summary parser + bounded pending-offer map in `CloudflareSfu`; refused-answer cause logged (+ tests).
+3. ✅ Client: record the last negotiation failure; "Last negotiation failure" line in the Connection report (+ specs).
 4. ✅ Root cause found with `codec-sdp-probe.mjs` (not H1, see *Root cause*).
 5. ✅ Fix: publish offers list all our codecs, sending codec first (+ specs); repro passes 20/20.
-6. Safety net: failed answer → `disconnected`/`negotiation`, stop pull retries (+ specs).
-7. Loop guard: reset rejoin attempts after 30 s stable (+ room spec).
-8. `publishInitial`: mic + camera in one negotiation; `publishOwnTracks` uses it (+ specs).
-9. Docs: `media` skill rules, `docs/architecture.md` recovery notes, protocol doc if changed; e2e regression run.
+6. ✅ Safety net: failed answer → `disconnected`, stop pull retries (+ specs).
+7. ✅ Loop guard: reset rejoin attempts after 30 s stable (+ room spec).
+8. ✅ `MediaService.publishOwnTracks`: mic + camera in one negotiation; the room's join uses it (+ specs).
+9. ✅ Docs: `media` skill rules, `docs/architecture.md` recovery notes, protocol doc if changed; e2e regression run.
