@@ -11,10 +11,10 @@
         fail_msg: "cipheroom_mode '{{ cipheroom_mode }}' is not implemented yet (only: cloudflare)"
         quiet: true
 
-    - name: The roles target Ubuntu 24.04
+    - name: The roles target Ubuntu 26.04 LTS (24.04 works too)
       ansible.builtin.assert:
         that: ansible_distribution == "Ubuntu" and ansible_distribution_version is version("24.04", ">=")
-        fail_msg: "Ubuntu 24.04 or newer expected, found {{ ansible_distribution }} {{ ansible_distribution_version }}"
+        fail_msg: "Ubuntu 24.04 or newer expected (26.04 LTS recommended), found {{ ansible_distribution }} {{ ansible_distribution_version }}"
         quiet: true
   roles:
     - base

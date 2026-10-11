@@ -1,6 +1,13 @@
 # One VM running the Cloudflare deployment mode (docs/deployment-hetzner.md). The app needs no inbound ports — the
 # Cloudflare tunnel dials out — so the firewall only lets SSH in, and only from allowed_ssh_cidrs.
 
+# Looked up first so a wrong or unavailable image name fails at plan time, before anything is created.
+data "hcloud_image" "os" {
+  name              = var.image
+  with_architecture = "x86"
+  most_recent       = true
+}
+
 resource "hcloud_ssh_key" "admin" {
   name       = "${var.name}-admin"
   public_key = file(pathexpand(var.ssh_public_key_path))
@@ -22,7 +29,7 @@ resource "hcloud_server" "server" {
   name         = var.name
   server_type  = var.server_type
   location     = var.location
-  image        = var.image
+  image        = data.hcloud_image.os.id
   ssh_keys     = [hcloud_ssh_key.admin.id]
   firewall_ids = [hcloud_firewall.server.id]
   user_data = templatefile("${path.module}/cloud-init.yaml", {

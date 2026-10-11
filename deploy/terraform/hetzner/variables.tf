@@ -17,9 +17,9 @@ variable "location" {
 }
 
 variable "image" {
-  description = "OS image. The Ansible roles target Ubuntu 24.04."
+  description = "OS image name. The Ansible roles target Ubuntu 26.04 LTS (24.04 works too)."
   type        = string
-  default     = "ubuntu-24.04"
+  default     = "ubuntu-26.04"
 }
 
 variable "ssh_public_key_path" {

@@ -29,6 +29,7 @@ Thumbs.db
 .env.*
 !*.env.example
 !.env.example
+!.env.*.example
 .certs/
 *.pem
 *.key

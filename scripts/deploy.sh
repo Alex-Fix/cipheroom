@@ -71,7 +71,8 @@ home_token="$(value_in TUNNEL_TOKEN "$DEPLOY_DIR/.env")"
 server_token="$(value_in TUNNEL_TOKEN "$OVERLAY")"
 if [[ -z "$server_token" || "$server_token" == "$home_token" ]]; then
   warn "deploy/.env.hetzner has no TUNNEL_TOKEN of its own: the server would share the tunnel in deploy/.env."
-  warn "If that stack is running too, calls break at random. Create a second tunnel (docs/deployment-hetzner.md)."
+  warn "If that stack is running too, calls break at random. Create a second tunnel and put it in deploy/.env.hetzner
+  (cp deploy/.env.hetzner.example deploy/.env.hetzner; docs/deployment-hetzner.md)."
   if [[ "$YES" != true ]]; then
     printf "Type 'shared' to deploy anyway: "
     read -r answer
