@@ -84,5 +84,6 @@ tags to GHCR (amd64, Source link = that commit). `scripts/provision.sh` (Terrafo
   `CF_ACCOUNT_ID`, `CF_ANALYTICS_API_TOKEN`; the api exports only when up.sh sets `OTEL_EXPORTER_OTLP_ENDPOINT`.
 - Docker Desktop: cAdvisor needs `/var/run/docker.sock` and `/run/containerd/containerd.sock` mounted explicitly
   (`/var/run` resolves to macOS).
-- `scripts/dev.sh` — api + Angular natively, SFU/TURN credentials read from `deploy/.env`
+- `scripts/dev.sh` — api + Angular natively, media via a local LiveKit container; `--cloudflare` uses the SFU/TURN
+  credentials from `deploy/.env` instead
 - Validate: `docker compose -f deploy/docker-compose.yml --env-file deploy/.env config`

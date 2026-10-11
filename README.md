@@ -74,13 +74,13 @@ metadata and call-quality numbers for 7 days (no names, IPs or plain room ids). 
 
 ## Quick start (local development)
 
-Requirements: .NET 10 SDK, Node.js (LTS), and a Cloudflare Realtime SFU app (free; see step 2 below) — calls go
-through Cloudflare even in development.
+Requirements: .NET 10 SDK, Node.js (LTS) and Docker. Calls go through a local LiveKit server that `scripts/dev.sh`
+starts in Docker with throwaway keys, so no accounts are needed.
 
 ```bash
 scripts/doctor.sh      # check your toolchain
-scripts/secrets.sh     # creates deploy/.env — fill in CF_SFU_APP_ID / CF_SFU_APP_SECRET
-scripts/dev.sh         # API on :5080 + Angular on :4200
+scripts/dev.sh         # API on :5080 + Angular on :4200 + LiveKit in Docker
+scripts/dev.sh --cloudflare   # or: Cloudflare Realtime SFU (scripts/secrets.sh, fill in CF_SFU_APP_ID / CF_SFU_APP_SECRET)
 ```
 
 Open http://localhost:4200, create a **New Meeting** (you're its host), and open the invite link in a second
