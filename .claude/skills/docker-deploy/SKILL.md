@@ -64,7 +64,8 @@ usage guard to Hetzner traffic. Design: `docs/plans/2026-10-11-livekit-media-mod
 `api` and `web` carry `image: ${CIPHEROOM_IMAGE_PREFIX:-ghcr.io/alex-fix/cipheroom}-<svc>:${CIPHEROOM_TAG:-local}`
 next to `build:` — home builds tag `local`; `.github/workflows/images.yml` pushes `sha-<commit>` / `main` / release
 tags to GHCR (amd64, Source link = that commit). `scripts/provision.sh` (Terraform, `deploy/terraform/hetzner/`:
-`cx23`, Ubuntu 26.04, firewall = 22/tcp from `allowed_ssh_cidrs` only) and `scripts/deploy.sh` (Ansible,
+`cpx42` by default, resized in place with `keep_disk`; `provision.sh` checks Hetzner capacity first; Ubuntu 26.04;
+firewall `<name>-server` = 22/tcp from `allowed_ssh_cidrs` only, plus LiveKit's ports in LiveKit mode) and `scripts/deploy.sh` (Ansible,
 `deploy/ansible/`: roles base / docker / cipheroom, + certs for LiveKit TURN) run the same compose file there. Rules:
 - Secrets: `deploy/.env` + `deploy/.env.hetzner` overlay (only differing keys), merged by Ansible with `no_log`;
   `HCLOUD_TOKEN` only from the environment. Never print values in tasks or scripts.

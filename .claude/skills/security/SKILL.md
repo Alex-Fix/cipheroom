@@ -59,10 +59,11 @@ compromised client devices.
 - If E2EE setup fails, refuse to join. Never fall back to unencrypted.
 
 ### nginx / Cloudflare / Docker (`deploy/`)
-- Security headers live at **server level** in `deploy/nginx/default.conf` (an `add_header` in a location silently drops them): CSP, `Referrer-Policy: no-referrer`, `Permissions-Policy`, `X-Content-Type-Options`.
-- Cloudflare dashboard: SSL/TLS mode Full, "Always Use HTTPS" on, HSTS on, minimum TLS 1.2.
-- Only the web container is published, and only on `127.0.0.1`. No UDP or media ports are published — media goes to Cloudflare, not home.
-- Containers run as non-root (`USER app`, nginx-unprivileged). Images are pinned to versions, never `latest`.
+- Security headers live at **server level** in `deploy/nginx/default.conf` (an `add_header` in a location silently drops them): CSP, `Referrer-Policy: no-referrer`, `Permissions-Policy`, `X-Content-Type-Options`, `Strict-Transport-Security` (this host only). A location with its own `add_header` (the `/grafana/` ones) repeats what it still needs, HSTS included.
+- Cloudflare dashboard: SSL/TLS mode Full, "Always Use HTTPS" on, HSTS on (a second layer to nginx's), minimum TLS 1.2.
+- Only the web container is published, and only on `127.0.0.1`. At home no UDP or media ports are published — media goes to Cloudflare. In LiveKit mode on a server, only LiveKit's media and TURN ports are (never its 7880 signaling/API port).
+- Containers run as non-root (`USER app`, nginx-unprivileged) where the image allows. Every service gets the compose file's `x-hardening` block (`cap_drop: [ALL]`, `no-new-privileges`); a service that needs a capability adds just that one with a comment; `privileged` only for cadvisor. Images are pinned to versions, never `latest`.
+- Servers: SSH host keys are pinned once per server (`scripts/provision.sh`) and only verified afterwards — never re-scanned and trusted on a later run.
 - `deploy/.env` is gitignored and `chmod 600`. Claude Code is denied from reading it. Ask the user to edit it via `!` commands.
 
 ### Telemetry and Grafana (`docs/observability.md`)
@@ -95,5 +96,6 @@ compromised client devices.
 - [ ] `scripts/security-check.sh` passes.
 
 ## Tools
+- Full audit of the app and a running server (passes A–F, report in `docs/security/audits/`): the `security-audit` skill.
 - `scripts/security-check.sh [https://cipheroom.alexfix.dev]`: secret scan of tracked files, `deploy/.env` ignore and permission check, NuGet and npm vulnerability audit, and (with a URL) a live security-header check.
 - For a review of a pending diff, also suggest the built-in `/security-review`.

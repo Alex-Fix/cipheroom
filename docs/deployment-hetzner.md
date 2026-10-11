@@ -25,8 +25,9 @@ Browser ──HTTPS/WSS──▶ Cloudflare Tunnel ──▶ web ──▶ api �
 
 ## Before you start
 
-**It costs money.** A `cx23` (2 vCPU, 4 GB RAM) plus its IPv4 address is about €4–5 a month while it exists, billed
-by Hetzner. GHCR and GitHub Actions are free for this public repository. Cloudflare Realtime stays inside its free
+**It costs money.** The default `cpx42` (8 AMD vCPU, 16 GB RAM) plus its IPv4 address is billed by Hetzner while it
+exists — check the current figure in Hetzner's price list. Smaller and cheaper types work too (`server_type` in
+`terraform.tfvars`, see Resizing): `cx23` (2 vCPU, 4 GB) runs the app and observability for a handful of people. GHCR and GitHub Actions are free for this public repository. Cloudflare Realtime stays inside its free
 tier through the usage guard, as at home.
 
 **Know what Hetzner can see.** Hosting the api means Hetzner could observe what the api observes: IP addresses,
@@ -72,7 +73,9 @@ which `scripts/provision.sh` creates on the first run (choose a passphrase; `CIP
    ```
    Shows Terraform's plan and asks before creating anything. SSH is allowed from this machine's current public IP
    (to allow more, set `allowed_ssh_cidrs` in `deploy/terraform/hetzner/terraform.tfvars` — see the `.example`). It
-   writes `deploy/ansible/inventory.ini` and pins the server's SSH host keys in `deploy/ansible/known_hosts`.
+   writes `deploy/ansible/inventory.ini` and pins the server's SSH host keys in `deploy/ansible/known_hosts` — once per
+   server: later runs only check that the server still shows those keys, and stop if not (possibly someone in the
+   middle; if you rebuilt the server yourself, delete that file and re-run).
 
 5. **Deploy.**
    ```bash
@@ -88,6 +91,8 @@ which `scripts/provision.sh` creates on the first run (choose a passphrase; `CIP
    ```bash
    scripts/security-check.sh https://cipheroom-beta.alexfix.dev
    ```
+   For a full audit of the app and the server, see [`security/audits/`](security/audits/README.md) (the
+   `security-audit` skill).
 
 ## LiveKit mode: media on your server
 
@@ -134,6 +139,19 @@ A deploy that fails its checks says which tag to roll back to and shows the last
 
 Re-running `scripts/deploy.sh` is safe: it changes only what differs. Changing a secret = edit `deploy/.env` or
 `deploy/.env.hetzner`, run it again.
+
+## Resizing
+
+Set `server_type` in `deploy/terraform/hetzner/terraform.tfvars` and run `scripts/provision.sh`. Hetzner resizes the
+same server in place — same IP, same disk contents — after powering it off for a minute or two; containers come back by
+themselves.
+
+- **Capacity.** Hetzner sometimes has no room for a type in a location (cheap `cx` types especially). A resize that
+  can't be placed fails *after* the server was powered off, so `provision.sh` first asks Hetzner whether the type is
+  available there and refuses if not; if Terraform fails anyway, it powers the server back on.
+- **Going back down.** `keep_disk = true` (the default) keeps the disk at its size, so any type with at least that disk
+  works later. With `keep_disk = false` the disk grows with the type and Hetzner never shrinks it.
+- The firewall (`<name>-server`) and everything Ansible set up stay as they are; no `deploy.sh` needed.
 
 ## Day to day
 
