@@ -1,6 +1,5 @@
 import { Injectable, OnDestroy, computed, effect, inject, signal, untracked } from '@angular/core';
 import { CryptoService } from '../crypto/crypto.service';
-import { MediaKind } from '../crypto/frame-codec';
 import { FrameCrypto } from '../crypto/frame-transforms';
 import { Camera, CameraFacing, cameraFacing, hasRearCamera } from './cameras';
 import { StatsSnapshot, callStats, statsSnapshot } from './call-stats';
@@ -9,56 +8,31 @@ import {
   HealthContext,
   HealthSnapshot,
   NegotiationFailure,
-  NegotiationStep,
   PoorStreak,
   connectionReport,
   healthSnapshot,
 } from './connection-health';
-import { sdpCodecs } from './sdp-codecs';
 import { StatsLike } from './ice-path';
 import { callPlatform } from './platform';
 import { loadVideoCodec, saveVideoCodec } from '../settings/video-codec';
 import { loadVideoQuality, saveVideoQuality } from '../settings/video-quality';
 import { SignalingService } from '../signaling/signaling.service';
-import {
-  E2eeStatsDto,
-  ParticipantDto,
-  RtcConfig,
-  TrackRefDto,
-  TrackSource,
-  VideoLayer,
-} from '../signaling/signaling.types';
+import { E2eeStatsDto, ParticipantDto, RtcConfig, TrackSource } from '../signaling/signaling.types';
 import { AudioPlayback } from './audio-playback';
-import {
-  CodecCapability,
-  VIDEO_CODECS,
-  VideoCodec,
-  codecPreferences,
-  decodableCodecs,
-  encodableCodecs,
-  sendCodec,
-  simulcastScalabilityMode,
-} from './codecs';
+import { VIDEO_CODECS, VideoCodec, decodableCodecs, encodableCodecs, sendCodec } from './codecs';
+import { CloudflareTransport } from './cloudflare-transport';
 import { receiveLayer } from './layers';
+import { MediaTransport, Publication, TransportEvents } from './media-transport';
 import { CallParticipant, MediaState, Tile } from './media.types';
 import {
   VideoQuality,
-  cameraEncodings,
   captureConstraints,
   supportedQualities,
   closestQuality,
   qualityHeight,
 } from './quality';
-import { SerialQueue } from './serial-queue';
 import { SpeakingDetector, sameMembers } from './speaking';
-import { TrackKey, participantOf, subscriptionDiff, trackKey } from './subscriptions';
-
-/** A track to publish; `placeholder`: placeholder frames, not a capture (kept in `placeholders`, not shown). */
-interface Publication {
-  source: TrackSource;
-  track: MediaStreamTrack;
-  placeholder?: boolean;
-}
+import { TrackKey, trackKey } from './subscriptions';
 
 /** Who we are in the room (from JoinRoom). */
 export interface Self {
@@ -67,13 +41,13 @@ export interface Self {
 }
 
 /**
- * Owns the call's single RTCPeerConnection to the SFU (Cloudflare Realtime SFU, negotiated through
- * SignalingService). Provided per room route, so it lives exactly as long as the call.
+ * The call's media, provider-neutral: devices, quality, codec choice, tiles, diagnostics. The connection itself —
+ * negotiation, subscriptions, recovery — belongs to a MediaTransport chosen by the server's `RtcConfig.provider`
+ * (Cloudflare Realtime SFU: CloudflareTransport). Provided per room route, so it lives exactly as long as the call.
  *
  * - Publishing happens on first use of a device. After that, turning a device off or on never renegotiates: the
  *   track is disabled or swapped (placeholder frames keep the SFU track alive) and others learn it from TrackMuted.
- * - Subscriptions follow `SignalingService.participants`: newly published tracks are pulled, gone ones dropped.
- * - Every SFU/peer-connection mutation runs through one queue: negotiations must never overlap.
+ * - Subscriptions follow `SignalingService.participants` (the transport pulls new tracks and drops gone ones).
  * - Negotiation order: our own tracks are published before we receive anyone else's (`startReceiving`). iOS Safari
  *   can't add a camera once the connection began by answering the SFU's offer; the camera transceiver is therefore
  *   always negotiated up front (`publishOwnTracks`), and later device changes only swap tracks.
@@ -82,24 +56,19 @@ export interface Self {
  * - Codec: chosen when we connect (`sendingCodec`, from `videoCodec` and what everyone in the call can decode — see
  *   codecs.ts). Cloudflare doesn't forward a codec change on a published track, so a different codec means
  *   rejoining: `codecUnsupported` tells the room when someone who joined can't play ours.
- * - Recovery: ICE restart on connection loss; after two failed attempts `state` becomes 'disconnected' and the
- *   room rejoins. A failed answer to an SFU offer does the same at once: Cloudflare keeps waiting for an answer and
- *   refuses every later negotiation on that session, so only a new session helps (`answerOffer`).
- * - E2EE: every sender and receiver gets CryptoService's frame transform as it's created, before any frame flows
- *   (`FrameCrypto`, passed to `connect`). Media is never sent or played unencrypted; remote tiles show `securing`
+ * - Recovery is the transport's; when it gives up, `state` becomes 'disconnected' and the room rejoins.
+ * - E2EE: the transport puts CryptoService's frame transform on every sender and receiver as it's created, before
+ *   any frame flows (`FrameCrypto`, passed to `connect`). Media is never sent or played unencrypted; remote tiles show `securing`
  *   until that participant's key arrived.
  */
 @Injectable()
 export class MediaService implements OnDestroy {
   private readonly signaling = inject(SignalingService);
   private readonly audioPlayback = inject(AudioPlayback);
-  private readonly queue = new SerialQueue();
   private readonly speakingDetector = new SpeakingDetector();
 
-  private pc?: RTCPeerConnection;
+  private transport?: MediaTransport;
   private readonly crypto = inject(CryptoService);
-  /** CryptoService's frame transforms for this connection. */
-  private frames?: FrameCrypto;
   private statsTimer?: ReturnType<typeof setInterval>;
   private statsTicks = 0;
   /** Baseline for the next call-quality report (ReportCallStats). */
@@ -107,28 +76,16 @@ export class MediaService implements OnDestroy {
   /** Previous reading for the Connection drawer, and the chip's streak. */
   private health?: HealthSnapshot;
   private readonly poorStreak = new PoorStreak();
-  private forceRelay = false;
-  private recoveryTimer?: ReturnType<typeof setTimeout>;
-  private restartAttempts = 0;
-  private resyncTimer?: ReturnType<typeof setTimeout>;
-  private pullFailures = 0;
-  /** Rendered width of remote camera tiles (0 = off screen), and the layer last requested for each. */
+  /** Rendered width of remote camera tiles (0 = off screen). */
   private readonly tileWidths = new Map<TrackKey, number>();
-  private readonly layers = new Map<TrackKey, VideoLayer>();
   private readonly layerTimers = new Map<TrackKey, ReturnType<typeof setTimeout>>();
-  private readonly onVisibilityChange = () =>
-    this.subscriptions.forEach((_, key) => key.endsWith(':camera') && this.scheduleLayer(key));
-  /** Our transceivers by source, kept for the whole call. */
-  private readonly senders = new Map<TrackSource, RTCRtpTransceiver>();
-  /** Remote tracks we receive or have requested → receiving mid (undefined while the request is in flight). */
-  private readonly subscriptions = new Map<TrackKey, string | undefined>();
-  private readonly midToKey = new Map<string, TrackKey>();
+  private readonly onVisibilityChange = () => {
+    for (const key of this.transport?.subscribedKeys() ?? []) {
+      if (key.endsWith(':camera')) this.scheduleLayer(key);
+    }
+  };
   /** Placeholder tracks currently sent instead of a stopped camera / screen. */
   private readonly placeholders = new Map<TrackSource, MediaStreamTrack>();
-  /** Data channel transport (files): set up on first use, once per connection. */
-  private dataTransport?: Promise<void>;
-  /** An answer to an SFU offer failed: the session refuses further negotiations until we rejoin. */
-  private stuck = false;
 
   private readonly self = signal<Self | undefined>(undefined);
   /** Pulling others' tracks starts only after our own publishes (see class docs). */
@@ -268,7 +225,7 @@ export class MediaService implements OnDestroy {
       const videoAllowed = this.videoAllowed();
       if (this.self() && this.receiving()) {
         untracked(() =>
-          this.syncSubscriptions(videoAllowed ? participants : audioOnly(participants)),
+          this.transport?.follow(videoAllowed ? participants : audioOnly(participants)),
         );
       }
     });
@@ -290,25 +247,13 @@ export class MediaService implements OnDestroy {
   }
 
   /**
-   * Opens the peer connection for a joined participant, with `frames` (from CryptoService.start) on every sender and
-   * receiver. Media is published later, per device.
+   * Opens the connection to the server's media provider for a joined participant, with `frames` (from
+   * CryptoService.start) on every sender and receiver. Media is published later, per device.
    */
   connect(config: RtcConfig, self: Self, frames: FrameCrypto): void {
-    this.frames = frames;
-    const pc = new RTCPeerConnection({
-      // Empty list (local dev): the SFU's own candidates are enough without TURN.
-      ...(config.iceServers.length ? { iceServers: config.iceServers } : {}),
-      iceTransportPolicy: config.forceRelay ? 'relay' : 'all',
-      bundlePolicy: 'max-bundle',
-      ...frames.peerConnectionConfig,
-    });
-    this.pc = pc;
-    pc.ontrack = (event) => this.onRemoteTrack(event);
-    pc.onconnectionstatechange = () => this.onConnectionStateChange(pc);
+    this.transport = this.createTransport(config, frames);
     document.addEventListener('visibilitychange', this.onVisibilityChange);
 
-    this.forceRelay = config.forceRelay;
-    this.state.set(mediaState(pc.connectionState));
     this.sendingCodec.set(this.codecFor(this.videoCodec()));
     this.self.set(self);
     this.statsTimer = setInterval(() => void this.collectStats(), STATS_INTERVAL_MS);
@@ -454,22 +399,18 @@ export class MediaService implements OnDestroy {
    * SFU offer, like a subscribe (negotiation order).
    */
   async publishChannel(name: string): Promise<RTCDataChannel> {
-    await this.ensureDataTransport();
-    const { channelId } = await this.queue.runFirst(() => this.signaling.publishDataChannel(name));
-    return opened(this.negotiatedChannel(name, channelId));
+    return this.requireReceiving().publishChannel(name);
   }
 
   /** Receives `participantId`'s data channel `name`; resolves once it's open. */
   async subscribeChannel(participantId: string, name: string): Promise<RTCDataChannel> {
-    await this.ensureDataTransport();
-    const { channelId } = await this.queue.runFirst(() => this.signaling.subscribeDataChannel(participantId, name));
-    return opened(this.negotiatedChannel(name, channelId));
+    return this.requireReceiving().subscribeChannel(participantId, name);
   }
 
   /** Closes a channel from publishChannel (`participantId` omitted) or subscribeChannel. */
   async closeChannel(channel: RTCDataChannel, name: string, participantId?: string): Promise<void> {
     channel.close();
-    if (this.pc) await this.queue.runFirst(() => this.signaling.closeDataChannel(name, participantId));
+    await this.transport?.closeChannel(name, participantId);
   }
 
   /** Must be called from a user gesture when the browser blocked autoplay. */
@@ -485,28 +426,16 @@ export class MediaService implements OnDestroy {
     this.poorStreak.update('unknown');
     this.connection.set(undefined);
     this.poorConnection.set(false);
-    clearTimeout(this.recoveryTimer);
-    clearTimeout(this.resyncTimer);
-    this.resyncTimer = undefined;
-    this.pullFailures = 0;
     this.layerTimers.forEach((t) => clearTimeout(t));
     this.layerTimers.clear();
     this.tileWidths.clear();
-    this.layers.clear();
-    this.restartAttempts = 0;
     document.removeEventListener('visibilitychange', this.onVisibilityChange);
-    this.dataTransport = undefined;
-    this.stuck = false;
-    this.pc?.close();
-    this.pc = undefined;
-    // The worker belongs to CryptoService (stopped with the call's keys).
-    this.frames = undefined;
+    // The frame transforms' worker belongs to CryptoService (stopped with the call's keys).
+    this.transport?.close();
+    this.transport = undefined;
     Object.values(this.localTracks()).forEach((t) => t?.stop());
     this.placeholders.forEach((t) => t.stop());
     this.placeholders.clear();
-    this.senders.clear();
-    this.subscriptions.clear();
-    this.midToKey.clear();
     this.self.set(undefined);
     this.receiving.set(false);
     this.localTracks.set({});
@@ -528,16 +457,15 @@ export class MediaService implements OnDestroy {
 
   /** Puts a capture track on the source's transceiver: publishes on first use, otherwise swaps and unmutes. */
   private async useTrack(source: TrackSource, track: MediaStreamTrack): Promise<void> {
-    const transceiver = this.senders.get(source);
-    if (!transceiver) {
+    const transport = this.transport;
+    if (!transport?.hasSender(source)) {
       await this.publish(source, track);
       if (source === 'camera') this.updateCameraInfo();
       return;
     }
     const previous = this.localTracks()[source];
-    await transceiver.sender.replaceTrack(track);
-    if (source === 'camera')
-      await updateBitrates(transceiver.sender, captureHeight(track), this.requireCodec());
+    await transport.replaceTrack(source, track);
+    if (source === 'camera') await transport.retargetCamera(captureHeight(track), this.requireCodec());
     previous?.stop();
     this.placeholders.get(source)?.stop();
     this.placeholders.delete(source);
@@ -549,14 +477,13 @@ export class MediaService implements OnDestroy {
   /** Stops capturing (camera light off) while keeping the published SFU track alive with placeholder frames. */
   private async stopSource(source: TrackSource): Promise<void> {
     const track = this.localTracks()[source];
-    const transceiver = this.senders.get(source);
     if (!track) return;
     const placeholder = blankVideoTrack();
     if (placeholder) this.placeholders.set(source, placeholder);
-    await transceiver?.sender.replaceTrack(placeholder);
+    const published = (await this.transport?.replaceTrack(source, placeholder)) ?? false;
     track.stop();
     this.setLocalTrack(source, undefined);
-    if (transceiver) await this.signaling.setTrackMuted(source, true);
+    if (published) await this.signaling.setTrackMuted(source, true);
   }
 
   private async switchCamera(constraints: MediaTrackConstraints): Promise<void> {
@@ -578,113 +505,20 @@ export class MediaService implements OnDestroy {
     return this.publishAll([{ source, track }]);
   }
 
-  /** Publishes tracks in one negotiation: one offer, one PublishTracks, one answer. All or nothing. */
-  private publishAll(items: readonly Publication[]): Promise<void> {
-    return this.queue.run(async () => {
-      const pc = this.requirePc();
-      const codec = this.requireCodec();
-      const capabilities = sendCapabilities();
-      const transceivers = items.map(({ source, track }) => {
-        const transceiver = addSendTransceiver(pc, track, source, codec);
-        const kind = track.kind as MediaKind;
-        // Before the first frame leaves: frames are only ever sent encrypted.
-        this.requireFrames().attachSender(
-          transceiver.sender,
-          kind,
-          kind === 'video' ? codec : undefined,
-        );
-        if (kind === 'video') preferCodec(transceiver, capabilities, codec);
-        return transceiver;
-      });
-      try {
-        await pc.setLocalDescription(await pc.createOffer());
-        const answer = await this.signaling.publishTracks(
-          pc.localDescription!.sdp,
-          items.map(({ source }, i) => ({ mid: transceivers[i].mid!, source })),
-        );
-        await pc.setRemoteDescription({ type: 'answer', sdp: answer });
-      } catch (e) {
-        this.recordFailure('publish', undefined, pc.localDescription?.sdp);
-        // Leave the connection ready for the next negotiation.
-        if (pc.signalingState === 'have-local-offer')
-          await pc.setLocalDescription({ type: 'rollback' });
-        transceivers.forEach((t) => t.stop());
-        items.forEach(({ track }) => track.stop());
-        throw e;
-      }
-      items.forEach(({ source, track, placeholder }, i) => {
-        this.senders.set(source, transceivers[i]);
-        if (placeholder) this.placeholders.set(source, track);
-        else this.setLocalTrack(source, track);
-      });
+  /** Publishes tracks together (one negotiation on Cloudflare). All or nothing: failed captures are stopped. */
+  private async publishAll(items: readonly Publication[]): Promise<void> {
+    const transport = this.transport;
+    if (!transport) throw new Error('Not connected.');
+    try {
+      await transport.publish(items, this.requireCodec());
+    } catch (e) {
+      items.forEach(({ track }) => track.stop());
+      throw e;
+    }
+    items.forEach(({ source, track, placeholder }) => {
+      if (placeholder) this.placeholders.set(source, track);
+      else this.setLocalTrack(source, track);
     });
-  }
-
-  private syncSubscriptions(participants: readonly ParticipantDto[]): void {
-    if (!this.pc || this.stuck) return;
-    const { subscribe, drop } = subscriptionDiff(participants, new Set(this.subscriptions.keys()));
-
-    if (drop.length) {
-      const mids = drop.flatMap((key) => this.forget(key));
-      if (mids.length)
-        void this.queue.run(() => this.signaling.unsubscribeTracks(mids)).catch(() => {});
-    }
-    if (subscribe.length) {
-      subscribe.forEach((t) =>
-        this.subscriptions.set(trackKey(t.participantId, t.source), undefined),
-      );
-      void this.queue.run(() => this.pull(subscribe)).catch(() => this.retryLater(subscribe));
-    }
-  }
-
-  private async pull(tracks: TrackRefDto[]): Promise<void> {
-    const pc = this.requirePc();
-    const result = await this.signaling.subscribeTracks(tracks);
-
-    // Map mids before applying the offer: ontrack fires during setRemoteDescription.
-    const stale: string[] = [];
-    const received = new Set(result.tracks.map((t) => trackKey(t.participantId, t.source)));
-    for (const t of result.tracks) {
-      const key = trackKey(t.participantId, t.source);
-      if (this.subscriptions.has(key)) {
-        this.subscriptions.set(key, t.mid);
-        this.midToKey.set(t.mid, key);
-      } else {
-        stale.push(t.mid); // dropped while the request was in flight
-      }
-    }
-
-    if (result.offerSdp) {
-      await this.answerOffer(pc, result.offerSdp, 'subscribe-answer');
-      this.tagReceivers(pc);
-    }
-    if (stale.length) await this.signaling.unsubscribeTracks(stale);
-
-    // The SFU leaves out tracks it couldn't add yet (no media flowing yet, publisher just left): try again later.
-    const missing = tracks.filter((t) => !received.has(trackKey(t.participantId, t.source)));
-    if (missing.length) this.retryLater(missing);
-    else this.pullFailures = 0;
-
-    // Tiles may have reported their size before the track arrived.
-    for (const t of result.tracks) {
-      const key = trackKey(t.participantId, t.source);
-      if (this.tileWidths.has(key)) this.scheduleLayer(key);
-    }
-  }
-
-  /**
-   * Forgets tracks we couldn't receive and re-syncs with the room after a growing delay (1 s, 2 s, 4 s … 15 s).
-   * Tracks whose publisher is gone by then simply aren't requested again.
-   */
-  private retryLater(tracks: TrackRefDto[]): void {
-    tracks.forEach((t) => this.subscriptions.delete(trackKey(t.participantId, t.source)));
-    if (this.resyncTimer || this.stuck) return;
-    const delay = Math.min(PULL_RETRY_BASE_MS * 2 ** this.pullFailures++, PULL_RETRY_MAX_MS);
-    this.resyncTimer = setTimeout(() => {
-      this.resyncTimer = undefined;
-      const participants = this.signaling.participants();
-      this.syncSubscriptions(this.videoAllowed() ? participants : audioOnly(participants));
-    }, delay);
   }
 
   private scheduleLayer(key: TrackKey): void {
@@ -699,126 +533,55 @@ export class MediaService implements OnDestroy {
   }
 
   private async applyLayer(key: TrackKey): Promise<void> {
-    const mid = this.subscriptions.get(key);
-    if (!mid) return;
     const layer = receiveLayer(
       this.tileWidths.get(key),
       window.devicePixelRatio,
       document.visibilityState !== 'hidden',
     );
-    // Subscriptions start at the full layer (see the SFU adapter).
-    if ((this.layers.get(key) ?? 'f') === layer) return;
-    this.layers.set(key, layer);
-    try {
-      await this.queue.run(() => this.signaling.selectVideoLayer(mid, layer));
-    } catch {
-      this.layers.delete(key); // retried on the next change
+    await this.transport?.setLayer(key, layer);
+  }
+
+  private createTransport(config: RtcConfig, frames: FrameCrypto): MediaTransport {
+    const events: TransportEvents = {
+      state: (state) => this.state.set(state),
+      remoteTrack: (key, track) => this.remoteTracks.update((tracks) => new Map(tracks).set(key, track)),
+      subscribed: (keys) => keys.forEach((key) => this.tileWidths.has(key) && this.scheduleLayer(key)),
+      dropped: (keys) => this.onDropped(keys),
+      negotiationFailure: (failure) => this.negotiationFailure.set(failure),
+    };
+    const wanted = () => {
+      const participants = this.signaling.participants();
+      return this.videoAllowed() ? participants : audioOnly(participants);
+    };
+    switch (config.provider) {
+      case 'cloudflare':
+        return new CloudflareTransport(config, frames, this.signaling, events, wanted);
     }
   }
 
-  private onConnectionStateChange(pc: RTCPeerConnection): void {
-    clearTimeout(this.recoveryTimer);
-    switch (pc.connectionState) {
-      case 'connected':
-        this.restartAttempts = 0;
-        this.state.set('connected');
-        break;
-      case 'disconnected':
-        // Often recovers by itself (brief network blip); restart ICE if it doesn't.
-        this.state.set('reconnecting');
-        this.recoveryTimer = setTimeout(() => void this.restartIce(), ICE_GRACE_MS);
-        break;
-      case 'failed':
-        this.state.set('reconnecting');
-        void this.restartIce();
-        break;
-      default:
-        this.state.set(mediaState(pc.connectionState));
+  /** Remote tracks we no longer receive: forget their tiles' sizes and stop showing them. */
+  private onDropped(keys: readonly TrackKey[]): void {
+    for (const key of keys) {
+      clearTimeout(this.layerTimers.get(key));
+      this.layerTimers.delete(key);
+      this.tileWidths.delete(key);
     }
-  }
-
-  /**
-   * Client-initiated ICE restart (new network path, same SFU session — Cloudflare keeps it for 30 s). Gives up after
-   * MAX_ICE_RESTARTS: `state` becomes 'disconnected' and the room rejoins from scratch.
-   */
-  private async restartIce(): Promise<void> {
-    const pc = this.pc;
-    if (!pc || pc.connectionState === 'connected') return;
-    if (this.restartAttempts++ >= MAX_ICE_RESTARTS) {
-      this.state.set('disconnected');
-      return;
-    }
-    try {
-      await this.queue.run(async () => {
-        await pc.setLocalDescription(await pc.createOffer({ iceRestart: true }));
-        const answer = await this.signaling.restartIce(pc.localDescription!.sdp);
-        await pc.setRemoteDescription({ type: 'answer', sdp: answer });
-      });
-      // If ICE hasn't recovered by then, try again (or give up).
-      this.recoveryTimer = setTimeout(() => void this.restartIce(), ICE_RESTART_TIMEOUT_MS);
-    } catch {
-      this.recordFailure('ice-restart', undefined, pc.localDescription?.sdp);
-      if (pc.signalingState === 'have-local-offer') {
-        await pc.setLocalDescription({ type: 'rollback' }).catch(() => undefined);
-      }
-      if (this.pc === pc) this.state.set('disconnected');
-    }
-  }
-
-  /** Drops a remote track locally; returns its mid if it had one. */
-  private forget(key: TrackKey): string[] {
-    const mid = this.subscriptions.get(key);
-    this.subscriptions.delete(key);
-    clearTimeout(this.layerTimers.get(key));
-    this.layerTimers.delete(key);
-    this.tileWidths.delete(key);
-    this.layers.delete(key);
-    if (mid) this.midToKey.delete(mid);
     this.remoteTracks.update((tracks) => {
       const next = new Map(tracks);
-      next.delete(key);
+      keys.forEach((key) => next.delete(key));
       return next;
     });
-    return mid ? [mid] : [];
-  }
-
-  private onRemoteTrack(event: RTCTrackEvent): void {
-    const key = event.transceiver.mid ? this.midToKey.get(event.transceiver.mid) : undefined;
-    // Before the first frame is decoded; untagged receivers drop frames until they're assigned.
-    this.frames?.attachReceiver(
-      event.receiver,
-      event.track.kind as MediaKind,
-      key && participantOf(key),
-    );
-    if (!key) return;
-    this.remoteTracks.update((tracks) => new Map(tracks).set(key, event.track));
-  }
-
-  /**
-   * Tags every receiving transceiver with the participant whose track it now carries: the SFU may reuse a receiver
-   * for another participant's track without a new `ontrack`.
-   */
-  private tagReceivers(pc: RTCPeerConnection): void {
-    if (!this.frames) return;
-    for (const t of pc.getTransceivers()) {
-      const key = t.mid ? this.midToKey.get(t.mid) : undefined;
-      if (key)
-        this.frames.attachReceiver(
-          t.receiver,
-          t.receiver.track.kind as MediaKind,
-          participantOf(key),
-        );
-    }
   }
 
   private setLocalTrack(source: TrackSource, track: MediaStreamTrack | undefined): void {
     this.localTracks.update((tracks) => ({ ...tracks, [source]: track }));
   }
 
-  private requireFrames(): FrameCrypto {
-    // Never send a frame we can't encrypt.
-    if (!this.frames) throw new Error('Not connected.');
-    return this.frames;
+  /** File channels need receiving to have started (on Cloudflare the transport is added like a subscribe). */
+  private requireReceiving(): MediaTransport {
+    if (!this.receiving()) throw new Error('Data channels need receiving to have started.');
+    if (!this.transport) throw new Error('Not connected.');
+    return this.transport;
   }
 
   private requireCodec(): VideoCodec {
@@ -834,40 +597,6 @@ export class MediaService implements OnDestroy {
       this.availableCodecs,
       this.signaling.participants().map((p) => p.videoCodecs),
     );
-  }
-
-  private ensureDataTransport(): Promise<void> {
-    if (!this.receiving()) return Promise.reject(new Error('Data channels need receiving to have started.'));
-    let established = false;
-    // runFirst: someone is waiting on this file; video subscriptions queued behind it (or retrying) can wait.
-    this.dataTransport ??= this.queue
-      .runFirst(async () => {
-        const pc = this.requirePc();
-        const transport = await this.signaling.openDataTransport();
-        // From here on the SFU has set up the transport and won't again on this session: if anything below fails,
-        // only a new session helps — answerOffer makes the room rejoin.
-        established = true;
-        await this.answerOffer(pc, transport.offerSdp, 'data-transport');
-        // The SFU opens its own `server-events` channel in-band (stream transport.serverEventsChannelId): the browser
-        // creates it by itself, and we ignore it. Creating it here too would collide (OperationError). Our file
-        // channels are negotiated on the existing application section and need no further SDP.
-      })
-      .catch((error: unknown) => {
-        if (!established) this.dataTransport = undefined; // e.g. the hub call failed: asking again is fine
-        throw error;
-      });
-    return this.dataTransport;
-  }
-
-  private negotiatedChannel(name: string, id: number): RTCDataChannel {
-    const channel = this.requirePc().createDataChannel(name, { negotiated: true, id, ordered: true });
-    channel.binaryType = 'arraybuffer';
-    return channel;
-  }
-
-  private requirePc(): RTCPeerConnection {
-    if (!this.pc) throw new Error('Not connected.');
-    return this.pc;
   }
 
   private cameraConstraints(extra: MediaTrackConstraints = {}): MediaTrackConstraints {
@@ -895,10 +624,10 @@ export class MediaService implements OnDestroy {
   }
 
   private async collectStats(): Promise<void> {
-    const pc = this.pc;
+    const transport = this.transport;
     const self = this.self();
-    const report = await pc?.getStats().catch(() => undefined);
-    if (!report || !self || pc !== this.pc) return;
+    const report = await transport?.stats();
+    if (!report || !self || transport !== this.transport) return;
 
     // Who is speaking: inbound audio levels per remote microphone, and our own microphone's level.
     const owners = new Map<string, string>();
@@ -936,10 +665,6 @@ export class MediaService implements OnDestroy {
   }
 
   private healthContext(): HealthContext {
-    const sources = new Map<string, TrackSource>();
-    this.senders.forEach((transceiver, source) => {
-      if (transceiver.mid) sources.set(transceiver.mid, source);
-    });
     const others = this.signaling.participants();
     const secured = this.crypto.secured();
     const dropped = Object.fromEntries(
@@ -947,8 +672,8 @@ export class MediaService implements OnDestroy {
     );
     return {
       state: this.state(),
-      forceRelay: this.forceRelay,
-      sources,
+      forceRelay: this.transport?.forceRelay ?? false,
+      sources: new Map(this.transport?.senderSources()),
       enabled: {
         microphone: this.micEnabled(),
         camera: this.cameraEnabled(),
@@ -965,48 +690,6 @@ export class MediaService implements OnDestroy {
       },
       negotiationFailure: this.negotiationFailure(),
     };
-  }
-
-  /**
-   * Answers an SFU offer. If any step fails, Cloudflare keeps waiting for an answer and refuses every later
-   * negotiation on this session: the failure is recorded, subscriptions stop retrying, and `state` becomes
-   * 'disconnected' so the room rejoins with a new session.
-   */
-  private async answerOffer(
-    pc: RTCPeerConnection,
-    offerSdp: string,
-    step: NegotiationStep,
-  ): Promise<void> {
-    try {
-      await pc.setRemoteDescription({ type: 'offer', sdp: offerSdp });
-      const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
-      await this.signaling.renegotiate(answer.sdp!);
-    } catch (e) {
-      const answer = pc.localDescription?.type === 'answer' ? pc.localDescription.sdp : undefined;
-      this.recordFailure(step, offerSdp, answer);
-      if (this.pc === pc) {
-        this.stuck = true;
-        clearTimeout(this.resyncTimer);
-        this.resyncTimer = undefined;
-        this.state.set('disconnected');
-      }
-      throw e;
-    }
-  }
-
-  /** Codec summaries only (sdp-codecs.ts): never the SDP itself. */
-  private recordFailure(
-    step: NegotiationStep,
-    offered: string | undefined,
-    sent: string | undefined,
-  ): void {
-    this.negotiationFailure.set({
-      step,
-      at: Date.now(),
-      offered: sdpCodecs(offered),
-      answered: sdpCodecs(sent),
-    });
   }
 
   /**
@@ -1034,52 +717,6 @@ const CONNECTION_EVERY_TICKS = 8;
 /** 60 × 250 ms = one call-quality report every 15 s. */
 const REPORT_EVERY_TICKS = 60;
 const LAYER_DEBOUNCE_MS = 500;
-const ICE_GRACE_MS = 2000;
-const ICE_RESTART_TIMEOUT_MS = 10_000;
-const MAX_ICE_RESTARTS = 2;
-const PULL_RETRY_BASE_MS = 1000;
-const PULL_RETRY_MAX_MS = 15_000;
-const CHANNEL_OPEN_TIMEOUT_MS = 10_000;
-
-/** Resolves with the channel once it's open; rejects if it closes or doesn't open in time. */
-function opened(channel: RTCDataChannel): Promise<RTCDataChannel> {
-  if (channel.readyState === 'open') return Promise.resolve(channel);
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => fail(new Error('Data channel did not open.')), CHANNEL_OPEN_TIMEOUT_MS);
-    const done = () => {
-      clearTimeout(timer);
-      channel.removeEventListener('open', onOpen);
-      channel.removeEventListener('close', onClose);
-    };
-    const fail = (error: Error) => {
-      done();
-      channel.close();
-      reject(error);
-    };
-    const onOpen = () => {
-      done();
-      resolve(channel);
-    };
-    const onClose = () => fail(new Error('Data channel closed.'));
-    channel.addEventListener('open', onOpen);
-    channel.addEventListener('close', onClose);
-  });
-}
-
-function mediaState(state: RTCPeerConnectionState): MediaState {
-  switch (state) {
-    case 'connecting':
-      return 'connecting';
-    case 'disconnected':
-      return 'reconnecting';
-    case 'failed':
-    case 'closed':
-      return 'disconnected';
-    default:
-      // 'new': nothing negotiated yet (e.g. no devices on and nobody publishing) — we're still in the call.
-      return 'connected';
-  }
-}
 
 /** The quality we send at most while the usage guard is saving bandwidth. */
 const CAPPED_QUALITY: VideoQuality = '720p';
@@ -1177,69 +814,6 @@ function screenTile(
 
 function captureHeight(track: MediaStreamTrack): number {
   return track.getSettings?.().height ?? 720;
-}
-
-/** Re-targets the camera's simulcast bitrates after a resolution change (no renegotiation needed). */
-async function updateBitrates(
-  sender: RTCRtpSender,
-  height: number,
-  codec: VideoCodec,
-): Promise<void> {
-  if (typeof sender.getParameters !== 'function') return;
-  const parameters = sender.getParameters();
-  const targets = new Map(cameraEncodings(height, codec).map((e) => [e.rid, e.maxBitrate]));
-  parameters.encodings?.forEach((e) => (e.maxBitrate = targets.get(e.rid) ?? e.maxBitrate));
-  await sender.setParameters(parameters);
-}
-
-/**
- * Camera: f/h/q simulcast with the codec's scalability mode. A browser that rejects the mode (it throws before
- * creating anything) gets the layers without it.
- */
-function addSendTransceiver(
-  pc: RTCPeerConnection,
-  track: MediaStreamTrack,
-  source: TrackSource,
-  codec: VideoCodec,
-): RTCRtpTransceiver {
-  if (source !== 'camera') return pc.addTransceiver(track, { direction: 'sendonly' });
-  const height = captureHeight(track);
-  const mode = simulcastScalabilityMode(codec);
-  try {
-    return pc.addTransceiver(track, {
-      direction: 'sendonly',
-      sendEncodings: cameraEncodings(height, codec, mode),
-    });
-  } catch (e) {
-    if (!mode) throw e;
-    return pc.addTransceiver(track, {
-      direction: 'sendonly',
-      sendEncodings: cameraEncodings(height, codec),
-    });
-  }
-}
-
-function sendCapabilities(): CodecCapability[] {
-  return (
-    (typeof RTCRtpSender !== 'undefined'
-      ? RTCRtpSender.getCapabilities?.('video')?.codecs
-      : undefined) ?? []
-  );
-}
-
-/**
- * Every video transceiver (camera and screen) sends the call's codec, listed first: frame encryption knows its
- * layout, and we never switch codecs on a published track. Our other codecs follow so the SFU will offer them when
- * we subscribe to someone sending a different one (see codecs.ts).
- */
-function preferCodec(
-  transceiver: RTCRtpTransceiver,
-  capabilities: readonly CodecCapability[],
-  codec: VideoCodec,
-): void {
-  const preferences = codecPreferences(capabilities, codec);
-  if (!preferences.length || !transceiver.setCodecPreferences) return;
-  transceiver.setCodecPreferences(preferences as RTCRtpCodec[]);
 }
 
 /**

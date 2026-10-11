@@ -111,8 +111,14 @@ export interface KeyEnvelopeDto {
   blob: string;
 }
 
-/** ICE servers for the peer connection to the SFU (Cloudflare STUN/TURN); `forceRelay` = TURN only (testing). */
-export interface RtcConfig {
+/**
+ * How this server's calls reach their media server, tagged by `provider` (one per deployment, MEDIA_MODE). Cloudflare:
+ * ICE servers for the peer connection to the SFU (Cloudflare STUN/TURN); `forceRelay` = TURN only (testing).
+ */
+export type RtcConfig = CloudflareRtcConfig;
+
+export interface CloudflareRtcConfig {
+  provider: 'cloudflare';
   iceServers: RTCIceServer[];
   forceRelay: boolean;
 }

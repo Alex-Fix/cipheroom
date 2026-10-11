@@ -75,7 +75,7 @@ public sealed class RoomHubTests(WebApplicationFactory<Program> factory) : IClas
     }
 
     [Fact]
-    public async Task Rtc_config_requires_joining_and_has_no_relay_when_turn_is_unconfigured()
+    public async Task Rtc_config_requires_joining_names_the_provider_and_has_no_relay_when_turn_is_unconfigured()
     {
         await using var connection = await ConnectAsync();
         await AssertHubErrorAsync("Join a room first.", () => connection.InvokeAsync<RtcConfig>("GetRtcConfig", Ct));
@@ -83,6 +83,7 @@ public sealed class RoomHubTests(WebApplicationFactory<Program> factory) : IClas
         await new TestRoom().HostAsync(connection);
         var config = await connection.InvokeAsync<RtcConfig>("GetRtcConfig", Ct);
 
+        Assert.Equal("cloudflare", config.Provider);
         Assert.Empty(config.IceServers);
         Assert.False(config.ForceRelay);
     }

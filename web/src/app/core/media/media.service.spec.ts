@@ -124,7 +124,7 @@ function fakeTrack(kind: 'audio' | 'video', label = '', height = 720, maxHeight 
   } as unknown as MediaStreamTrack & { stop: ReturnType<typeof vi.fn> };
 }
 
-const config: RtcConfig = { iceServers: [], forceRelay: false };
+const config: RtcConfig = { provider: 'cloudflare', iceServers: [], forceRelay: false };
 
 /** CryptoService's frame transforms: records what gets attached. */
 function fakeFrames() {

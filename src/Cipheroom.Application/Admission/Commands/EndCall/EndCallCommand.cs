@@ -23,9 +23,10 @@ public sealed class EndCallCommandValidator : AbstractValidator<EndCallCommand>
     }
 }
 
-public sealed class EndCallCommandHandler(IRoomStore rooms, ISignatureVerifier verifier, CipheroomMetrics metrics) : ICommandHandler<EndCallCommand, EndCallResult>
+public sealed class EndCallCommandHandler(IRoomStore rooms, ISignatureVerifier verifier, IMediaRoom media, CipheroomMetrics metrics)
+    : ICommandHandler<EndCallCommand, EndCallResult>
 {
-    public ValueTask<EndCallResult> Handle(EndCallCommand command, CancellationToken cancellationToken)
+    public async ValueTask<EndCallResult> Handle(EndCallCommand command, CancellationToken cancellationToken)
     {
         var result = rooms.InRoom(command.ConnectionId, (room, self) =>
             {
@@ -37,6 +38,14 @@ public sealed class EndCallCommandHandler(IRoomStore rooms, ISignatureVerifier v
             ?? throw new NotFoundException(MediaRules.NotInRoom);
 
         metrics.Admission(CipheroomMetrics.AdmissionEnded);
-        return ValueTask.FromResult(result);
+        try
+        {
+            await media.EndRoomAsync(result.RoomId, cancellationToken);
+        }
+        catch (MediaServerException)
+        {
+            // Best effort: everyone is out of the room and gets no more keys.
+        }
+        return result;
     }
 }

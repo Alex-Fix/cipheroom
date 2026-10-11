@@ -22,7 +22,7 @@ Payloads never contain plaintext keys: only public keys and opaque signed envelo
 | C→S | `UpdateSettings` | `seq` (1–2³²−1, higher than the last), `autoAdmit`, `sig` (host only) | — |
 | C→S | `AskToMute` | `participantId`, `seq`, `sig` | — |
 | C→S | `EndCall` | `sig` | — |
-| C→S | `GetRtcConfig` | — | `RtcConfig { iceServers[], forceRelay }` (Cloudflare STUN/TURN; `forceRelay` only when `Turn:ForceRelay` is set) |
+| C→S | `GetRtcConfig` | — | `RtcConfig { provider, … }`, tagged by the server's media provider. `provider: "cloudflare"` (the only one so far): `iceServers[]` (Cloudflare STUN/TURN), `forceRelay` (only when `Turn:ForceRelay` is set). The browser builds the matching transport (`docs/plans/2026-10-11-livekit-media-mode-design.md`) |
 | C→S | `LeaveRoom` | — | — (also on disconnect; also leaves the lobby) |
 | C→S | `PublishTracks` | `offerSdp`, `tracks[{ mid, source }]` (1–3, distinct mids and sources) | `AnswerDto { answerSdp }` |
 | C→S | `SubscribeTracks` | `tracks[{ participantId, source }]` (1–64, same room only) | `SubscribeResult { offerSdp \| null, tracks[{ participantId, source, mid }] }` |

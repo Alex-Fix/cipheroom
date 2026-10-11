@@ -101,10 +101,18 @@ public sealed record AuthorityDto(
 /// <summary>Mirrors the browser's RTCIceServer shape.</summary>
 public sealed record IceServer(string[] Urls, string? Username = null, string? Credential = null);
 
-/// <summary>ICE servers for the peer connection to the SFU; <c>ForceRelay</c> = TURN only (testing).</summary>
-public sealed record RtcConfig(IReadOnlyList<IceServer> IceServers, bool ForceRelay)
+/// <summary>
+/// How this server's calls reach their media server, tagged by <c>Provider</c> (<c>cloudflare</c>): ICE servers for the
+/// peer connection to the SFU; <c>ForceRelay</c> = TURN only (testing).
+/// </summary>
+public sealed record RtcConfig(string Provider, IReadOnlyList<IceServer> IceServers, bool ForceRelay)
 {
     public static RtcConfig From(RtcConfigResult r) => new(
+        r.Provider switch
+        {
+            MediaProvider.Cloudflare => "cloudflare",
+            _ => throw new ArgumentOutOfRangeException(nameof(r), r.Provider, "Unknown media provider."),
+        },
         [.. r.IceServers.Select(s => new IceServer(s.Urls, s.Username, s.Credential))],
         r.ForceRelay);
 }
