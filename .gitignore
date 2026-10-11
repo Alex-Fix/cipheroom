@@ -43,6 +43,7 @@ deploy/cloudflared/*.json
 !*.tfvars.example
 deploy/ansible/inventory.ini
 deploy/ansible/known_hosts
+.ansible/
 
 # Claude Code local overrides
 .claude/settings.local.json
