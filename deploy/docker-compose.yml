@@ -31,6 +31,9 @@ services:
       # Trust X-Forwarded-* from our proxies only (cloudflared → nginx → api). The api publishes no ports, so only
       # containers on the compose network (Docker's 172.16.0.0/12 range) can reach it.
       ForwardedHeaders__KnownNetworks__0: 172.16.0.0/12
+      # Host header allowlist ("host1;host2"). Ansible sets PUBLIC_HOST;localhost on a server; home keeps * so LAN
+      # access by IP address works.
+      AllowedHosts: ${API_ALLOWED_HOSTS:-*}
       # Telemetry: exported only when scripts/up.sh --observability sets the endpoint (otherwise console logs only).
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
       OTEL_METRIC_EXPORT_INTERVAL: "30000"
