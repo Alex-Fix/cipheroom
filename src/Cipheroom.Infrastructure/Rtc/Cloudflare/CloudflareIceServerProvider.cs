@@ -1,16 +1,8 @@
 using Cipheroom.Application.Common.Interfaces;
 using Cipheroom.Domain.Rooms;
-using Cipheroom.Infrastructure.Rtc.Cloudflare;
 using Microsoft.Extensions.Options;
 
-namespace Cipheroom.Infrastructure.Rtc;
-
-/// <summary>Local development without TURN credentials: the SFU's own candidates are enough.</summary>
-public sealed class DirectIceServerProvider : IIceServerProvider
-{
-    public Task<IceConfig> GetAsync(ParticipantId participantId, CancellationToken cancellationToken) =>
-        Task.FromResult(new IceConfig([], ForceRelay: false));
-}
+namespace Cipheroom.Infrastructure.Rtc.Cloudflare;
 
 /// <summary>
 /// Cloudflare Realtime STUN/TURN for reaching the SFU: TURN is the fallback for networks that block direct UDP

@@ -1,5 +1,6 @@
 using Cipheroom.Application.Common.Interfaces;
 using Cipheroom.Application.Common.Telemetry;
+using Cipheroom.Infrastructure.Usage.Cloudflare;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;

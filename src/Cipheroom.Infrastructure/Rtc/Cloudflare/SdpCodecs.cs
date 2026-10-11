@@ -1,6 +1,6 @@
 using System.Text.RegularExpressions;
 
-namespace Cipheroom.Infrastructure.Rtc;
+namespace Cipheroom.Infrastructure.Rtc.Cloudflare;
 
 /// <summary>
 /// What a session description negotiates, reduced to what is safe to log: each media section's mid, kind and codec

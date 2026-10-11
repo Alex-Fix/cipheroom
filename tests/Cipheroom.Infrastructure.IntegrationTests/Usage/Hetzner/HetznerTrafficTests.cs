@@ -3,12 +3,14 @@ using System.Text;
 using Cipheroom.Application;
 using Cipheroom.Application.Common.Interfaces;
 using Cipheroom.Infrastructure.Usage;
+using Cipheroom.Infrastructure.Usage.Cloudflare;
+using Cipheroom.Infrastructure.Usage.Hetzner;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Time.Testing;
 
-namespace Cipheroom.Infrastructure.IntegrationTests.Usage;
+namespace Cipheroom.Infrastructure.IntegrationTests.Usage.Hetzner;
 
 /// <summary>LiveKit mode on Hetzner: the server's own traffic is what costs money (docs/plans/2026-10-11-livekit-media-mode-design.md).</summary>
 public sealed class HetznerTrafficTests

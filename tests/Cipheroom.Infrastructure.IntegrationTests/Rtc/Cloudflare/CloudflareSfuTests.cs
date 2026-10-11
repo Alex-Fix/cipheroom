@@ -5,13 +5,12 @@ using Cipheroom.Application;
 using Cipheroom.Application.Common.Exceptions;
 using Cipheroom.Application.Common.Interfaces;
 using Cipheroom.Application.Common.Telemetry;
-using Cipheroom.Infrastructure.Rtc;
 using Cipheroom.Infrastructure.Rtc.Cloudflare;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.Metrics.Testing;
 
-namespace Cipheroom.Infrastructure.IntegrationTests.Rtc;
+namespace Cipheroom.Infrastructure.IntegrationTests.Rtc.Cloudflare;
 
 /// <summary>Goes through the real AddInfrastructure() registration; only the network handler is stubbed.</summary>
 public sealed class CloudflareSfuTests

@@ -1,7 +1,7 @@
 using Cipheroom.Application.Common.Interfaces;
 using Cipheroom.Domain.Rooms;
 
-namespace Cipheroom.Infrastructure.Rtc;
+namespace Cipheroom.Infrastructure.Rtc.Cloudflare;
 
 /// <summary>
 /// <see cref="IMediaRoom"/> on Cloudflare Realtime SFU: closes a removed participant's tracks on their session. An

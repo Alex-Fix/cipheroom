@@ -1,6 +1,6 @@
 using System.Collections.Concurrent;
 
-namespace Cipheroom.Infrastructure.Rtc;
+namespace Cipheroom.Infrastructure.Rtc.Cloudflare;
 
 /// <summary>
 /// The codec summary (<see cref="SdpCodecs"/>) of the last SFU offer each session still has to answer, so a refused
