@@ -110,8 +110,9 @@ cat > "$ANSIBLE_DIR/inventory.ini" <<EOF
 $name ansible_host=$ipv4 ansible_user=$user ansible_ssh_private_key_file=$SSH_KEY hcloud_server_id=$server_id
 EOF
 
-# Pin the host keys now so Ansible checks them strictly from here on (trust on first use, right after creation).
-# A fresh server may need a moment before sshd answers.
+# Host keys are pinned once per server (trust on first use, right after creation) and only checked after that: a later
+# run (new IP allowance, resize) must not trust whatever answers, or a machine in the middle would get the .env that
+# deploy.sh copies. The pin records the server id, so a new server gets a fresh pin. A fresh server may need a moment.
 info "Waiting for SSH on $ipv4"
 keys=""
 for _ in $(seq 1 30); do
@@ -120,7 +121,22 @@ for _ in $(seq 1 30); do
   sleep 5
 done
 [[ -n "$keys" ]] || die "SSH on $ipv4 didn't answer — check allowed_ssh_cidrs, then re-run"
-printf '%s\n' "$keys" > "$ANSIBLE_DIR/known_hosts"
+
+KNOWN_HOSTS="$ANSIBLE_DIR/known_hosts"
+pin_marker="# cipheroom server $server_id"
+key_set() { awk '!/^#/ && NF >= 3 { print $2, $3 }' | sort -u; }
+if [[ -f "$KNOWN_HOSTS" ]] && { grep -qxF "$pin_marker" "$KNOWN_HOSTS" || ! grep -q '^# cipheroom server ' "$KNOWN_HOSTS"; }; then
+  # Pinned for this server (or by an older provision.sh, which didn't record the id): every key it shows must be pinned.
+  unexpected="$(comm -13 <(key_set <"$KNOWN_HOSTS") <(key_set <<<"$keys"))"
+  [[ -z "$unexpected" ]] || die "$ipv4 answers with host keys that aren't pinned in deploy/ansible/known_hosts — possibly someone in the middle. Don't deploy. If you rebuilt the server yourself, delete that file and re-run."
+  if ! grep -qxF "$pin_marker" "$KNOWN_HOSTS"; then
+    { echo "$pin_marker"; grep -v '^#' "$KNOWN_HOSTS"; } >"$KNOWN_HOSTS.tmp" && mv "$KNOWN_HOSTS.tmp" "$KNOWN_HOSTS"
+  fi
+  info "Host keys match the pin"
+else
+  { echo "$pin_marker"; printf '%s\n' "$keys"; } >"$KNOWN_HOSTS"
+  info "Pinned the new server's host keys"
+fi
 
 info "Server $name is at $ipv4 (ssh -i $SSH_KEY $user@$ipv4) — next: scripts/deploy.sh (docs/deployment-hetzner.md)"
 warn "It costs money while it exists (server + IPv4, billed by Hetzner — see docs/deployment-hetzner.md); scripts/provision.sh --destroy removes it"
