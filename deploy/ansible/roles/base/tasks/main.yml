@@ -13,7 +13,7 @@
   community.general.timezone:
     name: Etc/UTC
 
-# ── Swap (the observability stack is memory-hungry on a 4 GB server) ──────────────────────────────────────────────
+# ── Swap (a safety net against out-of-memory kills when the observability stack spikes) ───────────────────────────
 - name: Swap
   when: base_swap_mb | int > 0
   block:

@@ -281,3 +281,12 @@ Cloudflare Realtime egress (SFU + TURN, 1 TB/month free) inside the free tier, e
   figure wins while fresh) — a denial of service, never a bill.
 
 Cloudflare's SFU and TURN see only end-to-end encrypted frames + metadata.
+
+## Security assurance
+
+The rules live in two skills: `security` (threat model, per-layer hardening, review checklist) and `e2ee-media` (the
+crypto checklist, run on every crypto change). `scripts/security-check.sh [url]` covers what a script can check:
+secrets in git, `.env` hygiene, NuGet and npm advisories, live security headers and Grafana's exposure. A full audit
+follows the `security-audit` skill. It checks the E2EE invariant, the backend, the frontend, the supply chain, the
+deploy config, and a running server: read-only over SSH, plus a port scan from outside. Each audit writes a report in
+[`security/audits/`](security/audits/README.md), with findings, what was fixed, and the checks that passed.

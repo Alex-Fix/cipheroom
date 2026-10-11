@@ -72,6 +72,9 @@ remains visible to the servers and Cloudflare. With the optional observability s
 metadata and call-quality numbers for 7 days (no names, IPs or plain room ids). Details:
 [`docs/architecture.md`](docs/architecture.md).
 
+Guides for running and using it (self-hosting, Hetzner, media modes, security model, troubleshooting) are in the
+[wiki](https://github.com/Alex-Fix/cipheroom/wiki); its sources live in [`docs/wiki/`](docs/wiki/).
+
 ## Quick start (local development)
 
 Requirements: .NET 10 SDK, Node.js (LTS) and Docker. Calls go through a local LiveKit server that `scripts/dev.sh`
@@ -109,7 +112,7 @@ You need a domain on Cloudflare (the free plan is fine) and a machine running Do
    scripts/security-check.sh https://call.example.com
    ```
 
-No machine at home to leave running? The same stack runs on a Hetzner server (about €4–5 a month), created with
+No machine at home to leave running? The same stack runs on a rented Hetzner server (billed by Hetzner), created with
 Terraform and deployed with Ansible from prebuilt images: [`docs/deployment-hetzner.md`](docs/deployment-hetzner.md).
 
 To check it from real networks, join from a phone on mobile data (Wi-Fi off) and a laptop in the same meeting. To test
@@ -197,6 +200,9 @@ New features start as a short design in [`docs/plans/`](docs/plans/).
 
 Please **don't** open public issues for vulnerabilities. Report them privately via GitHub's
 "Report a vulnerability" (Security tab) once the repository is public.
+
+Audit reports — what was checked on the app and a live server, what was found and fixed — are in
+[`docs/security/audits/`](docs/security/audits/README.md).
 
 ## License
 

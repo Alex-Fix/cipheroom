@@ -1,9 +1,16 @@
 name: cipheroom
 
+# Every service drops all Linux capabilities and can't gain privileges (setuid binaries, file capabilities): none needs
+# them — ports above 1024, or Docker's unprivileged-port default for LiveKit's 443. cadvisor is the exception (privileged).
+x-hardening: &hardening
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+
 # api and web: built locally by scripts/up.sh (tag `local`), or pulled prebuilt from GHCR on a server
 # (scripts/deploy.sh sets CIPHEROOM_TAG; images published by .github/workflows/images.yml).
 services:
   api:
+    <<: *hardening
     image: ${CIPHEROOM_IMAGE_PREFIX:-ghcr.io/alex-fix/cipheroom}-api:${CIPHEROOM_TAG:-local}
     build:
       context: ..
@@ -46,6 +53,7 @@ services:
     restart: unless-stopped
 
   web:
+    <<: *hardening
     image: ${CIPHEROOM_IMAGE_PREFIX:-ghcr.io/alex-fix/cipheroom}-web:${CIPHEROOM_TAG:-local}
     build:
       context: ..
@@ -63,6 +71,7 @@ services:
   # MEDIA_MODE=livekit (profile livekit): a self-hosted SFU on this machine's public IP. Signaling (7880) stays on the
   # compose network — browsers reach it only through the api's relay; only the media ports are published.
   livekit:
+    <<: *hardening
     image: livekit/livekit-server:v1.13.9
     command: ["--config", "/etc/livekit.yaml", "--node-ip", "${LIVEKIT_NODE_IP:-127.0.0.1}"]
     environment:
@@ -82,6 +91,7 @@ services:
     profiles: [livekit]
 
   cloudflared:
+    <<: *hardening
     image: cloudflare/cloudflared:2026.10.0
     command: tunnel --no-autoupdate run
     environment:
@@ -96,6 +106,7 @@ services:
   # Design: docs/plans/2026-10-07-observability-design.md
 
   otel-collector:
+    <<: *hardening
     image: otel/opentelemetry-collector-contrib:0.162.0
     command: ["--config=/etc/otelcol/config.yaml"]
     volumes:
@@ -105,6 +116,7 @@ services:
     profiles: [observability]
 
   prometheus:
+    <<: *hardening
     image: prom/prometheus:v3.15.0
     command:
       - --config.file=/etc/prometheus/prometheus.yaml
@@ -120,6 +132,7 @@ services:
     profiles: [observability]
 
   loki:
+    <<: *hardening
     image: grafana/loki:3.7.8
     command: ["-config.file=/etc/loki/config.yaml"]
     volumes:
@@ -130,6 +143,7 @@ services:
     profiles: [observability]
 
   tempo:
+    <<: *hardening
     image: grafana/tempo:2.10.8
     command: ["-config.file=/etc/tempo/config.yaml"]
     volumes:
@@ -140,6 +154,7 @@ services:
     profiles: [observability]
 
   grafana:
+    <<: *hardening
     image: grafana/grafana:13.2.3
     environment:
       GF_SERVER_ROOT_URL: https://${PUBLIC_HOST:-localhost}/grafana/
@@ -183,6 +198,7 @@ services:
 
   # Host metrics. On Docker Desktop (macOS) this is the Linux VM running the containers, not macOS itself.
   node-exporter:
+    <<: *hardening
     image: prom/node-exporter:v1.12.1
     command:
       - --path.procfs=/host/proc

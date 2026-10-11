@@ -35,12 +35,13 @@ deploy/
   docker-compose.yml             api, web (nginx), cloudflared; profiles livekit, observability (collector, Prometheus, Loki, Tempo, Grafana, exporters)
   nginx/ cloudflared/ livekit/   service config
   observability/                 collector / Prometheus / Loki / Tempo config, Grafana provisioning + generated dashboards
-  terraform/hetzner/             Hetzner server + SSH-only firewall (state stays local, gitignored)
+  terraform/hetzner/             Hetzner server (cpx42 default, in-place resizes) + firewall (state stays local, gitignored)
   ansible/                       site.yml + roles base / docker / cipheroom (+ certs for LiveKit TURN); mode from MEDIA_MODE
 .github/workflows/               images.yml: build + push api/web to GHCR (sha-<commit> tags)
 scripts/                         dev/ops scripts (bash, run from repo root)
 artifacts/                       gitignored: .NET build output, dev/ (usage.json, dev-settings.json, logs), e2e/ (local repro scripts + runs)
-docs/                            architecture + protocol docs; plans/ holds approved feature designs
+docs/                            architecture + protocol docs; plans/ = approved designs; security/audits/ = audit reports;
+                                 wiki/ = sources of the GitHub Wiki pages
 ```
 
 ## Commands
@@ -88,6 +89,7 @@ All scripts run from the repo root.
 ## Skills in this repo
 
 - `security` — threat model, per-layer hardening rules, review checklist (use with `e2ee-media` for crypto)
+- `security-audit` — full audit procedure for the app and a live server (passes A–F), report in `docs/security/audits/`
 - `brainstorming` — turn a feature idea into an approved design doc in `docs/plans/` before coding
 - `media` — calls on Cloudflare Realtime SFU: MediaService, SFU proxy, negotiation-order rules, quality, ICE/TURN, debugging
 - `e2ee-media` — identities, sender keys, envelopes, rotation, frame transform, review checklist
