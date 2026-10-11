@@ -20,5 +20,5 @@ output "admin_user" {
 }
 
 output "ssh_command" {
-  value = "ssh ${var.admin_user}@${hcloud_server.server.ipv4_address}"
+  value = "ssh -i ${trimsuffix(var.ssh_public_key_path, ".pub")} ${var.admin_user}@${hcloud_server.server.ipv4_address}"
 }

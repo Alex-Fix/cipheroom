@@ -3,7 +3,8 @@
 # (~/.ssh/id_cipheroom, or CIPHEROOM_SSH_KEY).
 
 # name                = "cipheroom"
-# server_type         = "cx23"
+# server_type         = "cx43"       # cx23 / cx33 / cx43; resized in place
+# keep_disk           = true         # false grows the disk too, and rules out resizing back down
 # location            = "nbg1"
 # allowed_ssh_cidrs   = ["203.0.113.7/32"]
 # protection          = true

@@ -5,9 +5,15 @@ variable "name" {
 }
 
 variable "server_type" {
-  description = "Hetzner server type: cx23 = smallest shared x86 (2 vCPU, 4 GB). The images are linux/amd64 only, so no CAX (Arm)."
+  description = "Hetzner server type, shared x86: cx23 (2 vCPU, 4 GB), cx33 (4 vCPU, 8 GB), cx43 (8 vCPU, 16 GB). The images are linux/amd64 only, so no CAX (Arm)."
   type        = string
-  default     = "cx23"
+  default     = "cx43"
+}
+
+variable "keep_disk" {
+  description = "Keep the disk size when server_type changes, so the server can be resized back down later."
+  type        = bool
+  default     = true
 }
 
 variable "location" {

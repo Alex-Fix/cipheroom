@@ -15,7 +15,7 @@ resource "hcloud_ssh_key" "admin" {
 }
 
 resource "hcloud_firewall" "server" {
-  name = "${var.name}-ssh-only"
+  name = "${var.name}-server"
 
   rule {
     description = "SSH from the operator"
@@ -55,6 +55,9 @@ resource "hcloud_server" "server" {
   image        = data.hcloud_image.os.id
   ssh_keys     = [hcloud_ssh_key.admin.id]
   firewall_ids = [hcloud_firewall.server.id]
+  # A server_type change resizes in place (powered off for a minute or two). Keeping the disk keeps it reversible:
+  # Hetzner never shrinks a disk, so a grown one would rule out going back to a smaller type.
+  keep_disk = var.keep_disk
   user_data = templatefile("${path.module}/cloud-init.yaml", {
     admin_user = var.admin_user
     public_key = trimspace(file(pathexpand(var.ssh_public_key_path)))
