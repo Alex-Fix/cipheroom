@@ -16,4 +16,4 @@ cipheroom_env_overlay: "{{ playbook_dir }}/../.env.hetzner"
 # Security updates install unattended; the server reboots at this time (UTC) when one needs it. Containers come back
 # by themselves and people in a call rejoin.
 base_reboot_time: "04:30"
-base_swap_mb: 2048
+base_swap_mb: 2048 # 0 = no swap file

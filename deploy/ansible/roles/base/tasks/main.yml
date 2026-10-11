@@ -6,7 +6,7 @@
 
 - name: Install base packages
   ansible.builtin.apt:
-    name: [ca-certificates, curl, fail2ban, python3-debian, ufw, unattended-upgrades]
+    name: [ca-certificates, curl, fail2ban, gnupg, python3-debian, ufw, unattended-upgrades]
     state: present
 
 - name: Timezone UTC
@@ -14,16 +14,17 @@
     name: Etc/UTC
 
 # ── Swap (the observability stack is memory-hungry on a 4 GB server) ──────────────────────────────────────────────
-- name: Check the swap file
-  ansible.builtin.stat:
-    path: /swapfile
-  register: base_swapfile
-
-- name: Create the swap file
-  when: not base_swapfile.stat.exists
+- name: Swap
+  when: base_swap_mb | int > 0
   block:
+    - name: Check the swap file
+      ansible.builtin.stat:
+        path: /swapfile
+      register: base_swapfile
+
     - name: Allocate the swap file
       ansible.builtin.command: fallocate -l {{ base_swap_mb }}M /swapfile
+      when: not base_swapfile.stat.exists
       changed_when: true
 
     - name: Restrict the swap file
@@ -31,18 +32,32 @@
         path: /swapfile
         mode: "0600"
 
+    # Each step checks its own state, so a run that stopped half-way finishes on the next one.
+    - name: Check the swap signature
+      ansible.builtin.command: blkid -s TYPE -o value /swapfile
+      register: base_swap_type
+      changed_when: false
+      failed_when: false
+
     - name: Format the swap file
       ansible.builtin.command: mkswap /swapfile
+      when: base_swap_type.stdout != "swap"
       changed_when: true
+
+    - name: Active swap
+      ansible.builtin.command: swapon --show=NAME --noheadings
+      register: base_swap_active
+      changed_when: false
 
     - name: Enable the swap file
       ansible.builtin.command: swapon /swapfile
+      when: "'/swapfile' not in base_swap_active.stdout_lines"
       changed_when: true
 
-- name: Swap on boot
-  ansible.builtin.lineinfile:
-    path: /etc/fstab
-    line: /swapfile none swap sw 0 0
+    - name: Swap on boot
+      ansible.builtin.lineinfile:
+        path: /etc/fstab
+        line: /swapfile none swap sw 0 0
 
 - name: Prefer RAM over swap
   ansible.posix.sysctl:
