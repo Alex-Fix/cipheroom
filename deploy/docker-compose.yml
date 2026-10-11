@@ -1,7 +1,10 @@
 name: cipheroom
 
+# api and web: built locally by scripts/up.sh (tag `local`), or pulled prebuilt from GHCR on a server
+# (scripts/deploy.sh sets CIPHEROOM_TAG; images published by .github/workflows/images.yml).
 services:
   api:
+    image: ${CIPHEROOM_IMAGE_PREFIX:-ghcr.io/alex-fix/cipheroom}-api:${CIPHEROOM_TAG:-local}
     build:
       context: ..
       dockerfile: src/Cipheroom.Api/Dockerfile
@@ -35,6 +38,7 @@ services:
     restart: unless-stopped
 
   web:
+    image: ${CIPHEROOM_IMAGE_PREFIX:-ghcr.io/alex-fix/cipheroom}-web:${CIPHEROOM_TAG:-local}
     build:
       context: ..
       dockerfile: web/Dockerfile

@@ -1,0 +1,11 @@
+# Managed by Ansible (deploy/ansible/roles/base).
+PermitRootLogin no
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PubkeyAuthentication yes
+AllowUsers {{ ansible_user }}
+MaxAuthTries 3
+LoginGraceTime 30
+X11Forwarding no
+AllowAgentForwarding no
+AllowTcpForwarding no

@@ -1,0 +1,19 @@
+# Deployment mode. Only "cloudflare" exists: Cloudflare Tunnel for HTTPS/WSS, Cloudflare Realtime SFU and TURN.
+# The self-hosted modes (README → Deployment modes) will add values here.
+cipheroom_mode: cloudflare
+
+# Image tag in GHCR (sha-<commit>, main, or a release tag); scripts/deploy.sh sets it.
+cipheroom_tag: ""
+cipheroom_image_prefix: ghcr.io/alex-fix/cipheroom
+cipheroom_observability: false
+cipheroom_dir: /opt/cipheroom
+
+# Secrets come from the operator's machine: deploy/.env, then deploy/.env.hetzner (optional) overrides keys in it —
+# typically TUNNEL_TOKEN and PUBLIC_HOST, so the server gets its own tunnel.
+cipheroom_env_file: "{{ playbook_dir }}/../.env"
+cipheroom_env_overlay: "{{ playbook_dir }}/../.env.hetzner"
+
+# Security updates install unattended; the server reboots at this time (UTC) when one needs it. Containers come back
+# by themselves and people in a call rejoin.
+base_reboot_time: "04:30"
+base_swap_mb: 2048 # 0 = no swap file

@@ -1,0 +1,21 @@
+#cloud-config
+# First boot only: a sudo login user with the operator's key, no root or password SSH. Ansible does the rest.
+users:
+  - name: ${admin_user}
+    groups: [sudo]
+    shell: /bin/bash
+    sudo: "ALL=(ALL) NOPASSWD:ALL"
+    lock_passwd: true
+    ssh_authorized_keys:
+      - ${public_key}
+disable_root: true
+ssh_pwauth: false
+write_files:
+  - path: /etc/ssh/sshd_config.d/00-cipheroom-bootstrap.conf
+    permissions: "0644"
+    content: |
+      PermitRootLogin no
+      PasswordAuthentication no
+      KbdInteractiveAuthentication no
+runcmd:
+  - systemctl try-reload-or-restart ssh

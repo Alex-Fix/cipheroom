@@ -1,0 +1,9 @@
+# Copy to terraform.tfvars (gitignored) to override defaults. The API token is NOT set here: export HCLOUD_TOKEN.
+# scripts/provision.sh passes allowed_ssh_cidrs with your current IP unless you set it here.
+
+# name                = "cipheroom"
+# server_type         = "cx23"
+# location            = "nbg1"
+# ssh_public_key_path = "~/.ssh/id_ed25519.pub"
+# allowed_ssh_cidrs   = ["203.0.113.7/32"]
+# protection          = true

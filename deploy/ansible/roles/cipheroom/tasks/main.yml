@@ -1,0 +1,168 @@
+- name: Image tag given
+  ansible.builtin.assert:
+    that: cipheroom_tag is match('^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$')
+    fail_msg: "set cipheroom_tag (scripts/deploy.sh does), e.g. sha-<commit>"
+    quiet: true
+
+- name: Environment
+  ansible.builtin.include_tasks: env.yml
+
+- name: Required settings present
+  ansible.builtin.assert:
+    that:
+      - cipheroom_env_check.sfu
+      - cipheroom_env_check.tunnel
+      - cipheroom_env_check.host
+      - cipheroom_env_check.grafana or not cipheroom_observability
+    fail_msg: >-
+      deploy/.env (+ .env.hetzner) needs CF_SFU_APP_ID and CF_SFU_APP_SECRET, a TUNNEL_TOKEN, a PUBLIC_HOST, and with
+      --observability a GRAFANA_ADMIN_PASSWORD of 12+ characters (scripts/secrets.sh lists what's missing)
+    quiet: true
+
+# ── Files ────────────────────────────────────────────────────────────────────────────────────────────────────────────
+- name: Stack directory
+  ansible.builtin.file:
+    path: "{{ cipheroom_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Compose file
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../docker-compose.yml"
+    dest: "{{ cipheroom_dir }}/docker-compose.yml"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Observability configuration
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../observability"
+    dest: "{{ cipheroom_dir }}/"
+    owner: root
+    group: root
+    mode: u=rwX,go=rX
+
+# Tags that passed the checks below, newest first: the running one and the one before it (a fast rollback). Not the
+# tag in .env, which a failed deploy has already changed.
+- name: Good tags so far
+  ansible.builtin.command: cat {{ cipheroom_dir }}/deployed-tags
+  register: cipheroom_good_tags_file
+  changed_when: false
+  failed_when: false
+
+- name: Good tags after this deploy
+  ansible.builtin.set_fact:
+    cipheroom_good_tags: "{{ cipheroom_good_tags_file.stdout_lines | select | list }}"
+    cipheroom_keep_tags: >-
+      {{ [cipheroom_tag] + (cipheroom_good_tags_file.stdout_lines | select | reject('equalto', cipheroom_tag) | list)[:1] }}
+
+- name: Environment file
+  ansible.builtin.copy:
+    dest: "{{ cipheroom_dir }}/.env"
+    content: |
+      # Managed by Ansible from deploy/.env (+ deploy/.env.hetzner) on the operator's machine — edit those.
+      {% for key, value in cipheroom_env.items() %}
+      {{ key }}={{ value }}
+      {% endfor %}
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  diff: false
+
+# ── Run ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+- name: Containers before
+  ansible.builtin.command: "{{ cipheroom_compose }} ps -q"
+  register: cipheroom_before
+  changed_when: false
+
+- name: Pull images
+  ansible.builtin.command: "{{ cipheroom_compose }} pull --quiet"
+  changed_when: false
+
+- name: Stop observability services when it's off
+  ansible.builtin.command: >-
+    docker compose --project-directory {{ cipheroom_dir }} -f {{ cipheroom_dir }}/docker-compose.yml
+    --env-file {{ cipheroom_dir }}/.env --profile observability rm --stop --force
+    {{ cipheroom_observability_services | join(' ') }}
+  register: cipheroom_obs_rm
+  changed_when: "'Removed' in cipheroom_obs_rm.stderr"
+  when: not cipheroom_observability
+
+- name: Deploy and verify
+  block:
+    - name: Start the stack
+      ansible.builtin.command: "{{ cipheroom_compose }} up -d --no-build --remove-orphans"
+      changed_when: false
+
+    # Only the app: a crash-looping cloudflared (bad token) makes --wait flaky; the tunnel check below catches it.
+    - name: Wait for the api and web to be healthy
+      ansible.builtin.command: "{{ cipheroom_compose }} up -d --no-build --wait --wait-timeout 180 api web"
+      changed_when: false
+
+    - name: Containers after
+      ansible.builtin.command: "{{ cipheroom_compose }} ps -q"
+      register: cipheroom_after
+      changed_when: (cipheroom_after.stdout_lines | sort) != (cipheroom_before.stdout_lines | sort)
+
+    # Through nginx to the api: the public health endpoints are blocked by design, so check on the server itself.
+    - name: The app answers
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ cipheroom_env.WEB_PORT | default('8080') }}/"
+        status_code: 200
+      register: cipheroom_http
+      retries: 10
+      delay: 3
+      until: cipheroom_http.status == 200
+
+    # `up --wait` returns while cloudflared is still trying its token, and a bad token only shows as restarts: the
+    # deploy counts once the public hostname answers through this server's tunnel.
+    - name: The app answers through the tunnel
+      ansible.builtin.uri:
+        url: "https://{{ cipheroom_env.PUBLIC_HOST }}/"
+        status_code: 200
+      register: cipheroom_public
+      retries: 12
+      delay: 5
+      until: cipheroom_public.status == 200
+
+    - name: Remember the tag as good
+      ansible.builtin.copy:
+        dest: "{{ cipheroom_dir }}/deployed-tags"
+        content: "{{ cipheroom_keep_tags | join('\n') }}\n"
+        owner: root
+        group: root
+        mode: "0644"
+  rescue:
+    - name: Recent logs (no settings are printed)
+      ansible.builtin.command: "{{ cipheroom_compose }} logs --no-color --tail 50 api web cloudflared"
+      register: cipheroom_logs
+      changed_when: false
+      failed_when: false
+
+    - name: Show logs
+      ansible.builtin.debug:
+        msg: "{{ cipheroom_logs.stdout_lines }}"
+
+    - name: Deploy failed
+      ansible.builtin.fail:
+        msg: >-
+          The stack didn't come up healthy with tag {{ cipheroom_tag }}.
+          Roll back: scripts/deploy.sh --tag {{ cipheroom_good_tags | first | default('<previous tag>') }}
+
+# ── Tidy up: keep the current and the previous good tag ───────────────────────────────────────────────────────────────────
+- name: Remove older app images
+  ansible.builtin.shell: |
+    set -o pipefail
+    docker image ls --format '{{ '{{' }}.Repository{{ '}}' }} {{ '{{' }}.Tag{{ '}}' }}' \
+      | awk -v p={{ cipheroom_image_prefix | quote }} -v keep={{ cipheroom_keep_tags | join(' ') | quote }} \
+          'BEGIN { n = split(keep, k, " "); for (i = 1; i <= n; i++) kept[k[i]] = 1 }
+           ($1 == p "-api" || $1 == p "-web") && !($2 in kept) { print $1 ":" $2 }' \
+      | xargs -r docker image rm
+    docker image prune --force --filter dangling=true >/dev/null
+  args:
+    executable: /bin/bash
+  register: cipheroom_prune
+  changed_when: "'Untagged' in cipheroom_prune.stdout"

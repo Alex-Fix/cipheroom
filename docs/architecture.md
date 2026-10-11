@@ -3,7 +3,8 @@
 ## Goals
 
 - Self-hosted with `docker compose up` on a home machine: **no public IP**, **zero running cost** (free tiers only, no
-  rented VMs). Nothing at home has to be reachable from the internet.
+  rented VMs). Nothing at home has to be reachable from the internet. Optionally the same stack runs on a rented
+  Hetzner server ([`deployment-hetzner.md`](deployment-hetzner.md)) — opt-in, it costs money; the default stays free.
 - Media is end-to-end encrypted: neither our server, Cloudflare's SFU, nor any TURN relay can decrypt it (see
   "Encryption model"); so is in-call chat, with keys derived from the same sender keys.
 - Standards-based (WebRTC, WebCrypto), no closed SDKs. Everything that runs at home is open source; media is
@@ -164,10 +165,6 @@ Defences:
   code), and a **warning** when a newcomer uses a verified contact's name with another key or none.
 - Ed25519 keys of small order (and non-canonical encodings) are rejected everywhere (`weak-keys.ts`): for them
   trivial signatures verify without a private key.
-
-### Later: MLS
-For very large rooms / multi-device, swap sender-key distribution for MLS (RFC 9420). Only `CryptoService` changes;
-the frame worker's key interface stays the same.
 
 ### Chat
 Design: [`plans/2026-10-09-encrypted-chat-design.md`](plans/2026-10-09-encrypted-chat-design.md). In-call text and

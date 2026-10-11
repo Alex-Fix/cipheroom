@@ -108,6 +108,9 @@ You need a domain on Cloudflare (the free plan is fine) and a machine running Do
    scripts/security-check.sh https://call.example.com
    ```
 
+No machine at home to leave running? The same stack runs on a Hetzner server (about €4–5 a month), created with
+Terraform and deployed with Ansible from prebuilt images: [`docs/deployment-hetzner.md`](docs/deployment-hetzner.md).
+
 To check it from real networks, join from a phone on mobile data (Wi-Fi off) and a laptop in the same meeting. To test
 the TURN fallback, set `TURN_FORCE_RELAY=true` and run `scripts/up.sh --tunnel` again. Keep an eye on usage: 4K video
 is ~3.6 GB per viewer-hour against the 1 TB/month free tier. The usage guard enforces it (best with
@@ -124,6 +127,8 @@ is ~3.6 GB per viewer-hour against the 1 TB/month free tier. The usage guard enf
 | `scripts/lint.sh [--fix]` | Formatting and lint |
 | `scripts/security-check.sh [url]` | Secret scan, dependency audit, security headers |
 | `scripts/secrets.sh` | Create `deploy/.env` and list required values that are still empty |
+| `scripts/provision.sh [--destroy]` | Create or update the Hetzner server (Terraform) — [`docs/deployment-hetzner.md`](docs/deployment-hetzner.md) |
+| `scripts/deploy.sh [--tag <tag>] [--observability]` | Deploy or roll back the server from GHCR images (Ansible) |
 
 ## Roadmap
 
@@ -140,7 +145,6 @@ is ~3.6 GB per viewer-hour against the 1 TB/month free tier. The usage guard enf
 - [x] Connection diagnostics: a Connection drawer with a verdict, route, network numbers, what you send, encryption
   health and a copyable report; a "Poor connection" hint in the header
 - [x] "Source code" link in the UI (AGPL §13) — opens the exact commit that is running (`SOURCE_URL` for forks)
-- [ ] MLS-based group keys for large rooms
 - [x] End-to-end encrypted files and images in chat (up to 100 MB, from the sender's browser over SFU data channels,
   photo metadata removed)
 
@@ -155,11 +159,12 @@ deployment switch will offer three:
   machine, reached on its public IP. No Cloudflare Realtime traffic limits.
 - [ ] **Fully self-hosted**: self-hosted SFU and TURN, and the app served directly on the server's public IP with a
   signed certificate. No Cloudflare dependency at all.
-- [ ] Infrastructure as code: Terraform to provision a server on Hetzner or AWS, Ansible to install and configure any
-  of the modes on it.
+- [x] Infrastructure as code for Hetzner: GitHub Actions publishes the images to GHCR, Terraform creates a firewalled
+  server, Ansible hardens it and runs the stack — the Cloudflare mode today, the self-hosted modes once they exist
+  ([`docs/deployment-hetzner.md`](docs/deployment-hetzner.md)).
 
-The self-hosted modes need a public IP (and open UDP ports for media). On Hetzner or AWS they also cost money, unlike
-the default mode, which stays free.
+The self-hosted modes need a public IP (and open UDP ports for media). On Hetzner they also cost money, unlike the
+default mode at home, which stays free.
 
 ## Project layout
 
