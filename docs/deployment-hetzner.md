@@ -41,8 +41,9 @@ share one unless you confirm.
 counts only its own estimate. Set `CF_ACCOUNT_ID` and `CF_ANALYTICS_API_TOKEN` (README → Self-hosting) so both use
 Cloudflare's account-wide figure.
 
-Tools on your machine: `terraform` and `ansible` (`brew install terraform ansible`; `scripts/doctor.sh` checks), an SSH
-key (`~/.ssh/id_ed25519.pub` by default) and a working `deploy/.env` (`scripts/secrets.sh`).
+Tools on your machine: `terraform` and `ansible` (`brew install terraform ansible`; `scripts/doctor.sh` checks) and a
+working `deploy/.env` (`scripts/secrets.sh`). The server accepts one SSH key, used only for it: `~/.ssh/id_cipheroom`,
+which `scripts/provision.sh` creates on the first run (choose a passphrase; `CIPHEROOM_SSH_KEY` points elsewhere).
 
 ## First deploy
 
@@ -109,7 +110,7 @@ Re-running `scripts/deploy.sh` is safe: it changes only what differs. Changing a
   rejoin automatically.
 - **Your IP changed?** SSH (and so `deploy.sh`) can't connect. Run `scripts/provision.sh` again: it updates the
   firewall to your new address.
-- **Logs:** `ssh cipheroom@<ip>` then `sudo docker compose --project-directory /opt/cipheroom logs -f api`.
+- **Logs:** `ssh -i ~/.ssh/id_cipheroom cipheroom@<ip>` then `sudo docker compose --project-directory /opt/cipheroom logs -f api`.
   With `--observability`, Grafana is at `https://<PUBLIC_HOST>/grafana/`.
 - **What's on the server:** `/opt/cipheroom` (compose file, observability config, `.env`, `deployed-tags`) and
   Docker volumes — the usage guard's estimate and, with observability, 7 days of telemetry. No database; nothing

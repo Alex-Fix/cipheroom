@@ -23,9 +23,9 @@ variable "image" {
 }
 
 variable "ssh_public_key_path" {
-  description = "Public key that may log in as the admin user."
+  description = "Public key that may log in as the admin user — a key used only for this server (scripts/provision.sh passes it)."
   type        = string
-  default     = "~/.ssh/id_ed25519.pub"
+  default     = "~/.ssh/id_cipheroom.pub"
 }
 
 variable "admin_user" {
