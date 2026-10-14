@@ -41,6 +41,11 @@ updates:
     groups:
       angular: { patterns: ["@angular/*", "@angular-devkit/*", "@schematics/angular", "ng-zorro-antd", "typescript", "zone.js"] }
       npm-minor-patch: { update-types: [minor, patch] }
+    ignore:
+      # Angular's compiler accepts one TypeScript minor (e.g. >=6.0 <6.1): a TypeScript major only lands together with
+      # an Angular major (ng update), never on its own (typescript 7 broke npm ci, #34).
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: terraform
     directory: /deploy/terraform/hetzner
