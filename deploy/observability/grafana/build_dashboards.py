@@ -280,9 +280,15 @@ b.add([
     stat("Docker disk used", '100 * (1 - min(node_filesystem_avail_bytes{mountpoint=~"/|/var/lib/docker"}) / max(node_filesystem_size_bytes{mountpoint=~"/|/var/lib/docker"}))', 4, "percent", decimals=0,
          description="The disk holding Docker images and volumes (incl. all telemetry).",
          thresholds=[{"color": "green", "value": None}, {"color": "orange", "value": 80}, {"color": "red", "value": 90}]),
-    stat("Uptime", "time() - max(node_boot_time_seconds)", 4, "s", decimals=0),
-    stat("Containers", f'count(container_last_seen{{{C}}})', 4),
-    stat("Prometheus storage", "sum(prometheus_tsdb_storage_blocks_bytes)", 4, "decbytes", decimals=1, description="Capped at 5 GB / 7 days."),
+    stat("Uptime", "time() - max(node_boot_time_seconds)", 3, "s", decimals=0),
+    stat("Containers", f'count(container_last_seen{{{C}}})', 3),
+    stat("Prometheus storage", "sum(prometheus_tsdb_storage_blocks_bytes)", 3, "decbytes", decimals=1, description="Capped at 5 GB / 7 days."),
+    # Direct ingress only (written by the certificate deploy hook): renewals keep 3-7 days left; under 2 they're failing.
+    stat("Certificate expires in", "min(cipheroom_cert_expiry_timestamp_seconds) - time()", 3, "s", decimals=0,
+         no_value="no edge",
+         description="The edge proxy's Let's Encrypt IP certificate (INGRESS_MODE=direct). It lives about 6.7 days and "
+                     "renews from about half-way; below 2 days renewals are failing: journalctl -u cipheroom-cert-renew.",
+         thresholds=[{"color": "red", "value": None}, {"color": "orange", "value": 172800}, {"color": "green", "value": 259200}]),
 ], 4)
 b.row("Host")
 b.add([

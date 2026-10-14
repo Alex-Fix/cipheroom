@@ -234,7 +234,10 @@ services:
       - --path.procfs=/host/proc
       - --path.sysfs=/host/sys
       - --path.rootfs=/rootfs
+      # Metrics written by host scripts (direct ingress: the certificate's expiry); empty otherwise.
+      - --collector.textfile.directory=/textfile
     volumes:
+      - ${NODE_EXPORTER_TEXTFILE_DIR:-./observability/textfile}:/textfile:ro
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
       - /:/rootfs:ro
