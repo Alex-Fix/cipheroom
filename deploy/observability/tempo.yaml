@@ -10,9 +10,17 @@ distributor:
         grpc:
           endpoint: 0.0.0.0:4317
 
-compactor:
+# Tempo 3 replaced the compactor with a backend scheduler and worker (both run in this single process); retention is
+# the worker's job. The scheduler keeps its own copy of the setting.
+backend_worker:
   compaction:
     block_retention: 168h
+
+backend_scheduler:
+  provider:
+    compaction:
+      compaction:
+        block_retention: 168h
 
 storage:
   trace:
