@@ -10,12 +10,12 @@ data "hcloud_image" "os" {
 }
 
 resource "hcloud_ssh_key" "admin" {
-  name       = "${var.name}-admin"
+  name       = "${local.name}-admin"
   public_key = file(pathexpand(var.ssh_public_key_path))
 }
 
 resource "hcloud_firewall" "server" {
-  name = "${var.name}-server"
+  name = "${local.name}-server"
 
   rule {
     description = "SSH from the operator"
@@ -38,6 +38,9 @@ resource "hcloud_firewall" "server" {
 }
 
 locals {
+  # One server per Terraform workspace (scripts/provision.sh --server <name>): `default` keeps the plain name.
+  name = terraform.workspace == "default" ? var.name : "${var.name}-${terraform.workspace}"
+
   # LiveKit single-port media and its built-in TURN (deploy/livekit/livekit.yaml).
   livekit_ports = [
     { description = "LiveKit media (UDP)", protocol = "udp", port = "7882" },
@@ -49,7 +52,7 @@ locals {
 }
 
 resource "hcloud_server" "server" {
-  name         = var.name
+  name         = local.name
   server_type  = var.server_type
   location     = var.location
   image        = data.hcloud_image.os.id

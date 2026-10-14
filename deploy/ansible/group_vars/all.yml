@@ -9,8 +9,9 @@ cipheroom_image_prefix: ghcr.io/alex-fix/cipheroom
 cipheroom_observability: true
 cipheroom_dir: /opt/cipheroom
 
-# Secrets come from the operator's machine: deploy/.env, then deploy/.env.hetzner (optional) overrides keys in it —
-# typically TUNNEL_TOKEN and PUBLIC_HOST, so the server gets its own tunnel.
+# Secrets come from the operator's machine: deploy/.env, then the server's overlay (optional) overrides keys in it —
+# typically TUNNEL_TOKEN and PUBLIC_HOST, so the server gets its own tunnel. scripts/deploy.sh --server <name> passes
+# deploy/.env.hetzner.<name> instead.
 cipheroom_env_file: "{{ playbook_dir }}/../.env"
 cipheroom_env_overlay: "{{ playbook_dir }}/../.env.hetzner"
 

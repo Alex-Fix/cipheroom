@@ -1,5 +1,5 @@
 variable "name" {
-  description = "Server name (also the firewall and SSH key name prefix)."
+  description = "Server name (also the firewall and SSH key name prefix); a named server (Terraform workspace) appends -<name>."
   type        = string
   default     = "cipheroom"
 }

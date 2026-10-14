@@ -1,57 +1,65 @@
 #!/usr/bin/env bash
 # Create (or update) the Hetzner VM with Terraform, then write the Ansible inventory and pin its SSH host keys.
 # Re-run it when your public IP changes: the firewall only lets SSH in from allowed_ssh_cidrs.
-#   --destroy   delete the server (after setting protection = false in terraform.tfvars and re-running without it)
-# Needs HCLOUD_TOKEN (Hetzner Cloud console → project → Security → API tokens, read & write). The server accepts one
-# SSH key, used only for it: ~/.ssh/id_cipheroom (created here if missing) or CIPHEROOM_SSH_KEY=<private key path>.
+#   --server <name>  which server (default: `default`, the first one). Each name has its own Terraform workspace and
+#                    files: deploy/.env.hetzner.<name>, terraform.<name>.tfvars (on top of terraform.tfvars, which all
+#                    servers share), deploy/ansible/inventory.<name>.ini and known_hosts.<name>
+#   --destroy        delete the server (after setting protection = false in its tfvars and re-running without it)
+# Needs HCLOUD_TOKEN (Hetzner Cloud console → project → Security → API tokens, read & write). Each server accepts one
+# SSH key, used only for it (created here if missing): ~/.ssh/id_cipheroom for `default` (or CIPHEROOM_SSH_KEY=<private
+# key path>), ~/.ssh/id_cipheroom-<name> for the others.
 # Guide: docs/deployment-hetzner.md
 source "$(dirname "$0")/_common.sh"
 
 TF_DIR="$DEPLOY_DIR/terraform/hetzner"
-ANSIBLE_DIR="$DEPLOY_DIR/ansible"
 DESTROY=false
-for arg in "$@"; do
-  case "$arg" in
+SERVER=default
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --server) [[ $# -ge 2 ]] || die "--server needs a name"; SERVER="$2"; shift ;;
     --destroy) DESTROY=true ;;
-    *) die "unknown option: $arg (use --destroy)" ;;
+    *) die "unknown option: $1 (use --server <name>, --destroy)" ;;
   esac
+  shift
 done
+server_files "$SERVER"
 
 command -v terraform >/dev/null || die "terraform missing — brew install terraform"
 [[ -n "${HCLOUD_TOKEN:-}" ]] || die "export HCLOUD_TOKEN (Hetzner Cloud console → Security → API tokens, read & write)"
 tf() { terraform -chdir="$TF_DIR" "$@"; }
 
 # A key only for this server: if it ever leaks, nothing else is exposed.
-SSH_KEY="${CIPHEROOM_SSH_KEY:-$HOME/.ssh/id_cipheroom}"
 if [[ ! -f "$SSH_KEY.pub" && "$DESTROY" != true ]]; then
-  info "Creating $SSH_KEY for this server (a passphrase is recommended; ssh-agent remembers it per session)"
-  ssh-keygen -t ed25519 -f "$SSH_KEY" -C "cipheroom-server"
+  info "Creating $SSH_KEY for server '$SERVER' (a passphrase is recommended; ssh-agent remembers it per session)"
+  ssh-keygen -t ed25519 -f "$SSH_KEY" -C "cipheroom-$SERVER"
 fi
 VARS=(-var "ssh_public_key_path=$SSH_KEY.pub")
+# terraform.tfvars is loaded for every server; a named server's own file goes on top.
+[[ "$SERVER" == default || ! -f "$TFVARS" ]] || VARS+=(-var-file "$TFVARS")
 
-# SSH is allowed only from allowed_ssh_cidrs: unless terraform.tfvars sets it, use this machine's public address
+# SSH is allowed only from allowed_ssh_cidrs: unless a tfvars file sets it, use this machine's public address
 # (asked from Cloudflare, which the stack already depends on).
-if ! grep -Eq '^[[:space:]]*allowed_ssh_cidrs' "$TF_DIR/terraform.tfvars" 2>/dev/null; then
+if ! grep -Eqs '^[[:space:]]*allowed_ssh_cidrs' "$TF_DIR/terraform.tfvars" "$TFVARS"; then
   ip="$(curl -fsS --max-time 10 https://1.1.1.1/cdn-cgi/trace | sed -n 's/^ip=//p')"
-  [[ -n "$ip" ]] || die "couldn't detect your public IP — set allowed_ssh_cidrs in $TF_DIR/terraform.tfvars"
+  [[ -n "$ip" ]] || die "couldn't detect your public IP — set allowed_ssh_cidrs in $TFVARS"
   if [[ "$ip" == *:* ]]; then cidr="$ip/128"; else cidr="$ip/32"; fi
   info "SSH allowed from $cidr (this machine)"
   VARS+=(-var "allowed_ssh_cidrs=[\"$cidr\"]")
 fi
 
-# Media mode from the env files (deploy/.env.hetzner over deploy/.env): LiveKit mode opens its media ports.
-mode_in() { [[ -f "$2" ]] && grep -E "^$1=" "$2" | tail -1 | cut -d= -f2- || true; }
-media_mode="$(mode_in MEDIA_MODE "$DEPLOY_DIR/.env.hetzner")"
-[[ -n "$media_mode" ]] || media_mode="$(mode_in MEDIA_MODE "$DEPLOY_DIR/.env")"
+# Media mode from the env files (this server's overlay over deploy/.env): LiveKit mode opens its media ports.
+media_mode="$(server_value MEDIA_MODE)"
 VARS+=(-var "media_mode=${media_mode:-cloudflare}")
-info "Media mode: ${media_mode:-cloudflare}"
+info "Server '$SERVER' — media mode: ${media_mode:-cloudflare}"
 
 tf init -input=false >/dev/null
+# One workspace per server (state in terraform.tfstate.d/<name>/); `default` is the original state file.
+tf workspace select -or-create "$SERVER" >/dev/null
 
 if [[ "$DESTROY" == true ]]; then
   tf state show hcloud_server.server >/dev/null 2>&1 || die "no server in the Terraform state"
   if tf state show hcloud_server.server | grep -Eq 'delete_protection[[:space:]]*=[[:space:]]*true'; then
-    die "delete protection is on: set protection = false in $TF_DIR/terraform.tfvars, run scripts/provision.sh, then --destroy"
+    die "delete protection is on: set protection = false in $TFVARS, run scripts/provision.sh$SERVER_ARG, then --destroy"
   fi
   name="$(tf output -raw server_name)"
   warn "This permanently deletes server '$name' (Grafana history and the usage-guard estimate on it go too)."
@@ -59,8 +67,8 @@ if [[ "$DESTROY" == true ]]; then
   read -r answer
   [[ "$answer" == "$name" ]] || die "not confirmed"
   tf destroy -input=false "${VARS[@]}"
-  rm -f "$ANSIBLE_DIR/inventory.ini" "$ANSIBLE_DIR/known_hosts"
-  info "Server deleted. Remove its tunnel in Cloudflare Zero Trust if you don't need it any more."
+  rm -f "$INVENTORY" "$KNOWN_HOSTS"
+  info "Server deleted. If it had a Cloudflare tunnel, remove it in Zero Trust if you don't need it any more."
   exit 0
 fi
 
@@ -85,7 +93,7 @@ types = json.load(sys.stdin)["server_types"]
 locations = types[0].get("locations") or [] if types else []
 print("yes" if any(l["name"] == os.environ["LOCATION"] and l.get("available") for l in locations) else "no")')" \
       || die "couldn't ask Hetzner whether $wanted_type is available in $location"
-    [[ "$available" == yes ]] || die "$wanted_type isn't available in $location right now (the resize would fail with the server powered off) — try again later or set another server_type in terraform.tfvars"
+    [[ "$available" == yes ]] || die "$wanted_type isn't available in $location right now (the resize would fail with the server powered off) — try again later or set another server_type in $TFVARS"
     warn "Resizing $current_type → $wanted_type: the server is powered off for a minute or two"
   fi
 fi
@@ -104,7 +112,7 @@ server_id="$(tf output -raw server_id)"
 user="$(tf output -raw admin_user)"
 name="$(tf output -raw server_name)"
 
-cat > "$ANSIBLE_DIR/inventory.ini" <<EOF
+cat > "$INVENTORY" <<EOF
 # Generated by scripts/provision.sh — don't edit (gitignored).
 [servers]
 $name ansible_host=$ipv4 ansible_user=$user ansible_ssh_private_key_file=$SSH_KEY hcloud_server_id=$server_id
@@ -122,13 +130,12 @@ for _ in $(seq 1 30); do
 done
 [[ -n "$keys" ]] || die "SSH on $ipv4 didn't answer — check allowed_ssh_cidrs, then re-run"
 
-KNOWN_HOSTS="$ANSIBLE_DIR/known_hosts"
 pin_marker="# cipheroom server $server_id"
 key_set() { awk '!/^#/ && NF >= 3 { print $2, $3 }' | sort -u; }
 if [[ -f "$KNOWN_HOSTS" ]] && { grep -qxF "$pin_marker" "$KNOWN_HOSTS" || ! grep -q '^# cipheroom server ' "$KNOWN_HOSTS"; }; then
   # Pinned for this server (or by an older provision.sh, which didn't record the id): every key it shows must be pinned.
   unexpected="$(comm -13 <(key_set <"$KNOWN_HOSTS") <(key_set <<<"$keys"))"
-  [[ -z "$unexpected" ]] || die "$ipv4 answers with host keys that aren't pinned in deploy/ansible/known_hosts — possibly someone in the middle. Don't deploy. If you rebuilt the server yourself, delete that file and re-run."
+  [[ -z "$unexpected" ]] || die "$ipv4 answers with host keys that aren't pinned in $KNOWN_HOSTS — possibly someone in the middle. Don't deploy. If you rebuilt the server yourself, delete that file and re-run."
   if ! grep -qxF "$pin_marker" "$KNOWN_HOSTS"; then
     { echo "$pin_marker"; grep -v '^#' "$KNOWN_HOSTS"; } >"$KNOWN_HOSTS.tmp" && mv "$KNOWN_HOSTS.tmp" "$KNOWN_HOSTS"
   fi
@@ -138,5 +145,5 @@ else
   info "Pinned the new server's host keys"
 fi
 
-info "Server $name is at $ipv4 (ssh -i $SSH_KEY $user@$ipv4) — next: scripts/deploy.sh (docs/deployment-hetzner.md)"
-warn "It costs money while it exists (server + IPv4, billed by Hetzner — see docs/deployment-hetzner.md); scripts/provision.sh --destroy removes it"
+info "Server $name is at $ipv4 (ssh -i $SSH_KEY $user@$ipv4) — next: scripts/deploy.sh$SERVER_ARG (docs/deployment-hetzner.md)"
+warn "It costs money while it exists (server + IPv4, billed by Hetzner — see docs/deployment-hetzner.md); scripts/provision.sh$SERVER_ARG --destroy removes it"
