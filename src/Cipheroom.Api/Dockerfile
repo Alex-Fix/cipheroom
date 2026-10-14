@@ -1,6 +1,6 @@
 # Build context: repo root (needs global.json, Directory.*.props).
 # Base images are pinned by digest (reproducible builds); Dependabot (.github/dependabot.yml) proposes updates.
-FROM mcr.microsoft.com/dotnet/sdk:10.0@sha256:e70cdb7f80b0348f5cb85f19a8f670fca061f033d57eed12fa003d58b0e06317 AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0@sha256:0d99ebf1ccad15037b5c98c9fe8979d6b8dbac23812feae2277a0b277b5c5ffa AS build
 WORKDIR /src
 COPY global.json Directory.Build.props Directory.Packages.props ./
 # Project files first so restore is cached until dependencies change.
@@ -19,7 +19,7 @@ RUN dotnet publish src/Cipheroom.Api/Cipheroom.Api.csproj -c Release -o /app --n
 RUN mkdir -p /data
 
 # Chiseled: no shell, no package manager, non-root by default.
-FROM mcr.microsoft.com/dotnet/aspnet:10.0-noble-chiseled@sha256:48e51f2f6798897be7ac4e775c049ed8fe60d3190f637e1f9c9dc7513efa659c
+FROM mcr.microsoft.com/dotnet/aspnet:10.0-noble-chiseled@sha256:84def277556c2843a44fdeefbd3145d0a2e32d8f736d0c1a7b0a96b2880b0187
 WORKDIR /app
 COPY --from=build /app .
 COPY --from=build --chown=$APP_UID:$APP_UID /data /data
