@@ -151,7 +151,7 @@
     dest: "{{ cipheroom_dir }}/.env"
     content: |
       # Managed by Ansible from deploy/.env (+ deploy/.env.hetzner) on the operator's machine — edit those.
-      {% for key, value in cipheroom_env.items() %}
+      {% for key, value in cipheroom_env.items() if key not in cipheroom_env_unused %}
       {{ key }}={{ value }}
       {% endfor %}
     owner: root
