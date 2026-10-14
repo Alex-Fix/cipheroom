@@ -51,6 +51,26 @@
     group: root
     mode: u=rwX,go=rX
 
+- name: Edge proxy directory (direct mode)
+  ansible.builtin.file:
+    path: "{{ cipheroom_dir }}/nginx"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: cipheroom_ingress_mode == 'direct'
+
+# Mounted by the edge service as its nginx.conf; without it Docker would mount an empty directory instead.
+- name: Edge proxy configuration (direct mode)
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../nginx/edge.conf"
+    dest: "{{ cipheroom_dir }}/nginx/edge.conf"
+    owner: root
+    group: root
+    mode: "0644"
+  when: cipheroom_ingress_mode == 'direct'
+  register: cipheroom_edge_conf
+
 - name: LiveKit configuration directory
   ansible.builtin.file:
     path: "{{ cipheroom_dir }}/livekit"
@@ -155,6 +175,12 @@
     - name: Start the stack
       ansible.builtin.command: "{{ cipheroom_compose }} up -d --no-build --remove-orphans"
       changed_when: false
+
+    # A single-file bind mount keeps the old file after Ansible replaces it: restart edge to read the new config.
+    - name: Edge proxy picks up a changed configuration
+      ansible.builtin.command: "{{ cipheroom_compose }} restart edge"
+      when: cipheroom_ingress_mode == 'direct' and cipheroom_edge_conf is changed
+      changed_when: true
 
     # Only the app: a crash-looping cloudflared (bad token) makes --wait flaky; the tunnel check below catches it.
     - name: Wait for the api and web to be healthy
