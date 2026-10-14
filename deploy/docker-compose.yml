@@ -82,7 +82,8 @@ services:
     environment:
       LIVEKIT_KEYS: "${LIVEKIT_API_KEY:-}: ${LIVEKIT_API_SECRET:-}"
     volumes:
-      - ./livekit/livekit.yaml:/etc/livekit.yaml:ro
+      # scripts/up.sh --direct uses a generated copy with TURN behind the edge proxy (deploy/edge/livekit.yaml).
+      - ${LIVEKIT_CONFIG:-./livekit/livekit.yaml}:/etc/livekit.yaml:ro
       # TURN over TLS (server, LIVEKIT_TURN_DOMAIN): Let's Encrypt's directory; empty and unused otherwise.
       - ${LIVEKIT_CERTS_DIR:-./livekit/certs}:/certs:ro
     ports:

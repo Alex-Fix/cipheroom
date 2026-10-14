@@ -62,7 +62,7 @@ else
   warn "ansible not installed: skipped the playbook check"
 fi
 if command -v shellcheck >/dev/null; then
-  info "shellcheck"; shellcheck -S warning -x -P "$ROOT/scripts" "$ROOT/scripts/provision.sh" "$ROOT/scripts/deploy.sh"
+  info "shellcheck"; shellcheck -S warning -x -P "$ROOT/scripts" "$ROOT/scripts/provision.sh" "$ROOT/scripts/deploy.sh" "$ROOT/scripts/up.sh" "$ROOT/scripts/ip-cert.sh"
 else
   warn "shellcheck not installed: skipped (brew install shellcheck)"
 fi
