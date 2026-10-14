@@ -184,7 +184,7 @@ is ~3.6 GB per viewer-hour against the 1 TB/month free tier. The usage guard enf
 
 ### Deployment modes
 
-Two modes work today, chosen per deployment with `MEDIA_MODE`; a third is planned:
+Three modes, chosen per deployment with `MEDIA_MODE` and `INGRESS_MODE`:
 
 - [x] **Cloudflare** (default): Cloudflare Tunnel for HTTPS/WSS, Cloudflare Realtime SFU and TURN. No public IP,
   free tier only.
@@ -193,8 +193,10 @@ Two modes work today, chosen per deployment with `MEDIA_MODE`; a third is planne
   touches Cloudflare. Same end-to-end encryption; LiveKit's signaling is relayed over SignalR
   ([`docs/deployment-hetzner.md`](docs/deployment-hetzner.md#livekit-mode-media-on-your-server)). No Cloudflare
   Realtime traffic limits.
-- [ ] **Fully self-hosted**: self-hosted SFU and TURN, and the app served directly on the server's public IP with a
-  signed certificate. No Cloudflare dependency at all.
+- [x] **Fully self-hosted** (`INGRESS_MODE=direct`): LiveKit and its TURN as above, and the app served directly at
+  `https://<server IP>` with a Let's Encrypt certificate for that IP — no domain and no Cloudflare at all. Port 443 is
+  shared by the site and TURN over TLS
+  ([`docs/deployment-hetzner.md`](docs/deployment-hetzner.md#direct-mode-no-cloudflare-no-domain)).
 - [x] Infrastructure as code for Hetzner: GitHub Actions publishes the images to GHCR, Terraform creates a firewalled
   server, Ansible hardens it and runs the stack in either mode
   ([`docs/deployment-hetzner.md`](docs/deployment-hetzner.md)). The beta runs this way: Hetzner cpx42, LiveKit mode.

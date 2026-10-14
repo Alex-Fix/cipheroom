@@ -33,6 +33,7 @@
 | Cloudflare TURN | fallback relay for client networks that block direct UDP | DTLS-SRTP packets |
 | `web` | static Angular app (ng-zorro UI, icons bundled — no runtime CDN fetches) + security headers; `/source` redirects to the running commit's code (AGPL §13, `SOURCE_URL` + commit baked in at build) | nothing sensitive |
 | `cloudflared` | one public HTTPS hostname → `web` (which proxies `/api`, `/hubs` to the api, `/grafana/` to Grafana) | TLS-terminated HTTP/WS |
+| `edge` (only `INGRESS_MODE=direct`) | replaces `cloudflared`: `https://<server IP>` with a Let's Encrypt IP certificate; TCP 443 split by ALPN between the site and LiveKit's TURN over TLS — [`plans/2026-10-14-direct-ingress-design.md`](plans/2026-10-14-direct-ingress-design.md) | TLS-terminated HTTP/WS, TURN (encrypted media inside) |
 | Observability (profile `observability`) | otel-collector → Prometheus / Loki / Tempo, Grafana at `/grafana/` behind its own hardened login, node-exporter, cAdvisor — [`observability.md`](observability.md) | pseudonymous metadata: hashed room ids, random participant ids, call timing, call-quality numbers (7 days) |
 
 **One signaling channel:** SignalR (`/hubs/room`) carries everything — rooms, media negotiation (the api relays offers
@@ -245,7 +246,9 @@ Default (`MEDIA_MODE=cloudflare`, below). The opt-in LiveKit mode runs a self-ho
 on a machine with a public IP; browsers send media to it directly, its signaling rides inside SignalR (the api relays
 it with a token it creates), and nothing touches Cloudflare Realtime —
 [`plans/2026-10-11-livekit-media-mode-design.md`](plans/2026-10-11-livekit-media-mode-design.md),
-[`deployment-hetzner.md`](deployment-hetzner.md#livekit-mode-media-on-your-server).
+[`deployment-hetzner.md`](deployment-hetzner.md#livekit-mode-media-on-your-server). With `INGRESS_MODE=direct` on top,
+the site is served from that machine's IP too and Cloudflare isn't involved at all
+([`deployment-hetzner.md`](deployment-hetzner.md#direct-mode-no-cloudflare-no-domain)).
 
 - **Cloudflare Realtime SFU** forwards media at Cloudflare's anycast edge. The home machine needs no inbound
   connectivity at all (works behind CGNAT): the tunnel carries HTTP/WebSocket, the api calls the SFU API outbound.

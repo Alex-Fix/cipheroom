@@ -12,7 +12,7 @@ The server must never be able to see or hear call content. Treat that as the pro
 | Media | Per deployment (`MEDIA_MODE`): Cloudflare Realtime SFU (default; free tier, shared with TURN, SFU calls proxied by the api) or LiveKit (self-hosted on a public IP, built-in TURN; its signaling relayed over SignalR). Browser: `MediaService` + a `MediaTransport` per provider |
 | E2EE | **Our** frame encryption (one worker, AES-GCM via WebCrypto, encoded transforms) + **our** key management (`CryptoService`): per-call identities (Ed25519/X25519), sender keys in signed envelopes over SignalR, rotation on join/leave, safety codes |
 | NAT traversal | No public IP needed: media goes browser ⇄ Cloudflare edge; Cloudflare TURN as fallback for restrictive networks |
-| Runtime | Docker Compose; Cloudflare Tunnel (`cloudflared`) for HTTPS/WSS ingress |
+| Runtime | Docker Compose; Cloudflare Tunnel (`cloudflared`) for HTTPS/WSS ingress, or `INGRESS_MODE=direct` (LiveKit only): an `edge` nginx on the server's IP with a Let's Encrypt IP certificate, 443 split by ALPN with TURN over TLS |
 | IaC (opt-in) | GitHub Actions → GHCR images; Terraform (Hetzner) + Ansible run the same compose stack on a rented server |
 
 Hard constraints: runs at home, **no public IP**, **$0 running cost** (free tiers only, usage guard, no rented VMs).
@@ -32,11 +32,11 @@ tests/                           xUnit v3, one project per layer (shared setting
   fixtures/                      test vectors shared by backend and web tests (e.g. WebCrypto-signed admission)
 web/                             Angular app (npm, + Dockerfile); src/app/{core,shared,features}, design/ = logo masters
 deploy/
-  docker-compose.yml             api, web (nginx), cloudflared; profiles livekit, observability (collector, Prometheus, Loki, Tempo, Grafana, exporters)
+  docker-compose.yml             api, web (nginx), cloudflared; profiles livekit, direct (edge), observability (collector, Prometheus, Loki, Tempo, Grafana, exporters)
   nginx/ cloudflared/ livekit/   service config
   observability/                 collector / Prometheus / Loki / Tempo config, Grafana provisioning + generated dashboards
   terraform/hetzner/             Hetzner server (cpx42 default, in-place resizes) + firewall (state stays local, gitignored)
-  ansible/                       site.yml + roles base / docker / cipheroom (+ certs for LiveKit TURN); mode from MEDIA_MODE
+  ansible/                       site.yml + roles base / docker / cipheroom (+ certs: TURN domain or IP); modes from MEDIA_MODE, INGRESS_MODE
 .github/                         workflows/images.yml: build + push api/web to GHCR (sha-<commit> tags); dependabot.yml
 scripts/                         dev/ops scripts (bash, run from repo root)
 artifacts/                       gitignored: .NET build output, dev/ (usage.json, dev-settings.json, logs), e2e/ (local repro scripts + runs)
@@ -54,14 +54,15 @@ All scripts run from the repo root.
 - `scripts/test.sh` — backend + frontend tests (`--server` / `--web` to run one side)
 - `scripts/lint.sh` — `dotnet format --verify-no-changes`, compose/observability config, terraform validate, ansible
   syntax + lint, shellcheck (each when installed), `ng lint` (if configured)
-- `scripts/up.sh [--tunnel] [--observability]` / `scripts/down.sh` — docker compose stack in `deploy/` (observability:
-  `docs/observability.md`)
+- `scripts/up.sh [--tunnel | --direct] [--observability]` / `scripts/down.sh` — docker compose stack in `deploy/`
+  (observability: `docs/observability.md`; `--direct` + `scripts/ip-cert.sh`: no Cloudflare, see the Hetzner guide)
 - `scripts/logs.sh [service]` — follow compose logs
 - `scripts/secrets.sh` — create `deploy/.env`, list required Cloudflare values that are still empty
 - `scripts/security-check.sh [url]` — secret scan, `.env` hygiene, NuGet/npm audit, live security headers
 - `scripts/certs.sh` — local HTTPS certs via mkcert (needed to test cameras from another LAN device)
-- `scripts/provision.sh [--destroy]` / `scripts/deploy.sh [--tag <tag>] [--no-observability]` — Hetzner server via
-  Terraform, deploy/roll back from GHCR images via Ansible (`docs/deployment-hetzner.md`)
+- `scripts/provision.sh [--server <name>] [--destroy]` / `scripts/deploy.sh [--server <name>] [--tag <tag>]
+  [--no-observability]` — Hetzner servers (one per name) via Terraform, deploy/roll back from GHCR images via Ansible
+  (`docs/deployment-hetzner.md`)
 
 ## Non-negotiable rules
 

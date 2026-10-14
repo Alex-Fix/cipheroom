@@ -17,8 +17,11 @@ Your laptop ── terraform ──▶ Hetzner VM (Ubuntu 26.04, SSH from your I
 Browser ──HTTPS/WSS──▶ Cloudflare Tunnel ──▶ web ──▶ api ──▶ Cloudflare Realtime SFU / TURN
 ```
 
-- Deployment mode: **Cloudflare** (the only one so far) — Cloudflare Tunnel for HTTPS/WSS, Cloudflare Realtime SFU
-  and TURN for media. The server's public IP serves nothing; only SSH is open, and only to the addresses you allow.
+- Deployment mode: **Cloudflare** by default — Cloudflare Tunnel for HTTPS/WSS, Cloudflare Realtime SFU and TURN for
+  media. The server's public IP serves nothing; only SSH is open, and only to the addresses you allow. Two opt-in
+  modes put more on the server: [LiveKit mode](#livekit-mode-media-on-your-server) (media) and
+  [direct mode](#direct-mode-no-cloudflare-no-domain) (everything, no Cloudflare, no domain).
+- Several servers side by side: [named servers](#more-than-one-server).
 - Terraform (`deploy/terraform/hetzner/`) creates the server, an SSH key and a firewall. Ansible (`deploy/ansible/`)
   hardens the server, installs Docker and runs `deploy/docker-compose.yml` with images built by
   `.github/workflows/images.yml`.
@@ -125,6 +128,71 @@ The certificate renews at 04:30 UTC (systemd timer `cipheroom-cert-renew`); Live
 Back to Cloudflare: `MEDIA_MODE=cloudflare` (or remove it) in `deploy/.env.hetzner`, `scripts/provision.sh` (closes the
 ports), `scripts/deploy.sh` (stops LiveKit). Try it locally first: `scripts/dev.sh` (LiveKit is the dev default).
 
+## Direct mode: no Cloudflare, no domain
+
+Deployment mode 3: on top of LiveKit mode, the server also serves the website and signaling itself, at
+`https://<its IPv4>`, with a free Let's Encrypt certificate **for the IP address** — no domain, no tunnel, nothing at
+Cloudflare. Design: [`plans/2026-10-14-direct-ingress-design.md`](plans/2026-10-14-direct-ingress-design.md).
+
+```
+Browser ──TCP 443──▶ edge (nginx) ─┬─ HTTPS (browsers offer ALPN) ─▶ web ─▶ api
+                                   └─ TURN over TLS (no ALPN)     ─▶ LiveKit TURN (plain TCP inside)
+Browser ──TCP 80───▶ edge: Let's Encrypt's check, otherwise a redirect to HTTPS
+Browser ──UDP 7882 / TCP 7881 / UDP 3478 / UDP 30000-30100──▶ LiveKit
+```
+
+What to know first:
+- **The address is the site.** People open `https://49.13.x.x`. Browsers keep device keys, contacts and verified marks
+  per address, so the IP must not change: Terraform keeps it as a separate *Primary IP* that survives a rebuilt server
+  (`--destroy` deletes it too). Re-provisioning elsewhere = a new address and new contacts for everyone.
+- **Certificates live 6 days.** Let's Encrypt issues IP certificates only short-lived (160 hours) and only through the
+  HTTP check, so port 80 is open (it answers the check and redirects). A timer renews twice a day from about half-way;
+  the host dashboard shows how long is left (orange under 3 days, red under 2), and `deploy.sh` warns under 2 days.
+  If renewals fail for ~3 days, browsers refuse the site.
+- **Firefox and TURN over TLS.** Port 443 carries TURN over TLS for networks that allow nothing but HTTPS. Chrome and
+  Safari use it; Firefox ignores TURN over TLS to an IP address, so Firefox on such a network can't connect (it still
+  relays over UDP 3478 everywhere else).
+- **No Cloudflare in front.** Nothing absorbs floods or scans; `edge` limits connections and request rates per
+  address. Cloudflare no longer sees who visits.
+
+Set up (here as a second server named `direct`, next to a tunnel-mode one — see [named servers](#more-than-one-server)):
+
+1. `deploy/.env.hetzner.direct`:
+   ```
+   MEDIA_MODE=livekit
+   INGRESS_MODE=direct
+   HCLOUD_READ_TOKEN=…        # recommended: the usage guard follows this server's traffic
+   ```
+   No `TUNNEL_TOKEN`, `PUBLIC_HOST` or `LIVEKIT_TURN_DOMAIN` (the address is the IP).
+2. Optional `deploy/terraform/hetzner/terraform.direct.tfvars`, e.g. `server_type = "cx23"` (falls back to the shared
+   `terraform.tfvars`, then the defaults).
+3. `scripts/provision.sh --server direct` — creates `cipheroom-direct`, its Primary IP and a firewall with 80/443 and
+   LiveKit's ports.
+4. `scripts/deploy.sh --server direct` — starts the stack with a placeholder certificate, gets Let's Encrypt's through
+   port 80, then checks `https://<ip>/` from your machine with full certificate validation.
+
+**Any other Linux machine** with a public IPv4 (a home router can forward the ports, but the address must be static):
+set `MEDIA_MODE=livekit` and `LIVEKIT_NODE_IP=<public IPv4>` in `deploy/.env`, forward 80/tcp, 443/tcp, 7881/tcp,
+7882/udp, 3478/udp and 30000-30100/udp, then `scripts/up.sh --direct` and `scripts/ip-cert.sh`. Add `ip-cert.sh` to
+cron twice a day (the line is in its header).
+
+## More than one server
+
+`scripts/provision.sh` and `scripts/deploy.sh` take `--server <name>`; without it they mean `default`, the first
+server, with the file names used everywhere above. Each name has its own:
+
+| What | `default` | `--server <name>` |
+|---|---|---|
+| Hetzner server, firewall, SSH key entry | `cipheroom` | `cipheroom-<name>` |
+| Terraform state | `terraform.tfstate` | workspace `<name>` (`terraform.tfstate.d/<name>/`) |
+| Settings over `deploy/.env` | `deploy/.env.hetzner` | `deploy/.env.hetzner.<name>` (required) |
+| Terraform variables | `terraform.tfvars` | `terraform.tfvars`, then `terraform.<name>.tfvars` |
+| Inventory, pinned host keys | `deploy/ansible/inventory.ini`, `known_hosts` | `inventory.<name>.ini`, `known_hosts.<name>` |
+| SSH key | `~/.ssh/id_cipheroom` | `~/.ssh/id_cipheroom-<name>` (Hetzner refuses one key twice) |
+
+Tunnel-mode servers each need their own tunnel; `deploy.sh` compares against home and every other server's file.
+All of these files are gitignored.
+
 ## Updating and rolling back
 
 ```bash
@@ -171,7 +239,7 @@ themselves.
 
 | Layer | What |
 |---|---|
-| Hetzner firewall | inbound 22/tcp from `allowed_ssh_cidrs` only (never `0.0.0.0/0`); everything else dropped |
+| Hetzner firewall | inbound 22/tcp from `allowed_ssh_cidrs` only (never `0.0.0.0/0`); LiveKit's ports in LiveKit mode, 80/443 in direct mode; everything else dropped |
 | SSH | key only, no root, `AllowUsers cipheroom`, no forwarding, fail2ban (5 failures → 1 h ban) |
 | Host firewall | ufw: deny incoming, allow 22 (second layer; `web` listens on 127.0.0.1 only) |
 | Updates | unattended security upgrades, nightly reboot window |
@@ -187,6 +255,9 @@ scripts/provision.sh            # applies the change
 scripts/provision.sh --destroy  # asks you to type the server name
 ```
 
+A named server: set `protection = false` in `terraform.<name>.tfvars` and add `--server <name>` to both commands (a
+direct-mode server's Primary IP goes too).
+
 Then delete the server's tunnel in Cloudflare Zero Trust if you don't need it any more. Terraform's state
 (`deploy/terraform/hetzner/terraform.tfstate`) lives only on your machine; keep it while the server exists.
 
@@ -196,7 +267,9 @@ Then delete the server's tunnel in Cloudflare Zero Trust if you don't need it an
 |---|---|
 | `.github/workflows/images.yml` | builds and publishes the images (`sha-<commit>`, `main`, release tags) |
 | `deploy/terraform/hetzner/` | server, firewall, SSH key, cloud-init; `terraform.tfvars.example` |
-| `deploy/ansible/site.yml` | playbook: roles `base`, `docker`, `cipheroom` (includes `certs` for LiveKit TURN); the media mode comes from `MEDIA_MODE` in `.env` |
+| `deploy/ansible/site.yml` | playbook: roles `base`, `docker`, `cipheroom` (includes `certs`: a TURN domain via DNS, or the IP certificate in direct mode); modes from `MEDIA_MODE` and `INGRESS_MODE` in `.env` |
+| `deploy/nginx/edge.conf` | direct mode's edge proxy (443 split, TLS, port 80) |
+| `scripts/up.sh --direct`, `scripts/ip-cert.sh` | direct mode on a machine without Ansible |
 | `deploy/.env.hetzner.example` | template for the server's own keys (tunnel, hostname) |
-| `scripts/provision.sh` | Terraform wrapper (`--destroy`) |
-| `scripts/deploy.sh` | Ansible wrapper (`--tag`, `--no-observability`, `--yes`) |
+| `scripts/provision.sh` | Terraform wrapper (`--server`, `--destroy`) |
+| `scripts/deploy.sh` | Ansible wrapper (`--server`, `--tag`, `--no-observability`, `--yes`) |
