@@ -9,13 +9,17 @@ instance such as a beta. **This costs money** (billed by Hetzner); the home setu
 ```
 GitHub Actions ──push──▶ GHCR images (sha-<commit>)
 Your laptop ── terraform ──▶ Hetzner server (Ubuntu 26.04, SSH from your IP only)
-            ── ansible ────▶   Docker: api, web, cloudflared (+ LiveKit, + observability)
+            ── ansible ────▶   Docker: api, web, cloudflared or edge (+ LiveKit, + observability)
 ```
 
 - `scripts/provision.sh` (Terraform) creates the server, a dedicated SSH key, and a firewall that only lets SSH in from
-  your IP. In LiveKit mode the firewall also opens LiveKit's media and TURN ports.
+  your IP. In LiveKit mode the firewall also opens LiveKit's media and TURN ports; in direct mode also 80/443, and
+  the IP becomes a Primary IP that survives a rebuilt server.
 - `scripts/deploy.sh` (Ansible) hardens the server (SSH, fail2ban, firewall, automatic security updates), installs
-  Docker, copies the merged `.env` (mode 600, never printed), starts the stack, and checks it through the tunnel.
+  Docker, copies the merged `.env` (mode 600, never printed, only the keys this mode uses), starts the stack, and
+  checks it from outside: through the tunnel, or in direct mode `https://<ip>` with a valid certificate.
+- **Several servers**: `--server <name>` on both scripts gives each server its own Terraform workspace, settings file
+  (`deploy/.env.hetzner.<name>`), inventory, pinned host keys and SSH key. Without it they mean the first server.
 
 ## First deploy (short version)
 
@@ -25,6 +29,10 @@ Your laptop ── terraform ──▶ Hetzner server (Ubuntu 26.04, SSH from yo
    `TUNNEL_TOKEN` and `PUBLIC_HOST`. Two stacks behind one tunnel split calls at random.
 4. `scripts/provision.sh`: review the plan, then confirm.
 5. `scripts/deploy.sh`.
+
+For a server **without Cloudflare** (direct mode), put `MEDIA_MODE=livekit` and `INGRESS_MODE=direct` in
+`deploy/.env.hetzner.<name>` instead of a tunnel, then `scripts/provision.sh --server <name>` and
+`scripts/deploy.sh --server <name>`; the site is `https://<server IP>`. See [[Media modes]].
 
 ## Updating, rolling back, resizing
 

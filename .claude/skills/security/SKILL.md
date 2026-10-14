@@ -61,8 +61,9 @@ compromised client devices.
 ### nginx / Cloudflare / Docker (`deploy/`)
 - Security headers live at **server level** in `deploy/nginx/default.conf` (an `add_header` in a location silently drops them): CSP, `Referrer-Policy: no-referrer`, `Permissions-Policy`, `X-Content-Type-Options`, `Strict-Transport-Security` (this host only). A location with its own `add_header` (the `/grafana/` ones) repeats what it still needs, HSTS included.
 - Cloudflare dashboard: SSL/TLS mode Full, "Always Use HTTPS" on, HSTS on (a second layer to nginx's), minimum TLS 1.2.
-- Only the web container is published, and only on `127.0.0.1`. At home no UDP or media ports are published — media goes to Cloudflare. In LiveKit mode on a server, only LiveKit's media and TURN ports are (never its 7880 signaling/API port).
-- Networks: edge services (api, web, livekit, cloudflared) on `default`; telemetry on internal networks (`telemetry`, plus `otlp` = api + collector, `grafana` = web + Grafana). A new service joins only the networks it needs; nothing internet-facing joins `telemetry`.
+- Only the web container is published, and only on `127.0.0.1` — except `edge` in direct mode (80/443). At home no UDP or media ports are published — media goes to Cloudflare. In LiveKit mode LiveKit runs in the host's network (its TURN relay must reach its own ICE port): its public media/TURN ports are opened in ufw and Terraform; its 7880 API is bound to loopback and the `livekit` bridge gateway only (`--bind`), and 7880/5349 are allowed in ufw from 172.30.0.0/24 only. Media is limited to the public IP (`rtc.ips.includes`).
+- edge (`deploy/nginx/edge.conf`, direct mode): TLS 1.2+ only, client-address headers always overwritten, PROXY protocol only on its internal sockets, every `proxy_set_header` at server level (one in a location drops all inherited ones — Host included).
+- Networks: edge services (api, web, edge, cloudflared) on `default`; telemetry on internal networks (`telemetry`, plus `otlp` = api + collector, `grafana` = web + Grafana). A new service joins only the networks it needs; nothing internet-facing joins `telemetry`. LiveKit on the host network can reach those addresses (open follow-up SA-2026-10-14-02); don't add more host-network services.
 - Dependencies: Dependabot (`.github/dependabot.yml`, weekly, grouped, release cooldown). Dockerfile base images are pinned by digest; review and test each update PR like any change.
 - SSH on servers: key-only, `AllowUsers`, modern algorithms only (`sshd.conf.j2`), no keys for root.
 - Containers run as non-root (`USER app`, nginx-unprivileged) where the image allows. Every service gets the compose file's `x-hardening` block (`cap_drop: [ALL]`, `no-new-privileges`); a service that needs a capability adds just that one with a comment; `privileged` only for cadvisor. Images are pinned to versions, never `latest`.
@@ -85,6 +86,7 @@ compromised client devices.
 - Never commit `.env`, tokens, certs or tunnel credentials. Run `scripts/security-check.sh` before committing deploy changes.
 - A secret pasted into chat, logs or an issue is burned. Recommend rotating it in the Cloudflare dashboard (SFU app secret, TURN token, tunnel token), then update `deploy/.env`.
 - Rotation must not need a code change: everything goes through env vars.
+- Each server's `.env` holds only what its mode reads (`cipheroom_env_unused` in the cipheroom role): no Cloudflare keys in LiveKit mode, no tunnel token in direct mode. A new secret is added to that list for the modes that don't use it.
 
 ## Review checklist
 - [ ] New hub method or endpoint: input validated, authorised (member/admitted/host), rate-limited, targeted relay only.

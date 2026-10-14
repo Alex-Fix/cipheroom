@@ -57,9 +57,9 @@ server, and a browser that can't encrypt can't join.
 
 ## How it works
 
-The website and all signaling always go through a Cloudflare Tunnel to one hostname, so the server needs no inbound
-web ports. Media goes to an SFU (a server that forwards each person's encrypted streams to the others), chosen per
-deployment with `MEDIA_MODE`:
+By default the website and all signaling go through a Cloudflare Tunnel to one hostname, so the server needs no
+inbound web ports. Media goes to an SFU (a server that forwards each person's encrypted streams to the others), chosen
+per deployment with `MEDIA_MODE`; with `INGRESS_MODE=direct` the server also serves the website itself:
 
 **Cloudflare mode** (default, at home, free): media goes to Cloudflare's edge, and nothing at home is reachable from
 the internet.
@@ -80,7 +80,18 @@ Browser ──HTTPS/WSS──▶ Cloudflare Tunnel ──▶ nginx ──▶ .NE
    └── encrypted media (UDP 7882 / TCP 7881; TURN on 3478/udp, TLS 443) ──▶ LiveKit SFU (same server)
 ```
 
-In both modes the api checks that people only receive tracks from their own room, and the media server only ever
+**Direct mode** (`INGRESS_MODE=direct` on top of LiveKit mode; no Cloudflare, no domain): the server answers HTTPS
+itself at `https://<its IP>` with a free Let's Encrypt certificate for the IP address (renewed every few days). Port
+443 carries both the site and TURN over TLS: an `edge` proxy tells them apart by what the client offers (browsers'
+HTTPS offers ALPN, WebRTC's TURN doesn't).
+
+```
+Browser ──HTTPS/WSS (443)──▶ edge ──▶ nginx ──▶ .NET api ──(internal)──▶ LiveKit signaling
+   │                          └── TURN over TLS (443) ──┐                  │
+   └── encrypted media (UDP 7882 / TCP 7881; TURN 3478/udp) ──▶ LiveKit SFU (same server, host network)
+```
+
+In every mode the api checks that people only receive tracks from their own room, and the media server only ever
 sees encrypted frames.
 
 | Component | Tech |
@@ -88,8 +99,8 @@ sees encrypted frames.
 | Backend | .NET 10, ASP.NET Core, SignalR (Clean Architecture, Mediator, FluentValidation) |
 | Frontend | Angular 22, plain WebRTC; our own frame encryption (WebCrypto AES-GCM in a worker) |
 | Media server | Cloudflare Realtime SFU (free tier: 1 TB/month, shared with TURN), **or** self-hosted LiveKit with built-in TURN |
-| Ingress | Cloudflare Tunnel (`cloudflared`) on one hostname |
-| Runtime | Docker Compose: api, web (nginx), cloudflared; profiles for LiveKit and the observability stack |
+| Ingress | Cloudflare Tunnel (`cloudflared`) on one hostname, **or** `edge` (nginx) on the server's IP with a Let's Encrypt IP certificate |
+| Runtime | Docker Compose: api, web (nginx), cloudflared; profiles for LiveKit, direct ingress (edge) and the observability stack |
 | Observability (optional) | OpenTelemetry → collector, Prometheus, Loki, Tempo, Grafana; pseudonymous, 7 days |
 | Infrastructure (optional) | GitHub Actions → GHCR images; Terraform (Hetzner server + firewall) and Ansible (hardening + stack) |
 
@@ -154,15 +165,16 @@ is ~3.6 GB per viewer-hour against the 1 TB/month free tier. The usage guard enf
 
 | Command | What it does |
 |---|---|
-| `scripts/up.sh [--tunnel] [--observability]` | Build and start the stack (`--observability`: Grafana at `/grafana/`, see [`docs/observability.md`](docs/observability.md)) |
+| `scripts/up.sh [--tunnel \| --direct] [--observability]` | Build and start the stack (`--observability`: Grafana at `/grafana/`, see [`docs/observability.md`](docs/observability.md); `--direct`: no Cloudflare, see below) |
+| `scripts/ip-cert.sh` | Direct mode without Ansible: get or renew the Let's Encrypt certificate for this machine's IP (cron, twice a day) |
 | `scripts/down.sh` | Stop everything |
 | `scripts/logs.sh [service]` | Follow logs (`api`, `web`, `cloudflared`, `otel-collector`, `grafana`, …) |
 | `scripts/test.sh [--server\|--web]` | Run tests |
 | `scripts/lint.sh [--fix]` | Formatting and lint |
 | `scripts/security-check.sh [url]` | Secret scan, dependency audit, security headers |
 | `scripts/secrets.sh` | Create `deploy/.env` and list required values that are still empty |
-| `scripts/provision.sh [--destroy]` | Create or update the Hetzner server (Terraform) — [`docs/deployment-hetzner.md`](docs/deployment-hetzner.md) |
-| `scripts/deploy.sh [--tag <tag>] [--no-observability]` | Deploy or roll back the server from GHCR images (Ansible; Grafana on by default) |
+| `scripts/provision.sh [--server <name>] [--destroy]` | Create or update a Hetzner server (Terraform; one per name) — [`docs/deployment-hetzner.md`](docs/deployment-hetzner.md) |
+| `scripts/deploy.sh [--server <name>] [--tag <tag>] [--no-observability]` | Deploy or roll back that server from GHCR images (Ansible; Grafana on by default) |
 
 ## Roadmap
 
@@ -200,8 +212,8 @@ Three modes, chosen per deployment with `MEDIA_MODE` and `INGRESS_MODE`:
 - [x] Infrastructure as code for Hetzner: GitHub Actions publishes the images to GHCR, Terraform creates a firewalled
   server, Ansible hardens it and runs the stack in either mode
   ([`docs/deployment-hetzner.md`](docs/deployment-hetzner.md)). The beta runs this way: Hetzner cpx42, LiveKit mode.
-- [x] Security audit of the app and the live server (2026-10-11): all findings fixed or mitigated
-  ([`docs/security/audits/`](docs/security/audits/README.md)).
+- [x] Security audits of the app and the live servers: 2026-10-11 (all findings fixed or mitigated) and 2026-10-14
+  (direct mode: no Critical/High, one Medium follow-up) ([`docs/security/audits/`](docs/security/audits/README.md)).
 
 The self-hosted modes need a public IP (and open UDP ports for media). On Hetzner they also cost money, unlike the
 default mode at home, which stays free.
