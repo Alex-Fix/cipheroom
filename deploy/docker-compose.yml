@@ -71,6 +71,9 @@ services:
     depends_on:
       api:
         condition: service_healthy
+        # nginx resolves `api` once at start: when the api container is recreated (new address) without web, web would
+        # keep proxying /api and /hubs to whatever now holds the old address. Restart web with it.
+        restart: true
     networks: [default, grafana]
     restart: unless-stopped
 
