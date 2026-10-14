@@ -43,7 +43,9 @@ if [[ "$DIRECT" == true ]]; then
   edge_dir="$DEPLOY_DIR/edge"
   mkdir -p "$edge_dir/tls" "$edge_dir/acme" "$edge_dir/letsencrypt"
   # LiveKit's TURN behind edge: TLS ends at edge, plain TCP to 5349; browsers are told turns:<ip>:443.
-  { cat "$DEPLOY_DIR/livekit/livekit.yaml"; printf '%s\n' "turn:" "  enabled: true" "  domain: $ip" "  tls_port: 5349" \
+  # Host network: media only on the public IP (not Docker's bridges, which its own TURN relay can't answer from).
+  { awk -v ip="$ip" '{ print } /^rtc:/ { print "  ips:"; print "    includes: [\"" ip "/32\"]" }' "$DEPLOY_DIR/livekit/livekit.yaml"
+    printf '%s\n' "turn:" "  enabled: true" "  domain: $ip" "  tls_port: 5349" \
       "  external_tls: true" "  udp_port: 3478" "  relay_range_start: 30000" "  relay_range_end: 30100"; } >"$edge_dir/livekit.yaml"
   # edge needs a certificate to start: a self-signed placeholder until scripts/ip-cert.sh has Let's Encrypt's.
   if [[ ! -f "$edge_dir/tls/fullchain.pem" ]]; then

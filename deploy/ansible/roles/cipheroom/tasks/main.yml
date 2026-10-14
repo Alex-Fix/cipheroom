@@ -111,6 +111,7 @@
     owner: root
     group: root
     mode: "0644"
+  register: cipheroom_livekit_conf
 
 - name: TURN certificate
   ansible.builtin.include_role:
@@ -204,6 +205,11 @@
     - name: Edge proxy picks up a changed configuration
       ansible.builtin.command: "{{ cipheroom_compose }} restart edge"
       when: cipheroom_ingress_mode == 'direct' and cipheroom_edge_conf is changed
+      changed_when: true
+
+    - name: LiveKit picks up a changed configuration
+      ansible.builtin.command: "{{ cipheroom_compose }} restart livekit"
+      when: cipheroom_media_mode == 'livekit' and cipheroom_livekit_conf is changed
       changed_when: true
 
     # Only the app: a crash-looping cloudflared (bad token) makes --wait flaky; the tunnel check below catches it.

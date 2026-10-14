@@ -1,5 +1,10 @@
 # Managed by Ansible: deploy/livekit/livekit.yaml{{ ' plus TURN for ' ~ cipheroom_turn_domain if cipheroom_turn_domain else (' plus TURN behind the edge proxy' if cipheroom_ingress_mode == 'direct' else '') }}.
-{{ lookup('ansible.builtin.file', playbook_dir ~ '/../livekit/livekit.yaml') }}
+# LiveKit runs in the host's network: media (ICE) only on this server's public IP. Otherwise it also opens sockets on
+# Docker's bridge addresses and may answer its own TURN relay from one of them, which the relay drops (no permission
+# for that address) — forced-relay calls then fail, depending on start-up order.
+{{ (lookup('ansible.builtin.file', playbook_dir ~ '/../livekit/livekit.yaml') | from_yaml)
+   | combine({'rtc': {'ips': {'includes': [ansible_host ~ '/32']}}}, recursive=True)
+   | to_nice_yaml(indent=2, sort_keys=False) }}
 {% if cipheroom_ingress_mode == 'direct' %}
 # Built-in TURN behind the edge proxy (INGRESS_MODE=direct): edge terminates TLS on 443 with the IP certificate and
 # passes TURN on as plain TCP to 5349 (compose network only). LiveKit advertises turns:<this IP>:443 to browsers —
