@@ -15,7 +15,7 @@ Realtime SFU, and the api only makes outbound HTTPS calls to Cloudflare.
 | `api` | `src/Cipheroom.Api/Dockerfile` | 8080 internal | env from `.env`: `Sfu__Cloudflare__*` (required), `Turn__*` |
 | `web` | `web/Dockerfile` | 8080 internal (`127.0.0.1:${WEB_PORT}` on host) | nginx, serves the app, proxies `/api` + `/hubs` to api |
 | `cloudflared` | `cloudflare/cloudflared` | none | profile `tunnel`; `tunnel run --token ${TUNNEL_TOKEN}` |
-| `edge` | `nginxinc/nginx-unprivileged` (digest-pinned) | 80, 443 | profile `direct` only: `deploy/nginx/edge.conf` (a whole nginx.conf) — TLS with the IP certificate, 443 split by ALPN (HTTPS → `web`, no ALPN = TURN over TLS → LiveKit `172.30.0.1:5349`), 80 = ACME check + redirect |
+| `edge` | `nginxinc/nginx-unprivileged` (digest-pinned) | 80, 443 | profile `edge` (direct mode, or LiveKit with a TURN domain): `deploy/nginx/edge.conf` (a whole nginx.conf) — TLS with the IP or TURN-domain certificate, 443 split by ALPN (HTTPS → `web`, no ALPN = TURN over TLS → LiveKit `172.30.0.1:5349`), 80 = ACME check + redirect |
 | `otel-collector`, `prometheus`, `loki`, `tempo`, `grafana`, `node-exporter`, `cadvisor` | pinned images | none | profile `observability` (`scripts/up.sh --observability`): `deploy/observability/`, `mem_limit` each, 7-day retention, named volumes. Grafana via nginx `/grafana/`, protected by its own hardened login (nginx rate-limits `/grafana/login`). See `docs/observability.md`. |
 
 No media server runs at home and no UDP ports are published.

@@ -1,10 +1,21 @@
-# Let's Encrypt certificates, one of two ways:
-# - dns (tunnel + LiveKit with LIVEKIT_TURN_DOMAIN): a name for LiveKit's TURN over TLS, via the DNS check
-# - ip (INGRESS_MODE=direct): the server's IPv4 for the edge proxy (site and TURN over TLS), via the HTTP check
-- name: Certificate by DNS check
-  ansible.builtin.include_tasks: dns.yml
-  when: certs_mode == 'dns'
+# Let's Encrypt certificates for the edge proxy, which terminates TLS for LiveKit's TURN over TLS and, in direct mode,
+# for the site. LiveKit itself never holds a certificate (it runs unprivileged behind edge).
+# - dns: a name (LIVEKIT_TURN_DOMAIN, tunnel mode), through the Cloudflare DNS check; port 80 stays closed
+# - ip:  the server's IPv4 (INGRESS_MODE=direct), through the HTTP check that edge answers on port 80
+# Called twice by the cipheroom role: certs_step prepare (before the stack: directories, a placeholder so edge can
+# start, hook, timer) and issue (dns: right away; ip: once edge answers on port 80).
+- name: Prepare
+  ansible.builtin.include_tasks: prepare.yml
+  when: certs_step == 'prepare'
 
-- name: Certificate for the IP address
+- name: Issue by DNS check
+  ansible.builtin.include_tasks: dns.yml
+  when: certs_step == 'issue' and certs_mode == 'dns'
+
+- name: Issue by HTTP check
   ansible.builtin.include_tasks: ip.yml
-  when: certs_mode == 'ip'
+  when: certs_step == 'issue' and certs_mode == 'ip'
+
+- name: After issuing
+  ansible.builtin.include_tasks: installed.yml
+  when: certs_step == 'issue'

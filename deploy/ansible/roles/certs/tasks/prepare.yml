@@ -1,0 +1,99 @@
+# Root only: also holds the Cloudflare DNS token for certbot (DNS check). Docker mounts the tls directory as root.
+- name: Credentials directory
+  ansible.builtin.file:
+    path: /etc/cipheroom
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+# gid 101 = edge's nginx in the container; on an Ubuntu host it's the (memberless) lxd group, so `ls` shows lxd.
+- name: Certificate directory read by edge (nginx runs as uid/gid 101 in the container)
+  ansible.builtin.file:
+    path: "{{ certs_tls_dir }}"
+    state: directory
+    owner: root
+    group: "101"
+    mode: "0750"
+
+- name: Directories for the HTTP check's files and the certificate's expiry (node-exporter textfile collector)
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop: ["{{ certs_acme_dir }}", "{{ certs_textfile_dir }}"]
+
+# Never counts as deployed: the cipheroom role's final checks need the real certificate.
+- name: Self-signed placeholder until the first certificate
+  ansible.builtin.command: >-
+    openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -days 2 -subj /CN=cipheroom-placeholder
+    -addext subjectAltName={{ certs_san }}
+    -keyout {{ certs_tls_dir }}/privkey.pem -out {{ certs_tls_dir }}/fullchain.pem
+  args:
+    creates: "{{ certs_tls_dir }}/fullchain.pem"
+
+- name: Placeholder readable by edge only
+  ansible.builtin.file:
+    path: "{{ certs_tls_dir }}/{{ item }}"
+    owner: root
+    group: "101"
+    mode: "0640"
+  loop: [fullchain.pem, privkey.pem]
+
+- name: Deploy hook (copies the certificate for edge, reloads it, records the expiry)
+  ansible.builtin.template:
+    src: cipheroom-cert-deploy.sh.j2
+    dest: /usr/local/sbin/cipheroom-cert-deploy
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Renewal script
+  ansible.builtin.template:
+    src: cipheroom-cert-renew.sh.j2
+    dest: /usr/local/sbin/cipheroom-cert-renew
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Renewal service
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/cipheroom-cert-renew.service
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=Renew the edge certificate (Let's Encrypt) and reload the edge proxy
+      After=docker.service
+      Requires=docker.service
+
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/local/sbin/cipheroom-cert-renew
+  notify: Reload systemd
+
+# IP certificates live 160 hours: try twice a day (certbot renews from about half-way). DNS ones: nightly is plenty.
+- name: Renewal timer
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/cipheroom-cert-renew.timer
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=Edge certificate renewal
+
+      [Timer]
+      OnCalendar={{ '*-*-* 00/12:00:00 UTC' if certs_mode == 'ip' else '*-*-* ' ~ certs_renew_time ~ ':00 UTC' }}
+      RandomizedDelaySec={{ '1h' if certs_mode == 'ip' else '0' }}
+      Persistent=true
+
+      [Install]
+      WantedBy=timers.target
+  notify: Reload systemd
+
+- name: Apply systemd changes
+  ansible.builtin.meta: flush_handlers

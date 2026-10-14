@@ -1,15 +1,12 @@
 #!/bin/bash
-# Managed by Ansible (deploy/ansible/roles/certs). Renews the TURN certificate if due and restarts LiveKit when the
-# certificate changed (LiveKit reads it at start). Runs from cipheroom-cert-renew.timer in the night window.
+# Managed by Ansible (deploy/ansible/roles/certs). Renews the edge certificate when due (certbot decides, following
+# Let's Encrypt's renewal info) and hands it to edge. Runs from cipheroom-cert-renew.timer; a failure shows in
+# `systemctl --failed` and, with observability, on the host dashboard's certificate panel.
 set -euo pipefail
-cert=/etc/letsencrypt/live/{{ certs_domain }}/fullchain.pem
-before="$(sha256sum "$(readlink -f "$cert")" | cut -d' ' -f1)"
-docker run --rm \
-  -v /etc/letsencrypt:/etc/letsencrypt \
-  -v /etc/cipheroom/cloudflare-dns.ini:/cloudflare-dns.ini:ro \
-  {{ certs_certbot_image }} renew --quiet
-after="$(sha256sum "$(readlink -f "$cert")" | cut -d' ' -f1)"
-if [[ "$before" != "$after" ]]; then
-  docker compose --project-directory {{ cipheroom_dir }} -f {{ cipheroom_dir }}/docker-compose.yml \
-    --env-file {{ cipheroom_dir }}/.env --profile livekit restart livekit
-fi
+{% if certs_mode == 'ip' %}
+{{ certs_compose_run }} -v /etc/letsencrypt:/etc/letsencrypt -v {{ certs_acme_dir }}:/acme-webroot certbot renew --quiet
+{% else %}
+{{ certs_compose_run }} -v /etc/letsencrypt:/etc/letsencrypt -v /etc/cipheroom/cloudflare-dns.ini:/cloudflare-dns.ini:ro \
+  certbot-dns renew --quiet
+{% endif %}
+/usr/local/sbin/cipheroom-cert-deploy

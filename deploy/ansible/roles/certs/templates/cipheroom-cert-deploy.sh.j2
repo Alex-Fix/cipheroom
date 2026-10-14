@@ -1,17 +1,19 @@
 #!/bin/bash
-# Managed by Ansible (deploy/ansible/roles/certs). Copies Let's Encrypt's current IP certificate to where the edge proxy
-# reads it, reloads edge when it changed (graceful: open calls and TURN connections stay), and records the expiry for
-# the server dashboard. Run by Ansible after issuing and by cipheroom-cert-renew.
+# Managed by Ansible (deploy/ansible/roles/certs). Copies Let's Encrypt's current certificate to where the edge proxy
+# reads it, reloads edge when it changed and edge is running (graceful: open calls and TURN connections stay), and
+# records the expiry for the server dashboard. Run by Ansible after issuing and by cipheroom-cert-renew.
 set -euo pipefail
-live=/etc/letsencrypt/live/cipheroom
+live=/etc/letsencrypt/live/{{ certs_live_name }}
 tls={{ certs_tls_dir }}
+compose=(docker compose --project-directory {{ cipheroom_dir }} -f {{ cipheroom_dir }}/docker-compose.yml --profile edge)
 if ! cmp -s "$live/fullchain.pem" "$tls/fullchain.pem" || ! cmp -s "$live/privkey.pem" "$tls/privkey.pem"; then
   install -o root -g 101 -m 0640 "$live/privkey.pem" "$tls/privkey.pem.new"
   install -o root -g 101 -m 0640 "$live/fullchain.pem" "$tls/fullchain.pem.new"
   mv "$tls/privkey.pem.new" "$tls/privkey.pem"
   mv "$tls/fullchain.pem.new" "$tls/fullchain.pem"
-  docker compose --project-directory {{ cipheroom_dir }} -f {{ cipheroom_dir }}/docker-compose.yml \
-    --env-file {{ cipheroom_dir }}/.env --profile direct exec -T edge nginx -s reload
+  if [[ -n "$("${compose[@]}" ps --status running -q edge 2>/dev/null)" ]]; then
+    "${compose[@]}" exec -T edge nginx -s reload
+  fi
   echo installed
 fi
 expires="$(date -d "$(openssl x509 -in "$tls/fullchain.pem" -noout -enddate | cut -d= -f2)" +%s)"

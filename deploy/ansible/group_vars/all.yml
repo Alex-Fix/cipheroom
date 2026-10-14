@@ -21,8 +21,11 @@ cipheroom_env_overlay: "{{ playbook_dir }}/../.env.hetzner"
 base_reboot_time: "04:30"
 base_swap_mb: 2048 # 0 = no swap file
 
-# LiveKit mode with TURN: Let's Encrypt via the DNS check (certbot's Cloudflare plugin), renewed at this time (UTC).
-certs_certbot_image: certbot/dns-cloudflare:v5.8.0
+# Let's Encrypt for the edge proxy: certbot runs as the compose services `certbot` / `certbot-dns` (profile certs, so
+# Dependabot keeps their images current). A TURN domain renews nightly at this time (UTC), an IP certificate every 12 h.
+certs_compose_run: >-
+  docker compose --project-directory {{ cipheroom_dir }} -f {{ cipheroom_dir }}/docker-compose.yml --profile certs
+  run --rm --no-deps
 certs_renew_time: "04:30"
 # Direct mode: the edge proxy's certificate, the HTTP check's files, and the expiry for node-exporter's textfile collector.
 certs_tls_dir: /etc/cipheroom/tls

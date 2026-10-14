@@ -80,14 +80,16 @@ services:
   # MEDIA_MODE=livekit (profile livekit): a self-hosted SFU on this machine's public IP. It runs in the host's network,
   # as LiveKit recommends: its built-in TURN relays to its own ICE port at the public IP, and through Docker's port
   # mapping those packets never came back (forced-relay calls failed). Its ports are therefore the host's:
-  #   public (opened by Terraform): 7881/tcp, 7882/udp media; 3478/udp, 30000-30100/udp TURN; 443/tcp TURN over TLS
-  #     (with LIVEKIT_TURN_DOMAIN — needs NET_BIND_SERVICE in the host's namespace)
+  #   public (opened by Terraform and ufw): 7881/tcp, 7882/udp media; 3478/udp, 30000-30100/udp TURN
   #   internal: 7880 signaling/API — bound to loopback and the `livekit` bridge's gateway only (browsers reach it through
-  #     the api's relay); 5349 plain TCP TURN behind edge (direct mode) — every interface, kept off the internet by the
-  #     Hetzner firewall and ufw (allowed from the `livekit` bridge only)
+  #     the api's relay); 5349 plain TCP TURN behind edge, which terminates TURN over TLS on 443 — every interface,
+  #     kept off the internet by the Hetzner firewall and ufw (allowed from the `livekit` bridge only)
+  # It runs as uid 10002 with no capabilities (no port below 1024, no certificate to read), and ufw rejects new
+  # connections from that uid to Docker's private ranges, so it can't reach the internal services the host can
+  # (SA-2026-10-14-02).
   livekit:
     <<: *hardening
-    cap_add: [NET_BIND_SERVICE]
+    user: "10002:10002"
     image: livekit/livekit-server:v1.13.9
     network_mode: host
     command: ["--config", "/etc/livekit.yaml", "--node-ip", "${LIVEKIT_NODE_IP:-127.0.0.1}", "--bind", "127.0.0.1", "--bind", "172.30.0.1"]
@@ -96,14 +98,12 @@ services:
     volumes:
       # scripts/up.sh --direct uses a generated copy with TURN behind the edge proxy (deploy/edge/livekit.yaml).
       - ${LIVEKIT_CONFIG:-./livekit/livekit.yaml}:/etc/livekit.yaml:ro
-      # TURN over TLS (server, LIVEKIT_TURN_DOMAIN): Let's Encrypt's directory; empty and unused otherwise.
-      - ${LIVEKIT_CERTS_DIR:-./livekit/certs}:/certs:ro
     restart: unless-stopped
     profiles: [livekit]
 
-  # INGRESS_MODE=direct (profile direct): HTTPS on this machine's public IP with a Let's Encrypt IP certificate, no
-  # Cloudflare. 443 is shared by the site and LiveKit's TURN over TLS (split by ALPN); 80 answers the certificate check
-  # and redirects. Design: docs/plans/2026-10-14-direct-ingress-design.md
+  # Profile edge: TLS on 443 for LiveKit's TURN over TLS (LIVEKIT_TURN_DOMAIN) and, with INGRESS_MODE=direct, for the
+  # site itself on this machine's public IP (Let's Encrypt IP certificate, no Cloudflare): split by ALPN; 80 answers
+  # the certificate check and redirects. Design: docs/plans/2026-10-14-direct-ingress-design.md
   edge:
     <<: *hardening
     image: nginxinc/nginx-unprivileged:1.31-alpine@sha256:b9241c6e7b8e9a862f129d8d4199ab64b10390949a78bdd5603379b32c844083
@@ -118,7 +118,20 @@ services:
     depends_on: [web]
     networks: [default, livekit]
     restart: unless-stopped
-    profiles: [direct]
+    profiles: [edge]
+
+  # Let's Encrypt (profile certs, one-off `docker compose run`): the HTTP check for IP certificates (certbot) and the
+  # Cloudflare DNS check for a TURN domain (certbot-dns). Declared here so Dependabot keeps them current; the callers
+  # (Ansible's certs role, scripts/ip-cert.sh) mount the directories they need.
+  certbot:
+    image: certbot/certbot:v5.8.0@sha256:f70ad0adbb7e117f0fe42a63c553f28ea451edabc0148757b6efcd9735acaa20
+    network_mode: bridge
+    profiles: [certs]
+
+  certbot-dns:
+    image: certbot/dns-cloudflare:v5.8.0@sha256:c45edb002b883da1a1235abb205dff474a7a1a459d878e8d5fdc7f9d83073aea
+    network_mode: bridge
+    profiles: [certs]
 
   cloudflared:
     <<: *hardening

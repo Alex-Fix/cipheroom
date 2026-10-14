@@ -55,7 +55,7 @@ if [[ "$DIRECT" == true ]]; then
   fi
   export LIVEKIT_CONFIG=./edge/livekit.yaml PUBLIC_HOST="$ip" \
     API_ALLOWED_HOSTS="$ip;localhost"
-  COMPOSE+=(--profile direct)
+  COMPOSE+=(--profile edge)
 fi
 
 if [[ "$OBSERVABILITY" == true ]]; then

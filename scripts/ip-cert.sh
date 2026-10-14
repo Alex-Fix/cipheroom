@@ -8,15 +8,16 @@
 source "$(dirname "$0")/_common.sh"
 require_env
 
-CERTBOT_IMAGE=certbot/certbot:v5.8.0
 edge_dir="$DEPLOY_DIR/edge"
 ip="$(grep -E '^LIVEKIT_NODE_IP=' "$DEPLOY_DIR/.env" | tail -1 | cut -d= -f2- || true)"
 [[ "$ip" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || die "set this machine's public IPv4 in LIVEKIT_NODE_IP (deploy/.env)"
 [[ -d "$edge_dir/acme" ]] || die "start the stack first: scripts/up.sh --direct"
-"${COMPOSE[@]}" --profile direct ps --status running edge | grep -q edge || die "edge isn't running: scripts/up.sh --direct"
+"${COMPOSE[@]}" --profile edge ps --status running edge | grep -q edge || die "edge isn't running: scripts/up.sh --direct"
 
 certbot() {
-  docker run --rm -v "$edge_dir/letsencrypt:/etc/letsencrypt" -v "$edge_dir/acme:/acme-webroot" "$CERTBOT_IMAGE" "$@"
+  # The pinned image from docker-compose.yml (profile certs), kept current by Dependabot.
+  "${COMPOSE[@]}" --profile certs run --rm --no-deps -v "$edge_dir/letsencrypt:/etc/letsencrypt" \
+    -v "$edge_dir/acme:/acme-webroot" certbot "$@"
 }
 if [[ -f "$edge_dir/letsencrypt/live/cipheroom/fullchain.pem" ]]; then
   certbot renew --quiet
@@ -28,13 +29,14 @@ fi
 
 # Let's Encrypt's files are root's (written in the container): copy them in a container too, readable by edge's
 # nginx (uid 101) and nobody else. Reload only when they changed.
-changed="$(docker run --rm -v "$edge_dir/letsencrypt:/le:ro" -v "$edge_dir/tls:/tls" --entrypoint sh "$CERTBOT_IMAGE" -c '
+changed="$("${COMPOSE[@]}" --profile certs run --rm --no-deps -v "$edge_dir/letsencrypt:/le:ro" -v "$edge_dir/tls:/tls" \
+  --entrypoint sh certbot -c '
   live=/le/live/cipheroom
   if cmp -s "$live/fullchain.pem" /tls/fullchain.pem && cmp -s "$live/privkey.pem" /tls/privkey.pem; then exit 0; fi
   install -o 0 -g 101 -m 0640 "$live/privkey.pem" /tls/privkey.pem
   install -o 0 -g 101 -m 0640 "$live/fullchain.pem" /tls/fullchain.pem
   echo changed')"
 if [[ "$changed" == changed ]]; then
-  "${COMPOSE[@]}" --profile direct exec -T edge nginx -s reload
+  "${COMPOSE[@]}" --profile edge exec -T edge nginx -s reload
   info "edge now uses the new certificate — https://$ip"
 fi
