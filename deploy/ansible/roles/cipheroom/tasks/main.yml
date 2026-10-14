@@ -11,6 +11,7 @@
   ansible.builtin.assert:
     that:
       - cipheroom_env_check.mode
+      - cipheroom_env_check.ingress
       - cipheroom_env_check.sfu or cipheroom_media_mode != 'cloudflare'
       - cipheroom_env_check.livekit or cipheroom_media_mode != 'livekit'
       - cipheroom_env_check.turn
@@ -20,8 +21,9 @@
     fail_msg: >-
       deploy/.env (+ .env.hetzner) needs MEDIA_MODE cloudflare or livekit; for cloudflare CF_SFU_APP_ID and
       CF_SFU_APP_SECRET, for livekit LIVEKIT_API_KEY and LIVEKIT_API_SECRET (32+ characters), with LIVEKIT_TURN_DOMAIN
-      also CF_DNS_API_TOKEN; always a TUNNEL_TOKEN and PUBLIC_HOST, and with observability a GRAFANA_ADMIN_PASSWORD of
-      12+ characters (scripts/secrets.sh lists what's missing)
+      also CF_DNS_API_TOKEN; INGRESS_MODE tunnel (default) or direct, which needs MEDIA_MODE=livekit and no
+      LIVEKIT_TURN_DOMAIN; with a tunnel a TUNNEL_TOKEN and PUBLIC_HOST, and with observability a GRAFANA_ADMIN_PASSWORD
+      of 12+ characters (scripts/secrets.sh lists what's missing)
     quiet: true
 
 # ── Files ────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -49,6 +51,75 @@
     group: root
     mode: u=rwX,go=rX
 
+# LiveKit runs in the host's network (docker-compose.yml), so unlike Docker-published ports its ports pass through ufw:
+# open the public ones (the same as Terraform's firewall) and the internal ones to the `livekit` bridge only.
+- name: LiveKit's public ports through ufw
+  community.general.ufw:
+    rule: allow
+    port: "{{ item.port }}"
+    proto: "{{ item.proto }}"
+  loop:
+    - { port: "7881", proto: tcp }
+    - { port: "7882", proto: udp }
+    - { port: "3478", proto: udp }
+    - { port: "30000:30100", proto: udp }
+  when: cipheroom_media_mode == 'livekit'
+
+# 443 belongs to edge now (Docker-published, so it doesn't go through ufw); an earlier version allowed it here.
+- name: No ufw rule for LiveKit on 443
+  community.general.ufw:
+    rule: allow
+    port: "443"
+    proto: tcp
+    delete: true
+
+- name: LiveKit's internal ports (API 7880, TURN behind edge 5349) for the api and edge only
+  community.general.ufw:
+    rule: allow
+    from_ip: 172.30.0.0/24
+    port: "{{ item }}"
+    proto: tcp
+  loop: ["7880", "5349"]
+  when: cipheroom_media_mode == 'livekit'
+
+# SA-2026-10-14-02: in the host's network LiveKit could reach every container's address, the isolated telemetry
+# services included. It runs as uid 10002 (docker-compose.yml): reject new connections from that uid to private
+# ranges. Replies to the api and edge (connections they opened) are not new and pass.
+- name: LiveKit can't open connections into Docker's networks
+  ansible.builtin.blockinfile:
+    path: /etc/ufw/before.rules
+    marker: "# {mark} cipheroom: LiveKit (uid 10002) stays out of private networks"
+    insertbefore: "^COMMIT"
+    block: |
+      -A ufw-before-output -m owner --uid-owner 10002 -m conntrack --ctstate NEW -d 172.16.0.0/12 -j REJECT
+      -A ufw-before-output -m owner --uid-owner 10002 -m conntrack --ctstate NEW -d 10.0.0.0/8 -j REJECT
+      -A ufw-before-output -m owner --uid-owner 10002 -m conntrack --ctstate NEW -d 192.168.0.0/16 -j REJECT
+  notify: Reload ufw
+  when: cipheroom_media_mode == 'livekit'
+
+- name: Apply the firewall change before the stack starts
+  ansible.builtin.meta: flush_handlers
+
+- name: Edge proxy directory
+  ansible.builtin.file:
+    path: "{{ cipheroom_dir }}/nginx"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: cipheroom_edge
+
+# Mounted by the edge service as its nginx.conf; without it Docker would mount an empty directory instead.
+- name: Edge proxy configuration (direct mode)
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../nginx/edge.conf"
+    dest: "{{ cipheroom_dir }}/nginx/edge.conf"
+    owner: root
+    group: root
+    mode: "0644"
+  when: cipheroom_edge
+  register: cipheroom_edge_conf
+
 - name: LiveKit configuration directory
   ansible.builtin.file:
     path: "{{ cipheroom_dir }}/livekit"
@@ -65,14 +136,30 @@
     owner: root
     group: root
     mode: "0644"
+  register: cipheroom_livekit_conf
 
-- name: TURN certificate
+# edge's certificate: a placeholder so edge can start, then Let's Encrypt's — a TURN domain by the DNS check right away,
+# the IP (direct mode) once edge answers the HTTP check (after the stack is up, below).
+- name: Edge certificate (prepare)
   ansible.builtin.include_role:
     name: certs
   vars:
+    certs_step: prepare
+    certs_mode: "{{ 'ip' if cipheroom_ingress_mode == 'direct' else 'dns' }}"
+    certs_san: "{{ 'IP:' ~ ansible_host if cipheroom_ingress_mode == 'direct' else 'DNS:' ~ cipheroom_turn_domain }}"
+    certs_live_name: "{{ 'cipheroom' if cipheroom_ingress_mode == 'direct' else cipheroom_turn_domain }}"
+  when: cipheroom_edge
+
+- name: TURN domain certificate
+  ansible.builtin.include_role:
+    name: certs
+  vars:
+    certs_step: issue
+    certs_mode: dns
     certs_domain: "{{ cipheroom_turn_domain }}"
     certs_dns_token: "{{ cipheroom_env.CF_DNS_API_TOKEN }}"
-  when: cipheroom_media_mode == 'livekit' and cipheroom_turn_domain != ''
+    certs_live_name: "{{ cipheroom_turn_domain }}"
+  when: cipheroom_edge and cipheroom_ingress_mode == 'tunnel'
 
 # Tags that passed the checks below, newest first: the running one and the one before it (a fast rollback). Not the
 # tag in .env, which a failed deploy has already changed.
@@ -93,7 +180,7 @@
     dest: "{{ cipheroom_dir }}/.env"
     content: |
       # Managed by Ansible from deploy/.env (+ deploy/.env.hetzner) on the operator's machine — edit those.
-      {% for key, value in cipheroom_env.items() %}
+      {% for key, value in cipheroom_env.items() if key not in cipheroom_env_unused %}
       {{ key }}={{ value }}
       {% endfor %}
     owner: root
@@ -120,6 +207,18 @@
   changed_when: "'Removed' in cipheroom_livekit_rm.stderr"
   when: cipheroom_media_mode != 'livekit'
 
+- name: Stop what this mode doesn't run (the tunnel in direct mode, edge without TURN over TLS)
+  ansible.builtin.command: >-
+    docker compose --project-directory {{ cipheroom_dir }} -f {{ cipheroom_dir }}/docker-compose.yml
+    --env-file {{ cipheroom_dir }}/.env --profile tunnel --profile edge rm --stop --force
+    {{ cipheroom_ingress_unused | join(' ') }}
+  register: cipheroom_ingress_rm
+  changed_when: "'Removed' in cipheroom_ingress_rm.stderr"
+  when: cipheroom_ingress_unused | length > 0
+  vars:
+    cipheroom_ingress_unused: >-
+      {{ (['cloudflared'] if cipheroom_ingress_mode == 'direct' else []) + ([] if cipheroom_edge else ['edge']) }}
+
 - name: Stop observability services when it's off
   ansible.builtin.command: >-
     docker compose --project-directory {{ cipheroom_dir }} -f {{ cipheroom_dir }}/docker-compose.yml
@@ -134,6 +233,17 @@
     - name: Start the stack
       ansible.builtin.command: "{{ cipheroom_compose }} up -d --no-build --remove-orphans"
       changed_when: false
+
+    # A single-file bind mount keeps the old file after Ansible replaces it: restart edge to read the new config.
+    - name: Edge proxy picks up a changed configuration
+      ansible.builtin.command: "{{ cipheroom_compose }} restart edge"
+      when: cipheroom_edge and cipheroom_edge_conf is changed
+      changed_when: true
+
+    - name: LiveKit picks up a changed configuration
+      ansible.builtin.command: "{{ cipheroom_compose }} restart livekit"
+      when: cipheroom_media_mode == 'livekit' and cipheroom_livekit_conf is changed
+      changed_when: true
 
     # Only the app: a crash-looping cloudflared (bad token) makes --wait flaky; the tunnel check below catches it.
     - name: Wait for the api and web to be healthy
@@ -165,6 +275,32 @@
       retries: 12
       delay: 5
       until: cipheroom_public.status == 200
+      when: cipheroom_ingress_mode == 'tunnel'
+
+    # Direct: edge now answers the HTTP check on port 80, so Let's Encrypt can issue (first deploy) and edge gets it.
+    - name: IP certificate (issue)
+      ansible.builtin.include_role:
+        name: certs
+      vars:
+        certs_mode: ip
+        certs_step: issue
+        certs_ip: "{{ ansible_host }}"
+        certs_live_name: cipheroom
+      when: cipheroom_ingress_mode == 'direct'
+
+    # From this machine, as a visitor sees it: the certificate must validate, so a placeholder never passes. curl,
+    # not the uri module: edge sends TLS without ALPN to TURN (that's how it tells WebRTC apart), and Ansible's HTTP
+    # client offers none — it would wait for an answer that never comes. curl offers ALPN like a browser.
+    - name: The app answers on the server's IP with a valid certificate  # noqa: command-instead-of-module
+      ansible.builtin.command: curl -fsS --max-time 10 -o /dev/null https://{{ ansible_host }}/
+      register: cipheroom_public
+      retries: 12
+      delay: 5
+      until: cipheroom_public.rc == 0
+      changed_when: false
+      delegate_to: localhost
+      become: false
+      when: cipheroom_ingress_mode == 'direct'
 
     - name: Remember the tag as good
       ansible.builtin.copy:
@@ -175,7 +311,9 @@
         mode: "0644"
   rescue:
     - name: Recent logs (no settings are printed)
-      ansible.builtin.command: "{{ cipheroom_compose }} logs --no-color --tail 50 api web cloudflared"
+      ansible.builtin.command: >-
+        {{ cipheroom_compose }} logs --no-color --tail 50 api web
+        {{ 'cloudflared' if cipheroom_ingress_mode == 'tunnel' else '' }} {{ 'edge' if cipheroom_edge else '' }}
       register: cipheroom_logs
       changed_when: false
       failed_when: false

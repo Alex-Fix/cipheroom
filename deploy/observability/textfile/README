@@ -1,0 +1,2 @@
+# node-exporter textfile collector (*.prom). Empty here; on a direct-ingress server Ansible points it at
+# /var/lib/cipheroom/textfile, where the certificate deploy hook writes the expiry.

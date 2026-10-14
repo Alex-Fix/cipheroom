@@ -1,4 +1,5 @@
-# Copy to terraform.tfvars (gitignored) to override defaults. The API token is NOT set here: export HCLOUD_TOKEN.
+# Copy to terraform.tfvars (gitignored, used by every server) or terraform.<name>.tfvars (one server, --server <name>)
+# to override defaults. The API token is NOT set here: export HCLOUD_TOKEN.
 # scripts/provision.sh passes allowed_ssh_cidrs with your current IP unless you set it here, and the SSH key
 # (~/.ssh/id_cipheroom, or CIPHEROOM_SSH_KEY).
 
@@ -9,3 +10,4 @@
 # allowed_ssh_cidrs   = ["203.0.113.7/32"]
 # protection          = true
 # media_mode          = "cloudflare"   # scripts/provision.sh passes MEDIA_MODE from deploy/.env(.hetzner)
+# ingress_mode        = "tunnel"       # scripts/provision.sh passes INGRESS_MODE (direct: HTTPS on the server IP)

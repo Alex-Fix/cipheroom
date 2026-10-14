@@ -1,16 +1,22 @@
-# Managed by Ansible: deploy/livekit/livekit.yaml{{ ' plus TURN for ' ~ cipheroom_turn_domain if cipheroom_turn_domain else '' }}.
-{{ lookup('ansible.builtin.file', playbook_dir ~ '/../livekit/livekit.yaml') }}
-{% if cipheroom_turn_domain %}
-# Built-in TURN for networks that block UDP or allow only HTTPS: TLS on 443 (Let's Encrypt, renewed at night), UDP 3478.
+# Managed by Ansible: deploy/livekit/livekit.yaml{{ ' plus TURN behind the edge proxy' if cipheroom_edge else '' }}.
+# LiveKit runs in the host's network: media (ICE) only on this server's public IP. Otherwise it also opens sockets on
+# Docker's bridge addresses and may answer its own TURN relay from one of them, which the relay drops (no permission
+# for that address) — forced-relay calls then fail, depending on start-up order.
+{{ (lookup('ansible.builtin.file', playbook_dir ~ '/../livekit/livekit.yaml') | from_yaml)
+   | combine({'rtc': {'ips': {'includes': [ansible_host ~ '/32']}}}, recursive=True)
+   | to_nice_yaml(indent=2, sort_keys=False) }}
+{% if cipheroom_edge %}
+# Built-in TURN behind the edge proxy: edge terminates TLS on 443 (Let's Encrypt, for {{ 'this IP' if cipheroom_ingress_mode == 'direct' else cipheroom_turn_domain }})
+# and passes TURN on as plain TCP to 5349; LiveKit advertises turns:<domain>:443 to browsers. Chrome and Safari use it;
+# Firefox ignores TURN over TLS to an IP address and relays over UDP 3478 instead. LiveKit holds no certificate.
 turn:
   enabled: true
-  domain: {{ cipheroom_turn_domain }}
-  tls_port: 443
+  domain: {{ ansible_host if cipheroom_ingress_mode == 'direct' else cipheroom_turn_domain }}
+  tls_port: 5349
+  external_tls: true
   udp_port: 3478
-  cert_file: /certs/live/{{ cipheroom_turn_domain }}/fullchain.pem
-  key_file: /certs/live/{{ cipheroom_turn_domain }}/privkey.pem
-  # Relayed media leaves through these ports (published by compose, opened by Terraform): LiveKit's default 30000-40000
-  # is far more than a home-scale server needs and too many for Docker to publish.
+  # Relayed media leaves through these ports (opened by Terraform and ufw): LiveKit's default 30000-40000 is far more
+  # than a home-scale server needs.
   relay_range_start: 30000
   relay_range_end: 30100
 {% endif %}

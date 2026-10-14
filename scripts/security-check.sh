@@ -18,8 +18,10 @@ else
   good "no secret patterns in tracked files"
 fi
 
-# deploy/.env.hetzner: the server's own tunnel token and overrides (docs/deployment-hetzner.md).
-for env_file in .env .env.hetzner; do
+# deploy/.env.hetzner(.<name>): each server's own tunnel token and overrides (docs/deployment-hetzner.md).
+env_files=(.env .env.hetzner)
+for f in "$DEPLOY_DIR"/.env.hetzner.*; do [[ -f "$f" && "$f" != *.example ]] && env_files+=("${f##*/}"); done
+for env_file in "${env_files[@]}"; do
   info "deploy/$env_file"
   if [[ -f "$DEPLOY_DIR/$env_file" ]]; then
     git check-ignore -q "$DEPLOY_DIR/$env_file" && good "ignored by git" || bad "NOT ignored by git"
@@ -31,7 +33,9 @@ for env_file in .env .env.hetzner; do
 done
 
 info "Terraform state and inventory"
-for f in deploy/terraform/hetzner/terraform.tfstate deploy/terraform/hetzner/terraform.tfvars deploy/ansible/inventory.ini; do
+for f in deploy/terraform/hetzner/terraform.tfstate deploy/terraform/hetzner/terraform.tfstate.d/x/terraform.tfstate \
+  deploy/terraform/hetzner/terraform.tfvars deploy/terraform/hetzner/terraform.x.tfvars deploy/ansible/inventory.ini \
+  deploy/ansible/inventory.x.ini deploy/ansible/known_hosts.x deploy/.env.hetzner.x; do
   git check-ignore -q "$ROOT/$f" && good "$f ignored by git" || bad "$f NOT ignored by git"
 done
 

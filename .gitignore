@@ -34,6 +34,7 @@ Thumbs.db
 *.pem
 *.key
 deploy/cloudflared/*.json
+deploy/edge/
 
 # Infrastructure as code (docs/deployment-hetzner.md): state holds server ids/IPs; inventory is generated
 .terraform/
@@ -42,7 +43,10 @@ deploy/cloudflared/*.json
 *.tfvars
 !*.tfvars.example
 deploy/ansible/inventory.ini
+deploy/ansible/inventory.*.ini
+!deploy/ansible/inventory.example.ini
 deploy/ansible/known_hosts
+deploy/ansible/known_hosts.*
 .ansible/
 
 # Claude Code local overrides

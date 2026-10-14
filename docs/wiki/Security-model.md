@@ -35,9 +35,11 @@ out of scope.
 - Rules: the `security` and `e2ee-media` skills in [`.claude/skills/`](https://github.com/Alex-Fix/cipheroom/tree/main/.claude/skills).
 - Every deploy: `scripts/security-check.sh <url>`.
 - **Audits**, covering the app and a live server, with reports in
-  [`docs/security/audits/`](https://github.com/Alex-Fix/cipheroom/blob/main/docs/security/audits/README.md). Latest, **2026-10-11**: no Critical or High
-  findings; three Medium deployment-hardening gaps (container capabilities, SSH host-key pinning, HSTS), all fixed;
-  the seven Low items were fixed or mitigated the same day (separate telemetry networks, Dependabot, SSH hardening).
+  [`docs/security/audits/`](https://github.com/Alex-Fix/cipheroom/blob/main/docs/security/audits/README.md). Latest, **2026-10-14** (direct mode on a new
+  server): no Critical or High findings; one Medium (LiveKit on the host network could reach the internal telemetry
+  services — it now runs unprivileged and fenced off) and three Low (servers held secrets their mode doesn't use,
+  certbot outside Dependabot, no tests on dependency updates), all fixed the same day. The **2026-10-11** audit's three Medium gaps (container capabilities, SSH host-key pinning,
+  HSTS) and seven Low items were all fixed.
 
 Found a vulnerability? Please report it privately through GitHub's "Report a vulnerability" (Security tab), not in
 a public issue.

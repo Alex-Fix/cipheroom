@@ -1,5 +1,5 @@
 variable "name" {
-  description = "Server name (also the firewall and SSH key name prefix)."
+  description = "Server name (also the firewall and SSH key name prefix); a named server (Terraform workspace) appends -<name>."
   type        = string
   default     = "cipheroom"
 }
@@ -63,6 +63,22 @@ variable "media_mode" {
   validation {
     condition     = contains(["cloudflare", "livekit"], var.media_mode)
     error_message = "media_mode is cloudflare or livekit."
+  }
+}
+
+variable "ingress_mode" {
+  description = "tunnel (website through Cloudflare Tunnel, nothing listening for it) or direct (HTTPS on the server's own IP, needs media_mode = livekit). scripts/provision.sh passes INGRESS_MODE."
+  type        = string
+  default     = "tunnel"
+
+  validation {
+    condition     = contains(["tunnel", "direct"], var.ingress_mode)
+    error_message = "ingress_mode is tunnel or direct."
+  }
+
+  validation {
+    condition     = var.ingress_mode != "direct" || var.media_mode == "livekit"
+    error_message = "ingress_mode = direct needs media_mode = livekit (no Cloudflare in this mode)."
   }
 }
 

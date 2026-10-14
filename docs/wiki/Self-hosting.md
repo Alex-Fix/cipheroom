@@ -43,7 +43,7 @@ safety net. For scale: 4K video is roughly 3.6 GB per viewer-hour.
 
 | Command | What it does |
 |---|---|
-| `scripts/up.sh [--tunnel] [--observability]` | Build and start; `--observability` adds Grafana at `/grafana/` |
+| `scripts/up.sh [--tunnel \| --direct] [--observability]` | Build and start; `--observability` adds Grafana at `/grafana/`; `--direct` serves `https://<public IP>` without Cloudflare (LiveKit mode, a static public IP, then `scripts/ip-cert.sh`) |
 | `scripts/down.sh` | Stop everything |
 | `scripts/logs.sh [service]` | Follow logs |
 | `scripts/security-check.sh [url]` | Secrets, `.env` hygiene, dependency advisories, live headers |

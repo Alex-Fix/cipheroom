@@ -1,0 +1,19 @@
+# Once per server: later runs leave it to the timer. A certificate for another address (a new server IP) is replaced
+# under the same name.
+- name: Address on the current certificate
+  ansible.builtin.shell: |
+    set -o pipefail
+    openssl x509 -in /etc/letsencrypt/live/cipheroom/cert.pem -noout -ext subjectAltName | grep -o 'IP Address:[0-9.]*'
+  args:
+    executable: /bin/bash
+  register: certs_current
+  changed_when: false
+  failed_when: false
+
+- name: Issue the certificate (HTTP check through edge)
+  ansible.builtin.command: >-
+    {{ certs_compose_run }} -v /etc/letsencrypt:/etc/letsencrypt -v {{ certs_acme_dir }}:/acme-webroot
+    certbot certonly --non-interactive --agree-tos --register-unsafely-without-email
+    --webroot -w /acme-webroot --preferred-profile shortlived --cert-name cipheroom --ip-address {{ certs_ip }}
+  when: certs_current.stdout != 'IP Address:' ~ certs_ip
+  changed_when: true

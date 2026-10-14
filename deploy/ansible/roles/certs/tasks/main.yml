@@ -1,82 +1,21 @@
-# Let's Encrypt for LiveKit's TURN over TLS, through the DNS check (certbot's Cloudflare plugin): port 80 stays closed.
-# The token may only edit DNS in the zone. Renewed nightly; LiveKit restarts only when the certificate changed.
-- name: Credentials directory
-  ansible.builtin.file:
-    path: /etc/cipheroom
-    state: directory
-    owner: root
-    group: root
-    mode: "0700"
+# Let's Encrypt certificates for the edge proxy, which terminates TLS for LiveKit's TURN over TLS and, in direct mode,
+# for the site. LiveKit itself never holds a certificate (it runs unprivileged behind edge).
+# - dns: a name (LIVEKIT_TURN_DOMAIN, tunnel mode), through the Cloudflare DNS check; port 80 stays closed
+# - ip:  the server's IPv4 (INGRESS_MODE=direct), through the HTTP check that edge answers on port 80
+# Called twice by the cipheroom role: certs_step prepare (before the stack: directories, a placeholder so edge can
+# start, hook, timer) and issue (dns: right away; ip: once edge answers on port 80).
+- name: Prepare
+  ansible.builtin.include_tasks: prepare.yml
+  when: certs_step == 'prepare'
 
-- name: Cloudflare DNS token for certbot
-  ansible.builtin.copy:
-    dest: /etc/cipheroom/cloudflare-dns.ini
-    content: "dns_cloudflare_api_token = {{ certs_dns_token }}\n"
-    owner: root
-    group: root
-    mode: "0600"
-  no_log: true
-  diff: false
+- name: Issue by DNS check
+  ansible.builtin.include_tasks: dns.yml
+  when: certs_step == 'issue' and certs_mode == 'dns'
 
-- name: Issue the certificate (once; renewals run on the timer)
-  ansible.builtin.command: >-
-    docker run --rm
-    -v /etc/letsencrypt:/etc/letsencrypt
-    -v /etc/cipheroom/cloudflare-dns.ini:/cloudflare-dns.ini:ro
-    {{ certs_certbot_image }} certonly --non-interactive --agree-tos --register-unsafely-without-email
-    --dns-cloudflare --dns-cloudflare-credentials /cloudflare-dns.ini --dns-cloudflare-propagation-seconds 30
-    -d {{ certs_domain }}
-  args:
-    creates: /etc/letsencrypt/live/{{ certs_domain }}/fullchain.pem
+- name: Issue by HTTP check
+  ansible.builtin.include_tasks: ip.yml
+  when: certs_step == 'issue' and certs_mode == 'ip'
 
-- name: Renewal script
-  ansible.builtin.template:
-    src: cipheroom-cert-renew.sh.j2
-    dest: /usr/local/sbin/cipheroom-cert-renew
-    owner: root
-    group: root
-    mode: "0755"
-
-- name: Renewal service
-  ansible.builtin.copy:
-    dest: /etc/systemd/system/cipheroom-cert-renew.service
-    owner: root
-    group: root
-    mode: "0644"
-    content: |
-      [Unit]
-      Description=Renew the TURN certificate (Let's Encrypt) and restart LiveKit when it changed
-      After=docker.service
-      Requires=docker.service
-
-      [Service]
-      Type=oneshot
-      ExecStart=/usr/local/sbin/cipheroom-cert-renew
-  notify: Reload systemd
-
-- name: Renewal timer (nightly, in the quiet window)
-  ansible.builtin.copy:
-    dest: /etc/systemd/system/cipheroom-cert-renew.timer
-    owner: root
-    group: root
-    mode: "0644"
-    content: |
-      [Unit]
-      Description=Nightly TURN certificate renewal
-
-      [Timer]
-      OnCalendar=*-*-* {{ certs_renew_time }}:00 UTC
-      Persistent=true
-
-      [Install]
-      WantedBy=timers.target
-  notify: Reload systemd
-
-- name: Apply systemd changes
-  ansible.builtin.meta: flush_handlers
-
-- name: Renewal timer enabled
-  ansible.builtin.systemd_service:
-    name: cipheroom-cert-renew.timer
-    enabled: true
-    state: started
+- name: After issuing
+  ansible.builtin.include_tasks: installed.yml
+  when: certs_step == 'issue'

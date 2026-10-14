@@ -1,0 +1,79 @@
+# Tests, lint and image builds for every pull request (Dependabot's included) and every push to main — so a broken
+# update fails here instead of on a server (SA-2026-10-14-04: TypeScript 7 stopped every web image build, Tempo 3
+# crash-looped on the beta). Read-only: nothing is published (images.yml does that from main).
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+      - name: Tests
+        run: scripts/test.sh --server
+
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          # The same major as web/Dockerfile's build stage.
+          node-version: 26
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install
+        run: npm ci --prefix web
+      - name: Tests
+        run: scripts/test.sh --web
+
+  # dotnet format, compose and telemetry configs against their pinned images, edge's nginx, shellcheck (terraform and
+  # ansible checks run when the tools are present, which they aren't here).
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+      - name: Lint
+        run: scripts/lint.sh
+
+  # The production builds, as images.yml would run them (not pushed).
+  images:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: api
+            dockerfile: src/Cipheroom.Api/Dockerfile
+          - image: web
+            dockerfile: web/Dockerfile
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build ${{ matrix.image }}
+        run: docker build --file ${{ matrix.dockerfile }} --tag cipheroom-${{ matrix.image }}:ci .
