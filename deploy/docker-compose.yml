@@ -25,7 +25,8 @@ services:
       Media__Provider: ${MEDIA_MODE:-cloudflare}
       Sfu__Cloudflare__AppId: ${CF_SFU_APP_ID:-}
       Sfu__Cloudflare__AppSecret: ${CF_SFU_APP_SECRET:-}
-      LiveKit__Url: http://livekit:7880
+      # LiveKit runs in the host's network (see the livekit service); its API listens on the `livekit` bridge's gateway.
+      LiveKit__Url: http://172.30.0.1:7880
       LiveKit__ApiKey: ${LIVEKIT_API_KEY:-}
       LiveKit__ApiSecret: ${LIVEKIT_API_SECRET:-}
       # Trust X-Forwarded-* from our proxies only (cloudflared → nginx → api). The api publishes no ports, so only
@@ -53,7 +54,7 @@ services:
     volumes:
       # The guard's month-to-date estimate survives restarts (numbers and timestamps only).
       - api-data:/data
-    networks: [default, otlp]
+    networks: [default, otlp, livekit]
     restart: unless-stopped
 
   web:
@@ -73,12 +74,20 @@ services:
     networks: [default, grafana]
     restart: unless-stopped
 
-  # MEDIA_MODE=livekit (profile livekit): a self-hosted SFU on this machine's public IP. Signaling (7880) stays on the
-  # compose network — browsers reach it only through the api's relay; only the media ports are published.
+  # MEDIA_MODE=livekit (profile livekit): a self-hosted SFU on this machine's public IP. It runs in the host's network,
+  # as LiveKit recommends: its built-in TURN relays to its own ICE port at the public IP, and through Docker's port
+  # mapping those packets never came back (forced-relay calls failed). Its ports are therefore the host's:
+  #   public (opened by Terraform): 7881/tcp, 7882/udp media; 3478/udp, 30000-30100/udp TURN; 443/tcp TURN over TLS
+  #     (with LIVEKIT_TURN_DOMAIN — needs NET_BIND_SERVICE in the host's namespace)
+  #   internal: 7880 signaling/API — bound to loopback and the `livekit` bridge's gateway only (browsers reach it through
+  #     the api's relay); 5349 plain TCP TURN behind edge (direct mode) — every interface, kept off the internet by the
+  #     Hetzner firewall and ufw (allowed from the `livekit` bridge only)
   livekit:
     <<: *hardening
+    cap_add: [NET_BIND_SERVICE]
     image: livekit/livekit-server:v1.13.9
-    command: ["--config", "/etc/livekit.yaml", "--node-ip", "${LIVEKIT_NODE_IP:-127.0.0.1}"]
+    network_mode: host
+    command: ["--config", "/etc/livekit.yaml", "--node-ip", "${LIVEKIT_NODE_IP:-127.0.0.1}", "--bind", "127.0.0.1", "--bind", "172.30.0.1"]
     environment:
       LIVEKIT_KEYS: "${LIVEKIT_API_KEY:-}: ${LIVEKIT_API_SECRET:-}"
     volumes:
@@ -86,15 +95,6 @@ services:
       - ${LIVEKIT_CONFIG:-./livekit/livekit.yaml}:/etc/livekit.yaml:ro
       # TURN over TLS (server, LIVEKIT_TURN_DOMAIN): Let's Encrypt's directory; empty and unused otherwise.
       - ${LIVEKIT_CERTS_DIR:-./livekit/certs}:/certs:ro
-    ports:
-      - "7881:7881/tcp"
-      - "7882:7882/udp"
-      # Built-in TURN (only listening when livekit.yaml enables it): UDP and TLS on 443, and its relay ports. With
-      # INGRESS_MODE=direct `edge` owns 443 (TURN over TLS reaches LiveKit as plain TCP on 5349, compose network only),
-      # so this binding moves to an unused loopback port.
-      - "3478:3478/udp"
-      - "${LIVEKIT_TURN_TLS_PUBLISH:-443}:443/tcp"
-      - "30000-30100:30000-30100/udp"
     restart: unless-stopped
     profiles: [livekit]
 
@@ -113,6 +113,7 @@ services:
       - "80:8080"
       - "443:8443"
     depends_on: [web]
+    networks: [default, livekit]
     restart: unless-stopped
     profiles: [direct]
 
@@ -268,7 +269,7 @@ services:
     restart: unless-stopped
     profiles: [observability]
 
-# Edge services (api, web, livekit, edge, cloudflared) are on `default`, which reaches the internet. Telemetry lives on
+# Edge services (api, web, edge, cloudflared) are on `default`, which reaches the internet. Telemetry lives on
 # internal networks (no internet, nothing published): the api reaches only the collector (otlp), nginx only Grafana
 # (grafana), and nothing internet-facing reaches Prometheus, Loki, Tempo or the privileged cadvisor.
 networks:
@@ -279,6 +280,12 @@ networks:
     internal: true
   telemetry:
     internal: true
+  # How the api and edge reach LiveKit, which runs in the host's network: its fixed gateway 172.30.0.1 is the host.
+  livekit:
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+          gateway: 172.30.0.1
 
 volumes:
   api-data:

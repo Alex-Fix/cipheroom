@@ -51,7 +51,7 @@ if [[ "$DIRECT" == true ]]; then
       -addext "subjectAltName=IP:$ip" -keyout "$edge_dir/tls/privkey.pem" -out "$edge_dir/tls/fullchain.pem" 2>/dev/null
     chmod 644 "$edge_dir/tls/fullchain.pem" "$edge_dir/tls/privkey.pem" # placeholder only; ip-cert.sh restricts the real key
   fi
-  export LIVEKIT_CONFIG=./edge/livekit.yaml LIVEKIT_TURN_TLS_PUBLISH=127.0.0.1:7443 PUBLIC_HOST="$ip" \
+  export LIVEKIT_CONFIG=./edge/livekit.yaml PUBLIC_HOST="$ip" \
     API_ALLOWED_HOSTS="$ip;localhost"
   COMPOSE+=(--profile direct)
 fi

@@ -15,7 +15,7 @@ Realtime SFU, and the api only makes outbound HTTPS calls to Cloudflare.
 | `api` | `src/Cipheroom.Api/Dockerfile` | 8080 internal | env from `.env`: `Sfu__Cloudflare__*` (required), `Turn__*` |
 | `web` | `web/Dockerfile` | 8080 internal (`127.0.0.1:${WEB_PORT}` on host) | nginx, serves the app, proxies `/api` + `/hubs` to api |
 | `cloudflared` | `cloudflare/cloudflared` | none | profile `tunnel`; `tunnel run --token ${TUNNEL_TOKEN}` |
-| `edge` | `nginxinc/nginx-unprivileged` (digest-pinned) | 80, 443 | profile `direct` only: `deploy/nginx/edge.conf` (a whole nginx.conf) — TLS with the IP certificate, 443 split by ALPN (HTTPS → `web`, no ALPN = TURN over TLS → `livekit:5349`), 80 = ACME check + redirect |
+| `edge` | `nginxinc/nginx-unprivileged` (digest-pinned) | 80, 443 | profile `direct` only: `deploy/nginx/edge.conf` (a whole nginx.conf) — TLS with the IP certificate, 443 split by ALPN (HTTPS → `web`, no ALPN = TURN over TLS → LiveKit `172.30.0.1:5349`), 80 = ACME check + redirect |
 | `otel-collector`, `prometheus`, `loki`, `tempo`, `grafana`, `node-exporter`, `cadvisor` | pinned images | none | profile `observability` (`scripts/up.sh --observability`): `deploy/observability/`, `mem_limit` each, 7-day retention, named volumes. Grafana via nginx `/grafana/`, protected by its own hardened login (nginx rate-limits `/grafana/login`). See `docs/observability.md`. |
 
 No media server runs at home and no UDP ports are published.
@@ -50,11 +50,21 @@ The app links to `/source`; nginx redirects it to `SOURCE_URL` (`deploy/.env`, d
 commit only when web/, src/, deploy/ and the build props match it (untracked files included), and warns if that commit
 isn't pushed. Forks running modified code must push it and set `SOURCE_URL` to their repository.
 
+## LiveKit runs in the host's network
+`network_mode: host` (LiveKit's recommended Docker setup): with Docker's port mapping its TURN relay could not reach its
+own ICE port at the public IP (hairpin — forced-relay calls failed; repro `artifacts/e2e/repro/relay-tls-e2e.mjs`,
+`SCHEME=turn|turns`). Consequences: no `ports:`; `cap_add: NET_BIND_SERVICE` for TURN-TLS on 443; the api
+(`LiveKit__Url=http://172.30.0.1:7880`) and edge (`172.30.0.1:5349`) reach it via the `livekit` bridge's fixed gateway
+(172.30.0.0/24); `--bind 127.0.0.1 --bind 172.30.0.1` keeps the API off public interfaces (it only affects 7880 —
+5349/7881/3478 listen everywhere); ufw (cipheroom role) allows LiveKit's public ports and 7880/5349 from 172.30.0.0/24
+only, because host-network ports don't bypass ufw like published ones. On a Mac `up.sh` needs Docker Desktop's host
+networking; `scripts/dev.sh` runs its own bridge-mode container and is unaffected.
+
 ## Media mode (MEDIA_MODE)
 `cloudflare` (default: Cloudflare Realtime SFU + TURN, no public IP needed) or `livekit` (profile `livekit`: the
 `livekit` service, `deploy/livekit/livekit.yaml`, keys `LIVEKIT_API_KEY`/`LIVEKIT_API_SECRET` from `scripts/secrets.sh`,
-`LIVEKIT_NODE_IP` = the machine's public IPv4; publishes only 7881/tcp + 7882/udp — signaling 7880 stays internal and
-is relayed by the api). `scripts/up.sh` checks the chosen mode's settings and adds the profile; the Cloudflare SFU
+`LIVEKIT_NODE_IP` = the machine's public IPv4; host network, see above — signaling 7880 stays internal and is relayed
+by the api). `scripts/up.sh` checks the chosen mode's settings and adds the profile; the Cloudflare SFU
 values are required only in Cloudflare mode. On the server (Ansible): `LIVEKIT_NODE_IP` is set to the server's IP;
 with `LIVEKIT_TURN_DOMAIN` (+ `CF_DNS_API_TOKEN`, DNS-only record) the `certs` role issues Let's Encrypt via the DNS
 check, `livekit.yaml` gets TURN (TLS 443, UDP 3478, relay ports 30000-30100 — published and opened by Terraform's
@@ -66,7 +76,7 @@ usage guard to Hetzner traffic. Design: `docs/plans/2026-10-11-livekit-media-mod
 only, no Cloudflare): the `edge` service serves `https://<server IPv4>` with a Let's Encrypt **IP certificate**
 (short-lived, 160 h, HTTP-01 only → port 80 open). One certificate for site and TURN: LiveKit's TURN gets
 `external_tls: true`, `tls_port: 5349` (not published), `domain: <ip>` (LiveKit always advertises `turns:<domain>:443`);
-LiveKit's own 443 binding moves to `LIVEKIT_TURN_TLS_PUBLISH=127.0.0.1:7443`. Firefox ignores `turns:` with an IP
+Firefox ignores `turns:` with an IP
 (relays over UDP 3478) — accepted. Server: `certs` role `ip.yml` (placeholder → `certonly --webroot --preferred-profile
 shortlived --ip-address`, timer every 12 h, deploy hook copies to `/etc/cipheroom/tls` gid 101 and `nginx -s reload`s
 edge, writes `cipheroom_cert_expiry_timestamp_seconds` for node-exporter's textfile collector); the final deploy

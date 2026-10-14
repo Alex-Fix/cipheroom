@@ -51,6 +51,30 @@
     group: root
     mode: u=rwX,go=rX
 
+# LiveKit runs in the host's network (docker-compose.yml), so unlike Docker-published ports its ports pass through ufw:
+# open the public ones (the same as Terraform's firewall) and the internal ones to the `livekit` bridge only.
+- name: LiveKit's public ports through ufw
+  community.general.ufw:
+    rule: allow
+    port: "{{ item.port }}"
+    proto: "{{ item.proto }}"
+  loop:
+    - { port: "7881", proto: tcp }
+    - { port: "7882", proto: udp }
+    - { port: "3478", proto: udp }
+    - { port: "30000:30100", proto: udp }
+    - { port: "443", proto: tcp }
+  when: cipheroom_media_mode == 'livekit'
+
+- name: LiveKit's internal ports (API 7880, TURN behind edge 5349) for the api and edge only
+  community.general.ufw:
+    rule: allow
+    from_ip: 172.30.0.0/24
+    port: "{{ item }}"
+    proto: tcp
+  loop: ["7880", "5349"]
+  when: cipheroom_media_mode == 'livekit'
+
 - name: Edge proxy directory (direct mode)
   ansible.builtin.file:
     path: "{{ cipheroom_dir }}/nginx"
