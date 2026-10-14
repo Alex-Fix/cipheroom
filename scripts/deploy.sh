@@ -78,14 +78,16 @@ value_in() { [[ -f "$2" ]] && grep -E "^$1=" "$2" | tail -1 | cut -d= -f2- || tr
 mode="$(server_value MEDIA_MODE)"
 info "Server '$SERVER' — media mode: ${mode:-cloudflare}$([[ "$mode" == livekit ]] && echo " (run scripts/provision.sh$SERVER_ARG first if you just switched: it opens LiveKit's ports)")"
 
-# Home (deploy/.env) and every other server's overlay must use another tunnel.
+# Home (deploy/.env) and every other server's overlay must use another tunnel. Direct mode has none.
+ingress="$(server_value INGRESS_MODE)"
+[[ "$ingress" != direct ]] || info "Ingress: direct (HTTPS on the server's IP, no tunnel)"
 server_token="$(value_in TUNNEL_TOKEN "$OVERLAY")"
 shared=""
 for other in "$DEPLOY_DIR/.env" "$DEPLOY_DIR"/.env.hetzner "$DEPLOY_DIR"/.env.hetzner.*; do
   [[ -f "$other" && "$other" != "$OVERLAY" && "$other" != *.example ]] || continue
   [[ -n "$server_token" && "$(value_in TUNNEL_TOKEN "$other")" == "$server_token" ]] && shared="${other#"$ROOT"/}"
 done
-if [[ -z "$server_token" || -n "$shared" ]]; then
+if [[ "$ingress" != direct ]] && [[ -z "$server_token" || -n "$shared" ]]; then
   warn "${OVERLAY#"$ROOT"/} has no TUNNEL_TOKEN of its own: the server would share the tunnel in ${shared:-deploy/.env}."
   warn "If that stack is running too, calls break at random. Create another tunnel and put it in ${OVERLAY#"$ROOT"/}
   (docs/deployment-hetzner.md)."
@@ -112,5 +114,9 @@ ANSIBLE_SSH_ARGS="-o UserKnownHostsFile=${KNOWN_HOSTS##*/} -o StrictHostKeyCheck
 export ANSIBLE_SSH_ARGS
 ansible-playbook -i "${INVENTORY##*/}" site.yml -e "{\"cipheroom_tag\": \"$TAG\", \"cipheroom_image_prefix\": \"$IMAGE_PREFIX\", \"cipheroom_observability\": $observability_json, \"cipheroom_env_overlay\": \"$OVERLAY\"}"
 
-host="$(server_value PUBLIC_HOST)"
+if [[ "$ingress" == direct ]]; then
+  host="$(sed -nE 's/.* ansible_host=([^ ]+).*/\1/p' "$INVENTORY" | head -1)"
+else
+  host="$(server_value PUBLIC_HOST)"
+fi
 info "Deployed $TAG — https://$host"

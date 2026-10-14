@@ -88,12 +88,32 @@ services:
     ports:
       - "7881:7881/tcp"
       - "7882:7882/udp"
-      # Built-in TURN (only listening when livekit.yaml enables it): UDP and TLS on 443, and its relay ports.
+      # Built-in TURN (only listening when livekit.yaml enables it): UDP and TLS on 443, and its relay ports. With
+      # INGRESS_MODE=direct `edge` owns 443 (TURN over TLS reaches LiveKit as plain TCP on 5349, compose network only),
+      # so this binding moves to an unused loopback port.
       - "3478:3478/udp"
-      - "443:443/tcp"
+      - "${LIVEKIT_TURN_TLS_PUBLISH:-443}:443/tcp"
       - "30000-30100:30000-30100/udp"
     restart: unless-stopped
     profiles: [livekit]
+
+  # INGRESS_MODE=direct (profile direct): HTTPS on this machine's public IP with a Let's Encrypt IP certificate, no
+  # Cloudflare. 443 is shared by the site and LiveKit's TURN over TLS (split by ALPN); 80 answers the certificate check
+  # and redirects. Design: docs/plans/2026-10-14-direct-ingress-design.md
+  edge:
+    <<: *hardening
+    image: nginxinc/nginx-unprivileged:1.31-alpine@sha256:b9241c6e7b8e9a862f129d8d4199ab64b10390949a78bdd5603379b32c844083
+    volumes:
+      - ./nginx/edge.conf:/etc/nginx/nginx.conf:ro
+      # Certificate (fullchain.pem, privkey.pem) and the ACME check's files: on a server Ansible's directories.
+      - ${EDGE_TLS_DIR:-./edge/tls}:/tls:ro
+      - ${EDGE_ACME_DIR:-./edge/acme}:/acme-webroot:ro
+    ports:
+      - "80:8080"
+      - "443:8443"
+    depends_on: [web]
+    restart: unless-stopped
+    profiles: [direct]
 
   cloudflared:
     <<: *hardening
@@ -244,7 +264,7 @@ services:
     restart: unless-stopped
     profiles: [observability]
 
-# Edge services (api, web, livekit, cloudflared) are on `default`, which reaches the internet. Telemetry lives on
+# Edge services (api, web, livekit, edge, cloudflared) are on `default`, which reaches the internet. Telemetry lives on
 # internal networks (no internet, nothing published): the api reaches only the collector (otlp), nginx only Grafana
 # (grafana), and nothing internet-facing reaches Prometheus, Loki, Tempo or the privileged cadvisor.
 networks:

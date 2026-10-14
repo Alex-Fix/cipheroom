@@ -34,6 +34,7 @@ Thumbs.db
 *.pem
 *.key
 deploy/cloudflared/*.json
+deploy/edge/
 
 # Infrastructure as code (docs/deployment-hetzner.md): state holds server ids/IPs; inventory is generated
 .terraform/

@@ -11,6 +11,7 @@
   ansible.builtin.assert:
     that:
       - cipheroom_env_check.mode
+      - cipheroom_env_check.ingress
       - cipheroom_env_check.sfu or cipheroom_media_mode != 'cloudflare'
       - cipheroom_env_check.livekit or cipheroom_media_mode != 'livekit'
       - cipheroom_env_check.turn
@@ -20,8 +21,9 @@
     fail_msg: >-
       deploy/.env (+ .env.hetzner) needs MEDIA_MODE cloudflare or livekit; for cloudflare CF_SFU_APP_ID and
       CF_SFU_APP_SECRET, for livekit LIVEKIT_API_KEY and LIVEKIT_API_SECRET (32+ characters), with LIVEKIT_TURN_DOMAIN
-      also CF_DNS_API_TOKEN; always a TUNNEL_TOKEN and PUBLIC_HOST, and with observability a GRAFANA_ADMIN_PASSWORD of
-      12+ characters (scripts/secrets.sh lists what's missing)
+      also CF_DNS_API_TOKEN; INGRESS_MODE tunnel (default) or direct, which needs MEDIA_MODE=livekit and no
+      LIVEKIT_TURN_DOMAIN; with a tunnel a TUNNEL_TOKEN and PUBLIC_HOST, and with observability a GRAFANA_ADMIN_PASSWORD
+      of 12+ characters (scripts/secrets.sh lists what's missing)
     quiet: true
 
 # ── Files ────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -70,9 +72,20 @@
   ansible.builtin.include_role:
     name: certs
   vars:
+    certs_mode: dns
     certs_domain: "{{ cipheroom_turn_domain }}"
     certs_dns_token: "{{ cipheroom_env.CF_DNS_API_TOKEN }}"
   when: cipheroom_media_mode == 'livekit' and cipheroom_turn_domain != ''
+
+# Direct: edge needs a certificate to start — a placeholder until Let's Encrypt's is issued (after the stack is up).
+- name: IP certificate (prepare)
+  ansible.builtin.include_role:
+    name: certs
+  vars:
+    certs_mode: ip
+    certs_step: prepare
+    certs_ip: "{{ ansible_host }}"
+  when: cipheroom_ingress_mode == 'direct'
 
 # Tags that passed the checks below, newest first: the running one and the one before it (a fast rollback). Not the
 # tag in .env, which a failed deploy has already changed.
@@ -120,6 +133,14 @@
   changed_when: "'Removed' in cipheroom_livekit_rm.stderr"
   when: cipheroom_media_mode != 'livekit'
 
+- name: Stop the tunnel in direct mode, the edge proxy in tunnel mode
+  ansible.builtin.command: >-
+    docker compose --project-directory {{ cipheroom_dir }} -f {{ cipheroom_dir }}/docker-compose.yml
+    --env-file {{ cipheroom_dir }}/.env --profile tunnel --profile direct rm --stop --force
+    {{ 'cloudflared' if cipheroom_ingress_mode == 'direct' else 'edge' }}
+  register: cipheroom_ingress_rm
+  changed_when: "'Removed' in cipheroom_ingress_rm.stderr"
+
 - name: Stop observability services when it's off
   ansible.builtin.command: >-
     docker compose --project-directory {{ cipheroom_dir }} -f {{ cipheroom_dir }}/docker-compose.yml
@@ -165,6 +186,31 @@
       retries: 12
       delay: 5
       until: cipheroom_public.status == 200
+      when: cipheroom_ingress_mode == 'tunnel'
+
+    # Direct: edge now answers the HTTP check on port 80, so Let's Encrypt can issue (first deploy) and edge gets it.
+    - name: IP certificate (issue)
+      ansible.builtin.include_role:
+        name: certs
+      vars:
+        certs_mode: ip
+        certs_step: issue
+        certs_ip: "{{ ansible_host }}"
+      when: cipheroom_ingress_mode == 'direct'
+
+    # From this machine, as a visitor sees it: the certificate must validate, so a placeholder never passes.
+    - name: The app answers on the server's IP with a valid certificate
+      ansible.builtin.uri:
+        url: "https://{{ ansible_host }}/"
+        status_code: 200
+        validate_certs: true
+      register: cipheroom_public
+      retries: 12
+      delay: 5
+      until: cipheroom_public.status == 200
+      delegate_to: localhost
+      become: false
+      when: cipheroom_ingress_mode == 'direct'
 
     - name: Remember the tag as good
       ansible.builtin.copy:
@@ -175,7 +221,8 @@
         mode: "0644"
   rescue:
     - name: Recent logs (no settings are printed)
-      ansible.builtin.command: "{{ cipheroom_compose }} logs --no-color --tail 50 api web cloudflared"
+      ansible.builtin.command: >-
+        {{ cipheroom_compose }} logs --no-color --tail 50 api web {{ 'edge' if cipheroom_ingress_mode == 'direct' else 'cloudflared' }}
       register: cipheroom_logs
       changed_when: false
       failed_when: false

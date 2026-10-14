@@ -11,7 +11,7 @@ fi
 # Observability config (docs/observability.md): compose with the profile, Prometheus config, dashboards up to date.
 info "observability config"
 CF_SFU_APP_ID=lint CF_SFU_APP_SECRET=lint docker compose -f "$DEPLOY_DIR/docker-compose.yml" \
-  --env-file "$DEPLOY_DIR/.env.example" --profile observability --profile tunnel config -q
+  --env-file "$DEPLOY_DIR/.env.example" --profile observability --profile tunnel --profile livekit --profile direct config -q
 if docker info >/dev/null 2>&1; then
   docker run --rm --entrypoint promtool -v "$DEPLOY_DIR/observability:/cfg:ro" prom/prometheus:v3.15.0 \
     check config /cfg/prometheus.yaml >/dev/null || die "deploy/observability/prometheus.yaml is invalid"
@@ -23,6 +23,21 @@ python3 "$DEPLOY_DIR/observability/grafana/build_dashboards.py" "$dashboards" >/
 diff -rq "$dashboards" "$DEPLOY_DIR/observability/grafana/dashboards" >/dev/null \
   || die "dashboards are out of date: python3 deploy/observability/grafana/build_dashboards.py deploy/observability/grafana/dashboards"
 rm -rf "$dashboards"
+
+# The edge proxy (INGRESS_MODE=direct) is a whole nginx.conf: test it in its own image with a throwaway certificate.
+if command -v docker >/dev/null && docker info >/dev/null 2>&1; then
+  info "nginx (edge)"
+  edge_image="$(awk '/^  edge:/ { f = 1 } f && /image:/ { print $2; exit }' "$DEPLOY_DIR/docker-compose.yml")"
+  edge_tls="$(mktemp -d)"
+  openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -days 1 -subj /CN=lint \
+    -keyout "$edge_tls/privkey.pem" -out "$edge_tls/fullchain.pem" 2>/dev/null
+  chmod 644 "$edge_tls"/*.pem
+  docker run --rm -v "$DEPLOY_DIR/nginx/edge.conf:/etc/nginx/nginx.conf:ro" -v "$edge_tls:/tls:ro" --entrypoint nginx "$edge_image" -t -q \
+    || die "deploy/nginx/edge.conf is invalid"
+  rm -rf "$edge_tls"
+else
+  warn "docker not running: skipped the edge nginx check"
+fi
 
 # Infrastructure as code (docs/deployment-hetzner.md) — each check runs when its tool is installed.
 if command -v terraform >/dev/null; then

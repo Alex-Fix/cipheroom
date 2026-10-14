@@ -1,6 +1,18 @@
-# Managed by Ansible: deploy/livekit/livekit.yaml{{ ' plus TURN for ' ~ cipheroom_turn_domain if cipheroom_turn_domain else '' }}.
+# Managed by Ansible: deploy/livekit/livekit.yaml{{ ' plus TURN for ' ~ cipheroom_turn_domain if cipheroom_turn_domain else (' plus TURN behind the edge proxy' if cipheroom_ingress_mode == 'direct' else '') }}.
 {{ lookup('ansible.builtin.file', playbook_dir ~ '/../livekit/livekit.yaml') }}
-{% if cipheroom_turn_domain %}
+{% if cipheroom_ingress_mode == 'direct' %}
+# Built-in TURN behind the edge proxy (INGRESS_MODE=direct): edge terminates TLS on 443 with the IP certificate and
+# passes TURN on as plain TCP to 5349 (compose network only). LiveKit advertises turns:<this IP>:443 to browsers —
+# Chrome and Safari use it; Firefox ignores TURN over TLS to an IP address and relays over UDP 3478 instead.
+turn:
+  enabled: true
+  domain: {{ ansible_host }}
+  tls_port: 5349
+  external_tls: true
+  udp_port: 3478
+  relay_range_start: 30000
+  relay_range_end: 30100
+{% elif cipheroom_turn_domain %}
 # Built-in TURN for networks that block UDP or allow only HTTPS: TLS on 443 (Let's Encrypt, renewed at night), UDP 3478.
 turn:
   enabled: true

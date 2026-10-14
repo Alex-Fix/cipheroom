@@ -1,6 +1,7 @@
 # The media provider comes from MEDIA_MODE in deploy/.env(.hetzner): cloudflare (Cloudflare Realtime SFU and TURN) or
-# livekit (LiveKit on this server's public IP; TURN over TLS when LIVEKIT_TURN_DOMAIN is set). The website always goes
-# through the Cloudflare tunnel.
+# livekit (LiveKit on this server's public IP; TURN over TLS when LIVEKIT_TURN_DOMAIN is set). The website goes through
+# the Cloudflare tunnel, or with INGRESS_MODE=direct (LiveKit only) straight to the server's IP: the edge proxy, with a
+# Let's Encrypt certificate for that IP.
 
 # Image tag in GHCR (sha-<commit>, main, or a release tag); scripts/deploy.sh sets it.
 cipheroom_tag: ""
@@ -23,3 +24,7 @@ base_swap_mb: 2048 # 0 = no swap file
 # LiveKit mode with TURN: Let's Encrypt via the DNS check (certbot's Cloudflare plugin), renewed at this time (UTC).
 certs_certbot_image: certbot/dns-cloudflare:v5.8.0
 certs_renew_time: "04:30"
+# Direct mode: the edge proxy's certificate, the HTTP check's files, and the expiry for node-exporter's textfile collector.
+certs_tls_dir: /etc/cipheroom/tls
+certs_acme_dir: /var/lib/cipheroom/acme
+certs_textfile_dir: /var/lib/cipheroom/textfile

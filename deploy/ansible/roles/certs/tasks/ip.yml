@@ -1,0 +1,155 @@
+# Let's Encrypt IP address certificate for the edge proxy (INGRESS_MODE=direct). IP certificates exist only in the
+# short-lived profile (160 hours) and only through the HTTP check, so port 80 is open and renewal runs every 12 hours
+# (certbot renews at about half the lifetime). Design: docs/plans/2026-10-14-direct-ingress-design.md
+#
+# Two passes from the cipheroom role: `certs_step: prepare` before the stack starts (directories, and a self-signed
+# placeholder so edge can start the very first time), `certs_step: issue` once edge answers the HTTP check.
+- name: Prepare
+  when: certs_step == 'prepare'
+  block:
+    - name: Certificate directory read by edge (nginx runs as uid 101 in the container)
+      ansible.builtin.file:
+        path: "{{ certs_tls_dir }}"
+        state: directory
+        owner: root
+        group: "101"
+        mode: "0750"
+
+    - name: Directory for the HTTP check's files
+      ansible.builtin.file:
+        path: "{{ certs_acme_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Directory for the certificate's expiry (node-exporter textfile collector)
+      ansible.builtin.file:
+        path: "{{ certs_textfile_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    # Never counts as deployed: the cipheroom role's final check validates the certificate.
+    - name: Self-signed placeholder until the first certificate
+      ansible.builtin.command: >-
+        openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -days 2 -subj /CN=cipheroom-placeholder
+        -addext subjectAltName=IP:{{ certs_ip }}
+        -keyout {{ certs_tls_dir }}/privkey.pem -out {{ certs_tls_dir }}/fullchain.pem
+      args:
+        creates: "{{ certs_tls_dir }}/fullchain.pem"
+
+    - name: Placeholder key readable by edge only
+      ansible.builtin.file:
+        path: "{{ certs_tls_dir }}/{{ item }}"
+        owner: root
+        group: "101"
+        mode: "0640"
+      loop: [fullchain.pem, privkey.pem]
+
+    - name: Deploy hook (copies the certificate for edge, reloads it, records the expiry)
+      ansible.builtin.template:
+        src: cipheroom-cert-deploy.sh.j2
+        dest: /usr/local/sbin/cipheroom-cert-deploy
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Renewal script
+      ansible.builtin.template:
+        src: cipheroom-ip-cert-renew.sh.j2
+        dest: /usr/local/sbin/cipheroom-cert-renew
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Renewal service
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/cipheroom-cert-renew.service
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Renew the IP address certificate (Let's Encrypt, short-lived) and reload the edge proxy
+          After=docker.service
+          Requires=docker.service
+
+          [Service]
+          Type=oneshot
+          ExecStart=/usr/local/sbin/cipheroom-cert-renew
+      notify: Reload systemd
+
+    # Short-lived certificates leave about three days between renewal (half-life) and expiry: try twice a day.
+    - name: Renewal timer (every 12 hours)
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/cipheroom-cert-renew.timer
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=IP address certificate renewal, twice a day
+
+          [Timer]
+          OnCalendar=*-*-* 00/12:00:00 UTC
+          RandomizedDelaySec=1h
+          Persistent=true
+
+          [Install]
+          WantedBy=timers.target
+      notify: Reload systemd
+
+    - name: Apply systemd changes
+      ansible.builtin.meta: flush_handlers
+
+- name: Issue
+  when: certs_step == 'issue'
+  block:
+    # Once per server: later runs leave it to the timer. A certificate for another address (a new server IP) is
+    # replaced under the same name.
+    - name: Address on the current certificate
+      ansible.builtin.shell: |
+        set -o pipefail
+        openssl x509 -in /etc/letsencrypt/live/cipheroom/cert.pem -noout -ext subjectAltName | grep -o 'IP Address:[0-9.]*'
+      args:
+        executable: /bin/bash
+      register: certs_current
+      changed_when: false
+      failed_when: false
+
+    - name: Issue the certificate (HTTP check through edge)
+      ansible.builtin.command: >-
+        docker run --rm
+        -v /etc/letsencrypt:/etc/letsencrypt
+        -v {{ certs_acme_dir }}:/acme-webroot
+        {{ certs_certbot_image }} certonly --non-interactive --agree-tos --register-unsafely-without-email
+        --webroot -w /acme-webroot --preferred-profile shortlived --cert-name cipheroom --ip-address {{ certs_ip }}
+      when: certs_current.stdout != 'IP Address:' ~ certs_ip
+      changed_when: true
+
+    - name: Hand the certificate to edge
+      ansible.builtin.command: /usr/local/sbin/cipheroom-cert-deploy
+      register: certs_deployed
+      changed_when: "'installed' in certs_deployed.stdout"
+
+    - name: Renewal timer enabled
+      ansible.builtin.systemd_service:
+        name: cipheroom-cert-renew.timer
+        enabled: true
+        state: started
+
+    # Short-lived: renewal should keep at least ~3 days left. Less than two means renewals are failing.
+    - name: Certificate valid for at least two more days
+      ansible.builtin.command: openssl x509 -in {{ certs_tls_dir }}/fullchain.pem -noout -checkend 172800
+      register: certs_checkend
+      changed_when: false
+      failed_when: false
+
+    - name: Warn about a certificate close to expiry
+      ansible.builtin.debug:
+        msg: >-
+          WARNING: the IP certificate expires within 48 hours — renewals are failing. On the server:
+          systemctl status cipheroom-cert-renew; journalctl -u cipheroom-cert-renew
+      when: certs_checkend.rc != 0
