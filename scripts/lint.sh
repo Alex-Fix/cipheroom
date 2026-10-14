@@ -13,10 +13,20 @@ info "observability config"
 CF_SFU_APP_ID=lint CF_SFU_APP_SECRET=lint docker compose -f "$DEPLOY_DIR/docker-compose.yml" \
   --env-file "$DEPLOY_DIR/.env.example" --profile observability --profile tunnel --profile livekit --profile edge --profile certs config -q
 if docker info >/dev/null 2>&1; then
-  docker run --rm --entrypoint promtool -v "$DEPLOY_DIR/observability:/cfg:ro" prom/prometheus:v3.15.0 \
+  # Each telemetry backend checks our config with the version in docker-compose.yml, so an image update that drops a
+  # setting fails here, not on a server (Tempo 3 removed `compactor` and crash-looped on the beta).
+  image_of() { awk -v svc="  $1:" '$0 == svc { f = 1 } f && /image:/ { print $2; exit }' "$DEPLOY_DIR/docker-compose.yml"; }
+  obs="$DEPLOY_DIR/observability"
+  docker run --rm -v "$obs/tempo.yaml:/c.yaml:ro" "$(image_of tempo)" -config.file=/c.yaml -config.verify=true >/dev/null 2>&1 \
+    || die "deploy/observability/tempo.yaml is invalid for $(image_of tempo)"
+  docker run --rm -v "$obs/loki.yaml:/c.yaml:ro" "$(image_of loki)" -config.file=/c.yaml -verify-config >/dev/null 2>&1 \
+    || die "deploy/observability/loki.yaml is invalid for $(image_of loki)"
+  docker run --rm -v "$obs/otel-collector.yaml:/c.yaml:ro" "$(image_of otel-collector)" validate --config=/c.yaml >/dev/null 2>&1 \
+    || die "deploy/observability/otel-collector.yaml is invalid for $(image_of otel-collector)"
+  docker run --rm --entrypoint promtool -v "$obs:/cfg:ro" "$(image_of prometheus)" \
     check config /cfg/prometheus.yaml >/dev/null || die "deploy/observability/prometheus.yaml is invalid"
 else
-  warn "docker not running: skipped promtool"
+  warn "docker not running: skipped the telemetry config checks"
 fi
 dashboards="$(mktemp -d)"
 python3 "$DEPLOY_DIR/observability/grafana/build_dashboards.py" "$dashboards" >/dev/null
