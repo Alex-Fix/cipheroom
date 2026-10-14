@@ -122,15 +122,20 @@ not Cloudflare's 1 TB; with `HCLOUD_READ_TOKEN` set, the usage guard follows tha
 4. `scripts/provision.sh` — opens LiveKit's ports in the Hetzner firewall: `7882/udp` + `7881/tcp` (media), and for
    TURN `3478/udp`, `443/tcp` and the relay ports `30000-30100/udp`. SSH stays restricted to your IP.
 5. `scripts/deploy.sh` — writes `livekit.yaml` (with TURN when a domain is set), issues the certificate the first time,
-   starts LiveKit and checks the site through the tunnel.
+   starts LiveKit and the `edge` proxy, and checks the site through the tunnel.
 
-The certificate renews at 04:30 UTC (systemd timer `cipheroom-cert-renew`); LiveKit restarts only when it changed.
+TURN over TLS on 443 is terminated by `edge` (the same proxy as in direct mode), which holds the certificate and passes
+TURN on to LiveKit as plain TCP; LiveKit never handles TLS. The certificate renews at 04:30 UTC (systemd timer
+`cipheroom-cert-renew`) and edge reloads it without dropping calls.
 
 LiveKit runs in the server's own network (`network_mode: host`, LiveKit's recommended Docker setup), not behind Docker's
 port mapping: its TURN relay has to reach LiveKit's media port at the public IP, and through Docker's mapping those
 packets never came back, so calls that needed the relay failed. Its media is limited to the public IP; its API (7880)
 listens only on loopback and the `livekit` Docker bridge, and ufw plus the Hetzner firewall keep 7880 and 5349 closed
-from outside. Check with `artifacts/e2e/repro/relay-tls-e2e.mjs` (`SCHEME=turns` or `turn`): a call whose guests may
+from outside. Because it shares the host's network, it runs as an unprivileged user (uid 10002, no capabilities), and
+ufw rejects new connections from that user to private address ranges: it can't reach the api, Grafana or the
+telemetry services (audit SA-2026-10-14-02). `scripts/up.sh` on a machine without Ansible doesn't add that rule.
+Check with `artifacts/e2e/repro/relay-tls-e2e.mjs` (`SCHEME=turns` or `turn`): a call whose guests may
 only use TURN.
 Back to Cloudflare: `MEDIA_MODE=cloudflare` (or remove it) in `deploy/.env.hetzner`, `scripts/provision.sh` (closes the
 ports), `scripts/deploy.sh` (stops LiveKit). Try it locally first: `scripts/dev.sh` (LiveKit is the dev default).

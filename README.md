@@ -213,7 +213,7 @@ Three modes, chosen per deployment with `MEDIA_MODE` and `INGRESS_MODE`:
   server, Ansible hardens it and runs the stack in either mode
   ([`docs/deployment-hetzner.md`](docs/deployment-hetzner.md)). The beta runs this way: Hetzner cpx42, LiveKit mode.
 - [x] Security audits of the app and the live servers: 2026-10-11 (all findings fixed or mitigated) and 2026-10-14
-  (direct mode: no Critical/High, one Medium follow-up) ([`docs/security/audits/`](docs/security/audits/README.md)).
+  (direct mode: no Critical/High; one Medium and three Low, all fixed) ([`docs/security/audits/`](docs/security/audits/README.md)).
 
 The self-hosted modes need a public IP (and open UDP ports for media). On Hetzner they also cost money, unlike the
 default mode at home, which stays free.

@@ -6,7 +6,7 @@ live in the `security` and `e2ee-media` skills.
 
 | Date | Scope | Result |
 |---|---|---|
-| [2026-10-14](2026-10-14.md) | Branch `feat/direct-ingress` (direct ingress, LiveKit host network); Hetzner cx23, direct mode | 0 Critical/High · 1 Medium · 4 Low · 4 Info — 1 fixed, 4 follow-ups |
+| [2026-10-14](2026-10-14.md) | Branch `feat/direct-ingress` (direct ingress, LiveKit host network); Hetzner cx23, direct mode | 0 Critical/High · 1 Medium · 3 Low · 4 Info — all Medium/Low fixed the same day |
 | [2026-10-11](2026-10-11.md) | App at `4827b28` + hardening branch; Hetzner cpx42, LiveKit mode | 0 Critical/High · 3 Medium · 7 Low · 3 Info — all fixed or accepted the same day |
 
 Findings that were open when a report was written are described at the class level only.

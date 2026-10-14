@@ -53,7 +53,9 @@ isn't pushed. Forks running modified code must push it and set `SOURCE_URL` to t
 ## LiveKit runs in the host's network
 `network_mode: host` (LiveKit's recommended Docker setup): with Docker's port mapping its TURN relay could not reach its
 own ICE port at the public IP (hairpin — forced-relay calls failed; repro `artifacts/e2e/repro/relay-tls-e2e.mjs`,
-`SCHEME=turn|turns`). Consequences: no `ports:`; `cap_add: NET_BIND_SERVICE` for TURN-TLS on 443; the api
+`SCHEME=turn|turns`). Consequences: no `ports:`; runs as uid 10002 with no capabilities (edge terminates TURN over
+TLS in both TURN modes, so LiveKit binds nothing below 1024 and holds no certificate); ufw (`/etc/ufw/before.rules`)
+rejects NEW connections from uid 10002 to 172.16/12, 10/8, 192.168/16 (SA-2026-10-14-02); the api
 (`LiveKit__Url=http://172.30.0.1:7880`) and edge (`172.30.0.1:5349`) reach it via the `livekit` bridge's fixed gateway
 (172.30.0.0/24); `--bind 127.0.0.1 --bind 172.30.0.1` keeps the API off public interfaces (it only affects 7880 —
 5349/7881/3478 listen everywhere); ufw (cipheroom role) allows LiveKit's public ports and 7880/5349 from 172.30.0.0/24
