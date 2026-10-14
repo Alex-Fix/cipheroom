@@ -47,10 +47,12 @@ if ! grep -Eqs '^[[:space:]]*allowed_ssh_cidrs' "$TF_DIR/terraform.tfvars" "$TFV
   VARS+=(-var "allowed_ssh_cidrs=[\"$cidr\"]")
 fi
 
-# Media mode from the env files (this server's overlay over deploy/.env): LiveKit mode opens its media ports.
+# Modes from the env files (this server's overlay over deploy/.env): LiveKit mode opens its media ports.
+# Direct ingress also opens 80/443 and keeps the IPv4 as a Primary IP of its own.
 media_mode="$(server_value MEDIA_MODE)"
-VARS+=(-var "media_mode=${media_mode:-cloudflare}")
-info "Server '$SERVER' — media mode: ${media_mode:-cloudflare}"
+ingress_mode="$(server_value INGRESS_MODE)"
+VARS+=(-var "media_mode=${media_mode:-cloudflare}" -var "ingress_mode=${ingress_mode:-tunnel}")
+info "Server '$SERVER' — media mode: ${media_mode:-cloudflare}, ingress: ${ingress_mode:-tunnel}"
 
 tf init -input=false >/dev/null
 # One workspace per server (state in terraform.tfstate.d/<name>/); `default` is the original state file.

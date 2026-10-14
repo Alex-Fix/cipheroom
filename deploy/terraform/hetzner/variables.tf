@@ -66,6 +66,22 @@ variable "media_mode" {
   }
 }
 
+variable "ingress_mode" {
+  description = "tunnel (website through Cloudflare Tunnel, nothing listening for it) or direct (HTTPS on the server's own IP, needs media_mode = livekit). scripts/provision.sh passes INGRESS_MODE."
+  type        = string
+  default     = "tunnel"
+
+  validation {
+    condition     = contains(["tunnel", "direct"], var.ingress_mode)
+    error_message = "ingress_mode is tunnel or direct."
+  }
+
+  validation {
+    condition     = var.ingress_mode != "direct" || var.media_mode == "livekit"
+    error_message = "ingress_mode = direct needs media_mode = livekit (no Cloudflare in this mode)."
+  }
+}
+
 variable "protection" {
   description = "Delete + rebuild protection (Hetzner requires both to match). Set false and apply before destroying."
   type        = bool

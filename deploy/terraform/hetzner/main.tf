@@ -1,6 +1,8 @@
 # One VM running Cipheroom (docs/deployment-hetzner.md). The website and signaling need no inbound ports — the
 # Cloudflare tunnel dials out — so the firewall lets SSH in from allowed_ssh_cidrs only; in LiveKit mode also the
-# media server's ports and TURN, from anywhere (browsers connect to them directly).
+# media server's ports and TURN, from anywhere (browsers connect to them directly). With ingress_mode = direct the
+# server answers HTTPS itself on its IP (80 for the certificate check, 443 shared with TURN over TLS), and that IP is
+# a separate Primary IP so a rebuilt server keeps it — the IP is the site's address and its browsers' origin.
 
 # Looked up first so a wrong or unavailable image name fails at plan time, before anything is created.
 data "hcloud_image" "os" {
@@ -26,7 +28,7 @@ resource "hcloud_firewall" "server" {
   }
 
   dynamic "rule" {
-    for_each = var.media_mode == "livekit" ? local.livekit_ports : []
+    for_each = concat(var.media_mode == "livekit" ? local.livekit_ports : [], local.direct_ports)
     content {
       description = rule.value.description
       direction   = "in"
@@ -46,9 +48,29 @@ locals {
     { description = "LiveKit media (UDP)", protocol = "udp", port = "7882" },
     { description = "LiveKit media (TCP fallback)", protocol = "tcp", port = "7881" },
     { description = "TURN (UDP)", protocol = "udp", port = "3478" },
-    { description = "TURN over TLS", protocol = "tcp", port = "443" },
+    { description = local.direct ? "HTTPS + TURN over TLS (edge)" : "TURN over TLS", protocol = "tcp", port = "443" },
     { description = "TURN relay ports", protocol = "udp", port = "30000-30100" },
   ]
+
+  # Direct ingress: the edge proxy also answers HTTP; 443 (above) is then shared by HTTPS and TURN over TLS.
+  direct = var.ingress_mode == "direct"
+  direct_ports = local.direct ? [
+    { description = "HTTP (certificate check, redirect to HTTPS)", protocol = "tcp", port = "80" },
+  ] : []
+}
+
+resource "hcloud_primary_ip" "ipv4" {
+  count    = local.direct ? 1 : 0
+  name     = "${local.name}-ipv4"
+  type     = "ipv4"
+  location = var.location
+  # Outlives the server (a rebuild keeps the address and so the origin); provision.sh --destroy removes it too.
+  auto_delete       = false
+  delete_protection = var.protection
+
+  labels = {
+    app = "cipheroom"
+  }
 }
 
 resource "hcloud_server" "server" {
@@ -69,6 +91,7 @@ resource "hcloud_server" "server" {
   # IPv4 stays on: GHCR (GitHub) has no IPv6, so image pulls need it.
   public_net {
     ipv4_enabled = true
+    ipv4         = local.direct ? hcloud_primary_ip.ipv4[0].id : null
     ipv6_enabled = true
   }
 
