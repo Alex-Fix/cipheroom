@@ -7,7 +7,7 @@ Encryption is identical in both modes: frames are encrypted in the browser, and 
 |---|---|---|
 | Media server | Cloudflare Realtime SFU | [LiveKit](https://livekit.io), self-hosted on the same machine |
 | Needs a public IP | No: works at home behind NAT/CGNAT | Yes, so a rented server (or open ports at home) |
-| TURN | Cloudflare TURN | LiveKit's built-in TURN (optionally TLS on 443 with a Let's Encrypt certificate) |
+| TURN | Cloudflare TURN | LiveKit's built-in TURN (optionally over TLS on 443: the `edge` proxy holds the Let's Encrypt certificate) |
 | Traffic limit | Cloudflare's free 1 TB/month, enforced by the usage guard | The server's own allowance (on Hetzner, 20 TB/month included) |
 | Who sees media metadata | Cloudflare | Only your server |
 | Signaling | The api relays negotiation to Cloudflare over HTTPS | LiveKit's signaling is relayed by the api over SignalR; its port 7880 is never public |

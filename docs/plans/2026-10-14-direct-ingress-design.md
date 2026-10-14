@@ -38,7 +38,7 @@ Non-goals
 
 ## Chosen approach
 
-**A new `edge` nginx service (compose profile `direct`) + certbot webroot renewal on a systemd timer.** It reuses the
+**A new `edge` nginx service (compose profile `edge`, originally `direct`) + certbot webroot renewal on a systemd timer.** It reuses the
 tools and hardening we already have; the `web` image is unchanged.
 
 - Why not Caddy + `layer4`: automatic IP certs are nice, but layer4 isn't in stock Caddy → we'd build and publish our
@@ -85,13 +85,13 @@ only `edge` does.
 
 ### 2. The `edge` service
 
-Stock `nginx` pinned by digest, profile `direct`, `cap_drop: ALL` + `no-new-privileges`, unprivileged ports inside
+Stock `nginx` pinned by digest, profile `edge`, `cap_drop: ALL` + `no-new-privileges`, unprivileged ports inside
 (8080→80, 8443→443), `default` network only (no route to telemetry networks). Config `deploy/nginx/edge.conf`:
 
 ```
 Browser ──TCP 443──▶ edge stream (ssl_preread)
                        ├─ ALPN offered (h2/http1.1) ─▶ TLS ─▶ edge http ─▶ web:8080 ─▶ api (/hubs, /api)
-                       └─ no ALPN (WebRTC TURN-TLS)  ─▶ TLS ─▶ livekit:5349 (plain TCP TURN, external_tls)
+                       └─ no ALPN (WebRTC TURN-TLS)  ─▶ TLS ─▶ LiveKit :5349 (plain TCP TURN, external_tls)
 Browser ──TCP 80───▶ edge: /.well-known/acme-challenge/ only, everything else 301 → https
 Browser ──UDP 7882 / TCP 7881 / UDP 3478 / UDP 30000-30100──▶ livekit (unchanged)
 ```
@@ -101,7 +101,7 @@ Browser ──UDP 7882 / TCP 7881 / UDP 3478 / UDP 30000-30100──▶ livekit 
 - HTTPS server: TLS 1.2+ (Mozilla intermediate), session tickets off, proxies everything to `web:8080` with WebSocket
   upgrade for `/hubs/`; **overwrites** `CF-Connecting-IP` and `X-Forwarded-For` with the real address (the web
   nginx's Grafana login limit keeps working and can't be spoofed); `limit_req` on `/api/` and the `/hubs/` handshake.
-- TURN server: terminates TLS with the same certificate, plain TCP to `livekit:5349` (`turn.external_tls: true`,
+- TURN server: terminates TLS with the same certificate, plain TCP to LiveKit's 5349 (`turn.external_tls: true`,
   `tls_port: 5349`, not published). LiveKit never holds the certificate.
 - `server_tokens off`; access logs off (no visitor addresses on disk).
 - `web`'s headers (CSP, Permissions-Policy, HSTS) are unchanged.
@@ -202,11 +202,20 @@ confirm on the server: WebKit with the Let's Encrypt IP certificate, LiveKit adv
   rejoins, files (20 MB at 2.5–4.7 Mbps over the operator's home line), mixed Chromium + WebKit all pass. Outside scan:
   22 (operator only), 80, 443, 7881 open; 7880 and 5349 filtered.
 
+### Changed after the rollout and the 2026-10-14 audit
+
+- LiveKit runs in the host's network (TURN relay fix) as uid 10002 without capabilities, fenced off from private
+  ranges by ufw; the api and edge reach it at the `livekit` bridge gateway (`172.30.0.1:7880`, `:5349`).
+- `edge` terminates TURN over TLS in **both** TURN modes (direct, and a TURN domain in tunnel mode), so LiveKit never
+  holds a certificate; the compose profile is `edge` (was `direct`); the variable LiveKit 443 binding is gone.
+- certbot runs as compose services (`certbot`, `certbot-dns`, profile `certs`); one certificate flow for both kinds.
+- Each server's `.env` holds only its mode's keys. Report: `docs/security/audits/2026-10-14.md`.
+
 Also dropped during implementation: the `444` default server (the site is addressed by IP; the api's `AllowedHosts`
 already rejects foreign hosts).
 
 Automated: `scripts/lint.sh` gains `nginx -t` on `edge.conf` (in a container) and compose config with
-`--profile direct`; terraform validate / ansible-lint / shellcheck as today. Backend tests only if the ICE rewrite is
+`--profile edge`; terraform validate / ansible-lint / shellcheck as today. Backend tests only if the ICE rewrite is
 needed (unit + a functional test that the relayed join carries `turns:<ip>`). E2E against `https://<ip>` with the
 existing scripts (fake media only): 3-person call with codec rejoins, files 20/100 MB, mixed Chromium + WebKit,
 forced relay. The beta gets a regression run after the named-servers change (its plan must be empty).
@@ -224,7 +233,7 @@ forced relay. The beta gets a regression run after the named-servers change (its
 2. **Named servers**: `--server <name>` in `provision.sh` / `deploy.sh`, Terraform workspaces, per-name tfvars /
    overlay / inventory / known_hosts, `.gitignore`; beta (`default`) plan stays empty.
 3. **Terraform**: `ingress_mode` variable, 80/443 firewall rules, `hcloud_primary_ip` (direct only); outputs.
-4. **Compose + edge**: `edge` service (profile `direct`), `deploy/nginx/edge.conf`, variable LiveKit 443 binding,
+4. **Compose + edge**: `edge` service (profile `edge`), `deploy/nginx/edge.conf`, variable LiveKit 443 binding,
    `livekit.yaml` TURN `external_tls`; lint (`nginx -t`, compose config).
 5. **Certificates**: `certs` role IP path (placeholder, webroot issuance, 12 h timer, deploy hook, textfile metric);
    `deploy.sh` expiry warning.

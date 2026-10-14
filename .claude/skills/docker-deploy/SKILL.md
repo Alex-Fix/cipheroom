@@ -69,8 +69,9 @@ networking; `scripts/dev.sh` runs its own bridge-mode container and is unaffecte
 by the api). `scripts/up.sh` checks the chosen mode's settings and adds the profile; the Cloudflare SFU
 values are required only in Cloudflare mode. On the server (Ansible): `LIVEKIT_NODE_IP` is set to the server's IP;
 with `LIVEKIT_TURN_DOMAIN` (+ `CF_DNS_API_TOKEN`, DNS-only record) the `certs` role issues Let's Encrypt via the DNS
-check, `livekit.yaml` gets TURN (TLS 443, UDP 3478, relay ports 30000-30100 — published and opened by Terraform's
-`media_mode`), renewal at 04:30 UTC restarts LiveKit only on change. `HCLOUD_READ_TOKEN` + the server id switch the
+check, `livekit.yaml` gets TURN (UDP 3478, relay ports 30000-30100, plain TCP 5349 behind `edge`, which terminates
+TLS on 443 with that certificate — opened by Terraform's `media_mode`); renewal at 04:30 UTC hands the certificate to
+edge (`cipheroom-cert-deploy`) and reloads it, LiveKit is never involved. `HCLOUD_READ_TOKEN` + the server id switch the
 usage guard to Hetzner traffic. Design: `docs/plans/2026-10-11-livekit-media-mode-design.md`.
 
 ## Ingress mode (INGRESS_MODE)
@@ -92,7 +93,8 @@ tags to GHCR (amd64, Source link = that commit). `scripts/provision.sh` (Terrafo
 `cpx42` by default, resized in place with `keep_disk`; `provision.sh` checks Hetzner capacity first; Ubuntu 26.04;
 firewall `<name>-server` = 22/tcp from `allowed_ssh_cidrs` only, plus LiveKit's ports in LiveKit mode, plus 80 and a
 Primary IP in direct mode) and `scripts/deploy.sh` (Ansible,
-`deploy/ansible/`: roles base / docker / cipheroom, + certs for LiveKit TURN) run the same compose file there. Rules:
+`deploy/ansible/`: roles base / docker / cipheroom, + certs for edge's certificate: TURN domain or IP) run the same
+compose file there. Rules:
 - Secrets: `deploy/.env` + `deploy/.env.hetzner` overlay (only differing keys), merged by Ansible with `no_log`;
   `HCLOUD_TOKEN` only from the environment. Never print values in tasks or scripts.
 - **Named servers:** `--server <name>` on both scripts = Terraform workspace `<name>`, server `cipheroom-<name>`,

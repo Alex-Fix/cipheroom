@@ -32,7 +32,7 @@ tests/                           xUnit v3, one project per layer (shared setting
   fixtures/                      test vectors shared by backend and web tests (e.g. WebCrypto-signed admission)
 web/                             Angular app (npm, + Dockerfile); src/app/{core,shared,features}, design/ = logo masters
 deploy/
-  docker-compose.yml             api, web (nginx), cloudflared; profiles livekit, direct (edge), observability (collector, Prometheus, Loki, Tempo, Grafana, exporters)
+  docker-compose.yml             api, web (nginx), cloudflared; profiles livekit, edge (TURN over TLS + direct ingress), certs (certbot), observability (collector, Prometheus, Loki, Tempo, Grafana, exporters)
   nginx/ cloudflared/ livekit/   service config
   observability/                 collector / Prometheus / Loki / Tempo config, Grafana provisioning + generated dashboards
   terraform/hetzner/             Hetzner server (cpx42 default, in-place resizes) + firewall (state stays local, gitignored)
