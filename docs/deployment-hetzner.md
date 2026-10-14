@@ -152,6 +152,8 @@ What to know first:
 - **Firefox and TURN over TLS.** Port 443 carries TURN over TLS for networks that allow nothing but HTTPS. Chrome and
   Safari use it; Firefox ignores TURN over TLS to an IP address, so Firefox on such a network can't connect (it still
   relays over UDP 3478 everywhere else).
+- **HTTPS clients must offer ALPN.** That's how port 443 tells the site from TURN: browsers, curl and most HTTP
+  libraries do; a client that doesn't (Ansible's `uri` module, some scanners) lands on TURN and gets no answer.
 - **No Cloudflare in front.** Nothing absorbs floods or scans; `edge` limits connections and request rates per
   address. Cloudflare no longer sees who visits.
 

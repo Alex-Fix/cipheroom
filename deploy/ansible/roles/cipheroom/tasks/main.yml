@@ -224,16 +224,16 @@
         certs_ip: "{{ ansible_host }}"
       when: cipheroom_ingress_mode == 'direct'
 
-    # From this machine, as a visitor sees it: the certificate must validate, so a placeholder never passes.
-    - name: The app answers on the server's IP with a valid certificate
-      ansible.builtin.uri:
-        url: "https://{{ ansible_host }}/"
-        status_code: 200
-        validate_certs: true
+    # From this machine, as a visitor sees it: the certificate must validate, so a placeholder never passes. curl,
+    # not the uri module: edge sends TLS without ALPN to TURN (that's how it tells WebRTC apart), and Ansible's HTTP
+    # client offers none — it would wait for an answer that never comes. curl offers ALPN like a browser.
+    - name: The app answers on the server's IP with a valid certificate  # noqa: command-instead-of-module
+      ansible.builtin.command: curl -fsS --max-time 10 -o /dev/null https://{{ ansible_host }}/
       register: cipheroom_public
       retries: 12
       delay: 5
-      until: cipheroom_public.status == 200
+      until: cipheroom_public.rc == 0
+      changed_when: false
       delegate_to: localhost
       become: false
       when: cipheroom_ingress_mode == 'direct'

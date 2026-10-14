@@ -7,7 +7,8 @@
 - name: Prepare
   when: certs_step == 'prepare'
   block:
-    - name: Certificate directory read by edge (nginx runs as uid 101 in the container)
+    # gid 101 = edge's nginx in the container; on an Ubuntu host it's the (memberless) lxd group, so `ls` shows lxd.
+    - name: Certificate directory read by edge (nginx runs as uid/gid 101 in the container)
       ansible.builtin.file:
         path: "{{ certs_tls_dir }}"
         state: directory
