@@ -125,6 +125,13 @@ not Cloudflare's 1 TB; with `HCLOUD_READ_TOKEN` set, the usage guard follows tha
    starts LiveKit and checks the site through the tunnel.
 
 The certificate renews at 04:30 UTC (systemd timer `cipheroom-cert-renew`); LiveKit restarts only when it changed.
+
+LiveKit runs in the server's own network (`network_mode: host`, LiveKit's recommended Docker setup), not behind Docker's
+port mapping: its TURN relay has to reach LiveKit's media port at the public IP, and through Docker's mapping those
+packets never came back, so calls that needed the relay failed. Its media is limited to the public IP; its API (7880)
+listens only on loopback and the `livekit` Docker bridge, and ufw plus the Hetzner firewall keep 7880 and 5349 closed
+from outside. Check with `artifacts/e2e/repro/relay-tls-e2e.mjs` (`SCHEME=turns` or `turn`): a call whose guests may
+only use TURN.
 Back to Cloudflare: `MEDIA_MODE=cloudflare` (or remove it) in `deploy/.env.hetzner`, `scripts/provision.sh` (closes the
 ports), `scripts/deploy.sh` (stops LiveKit). Try it locally first: `scripts/dev.sh` (LiveKit is the dev default).
 

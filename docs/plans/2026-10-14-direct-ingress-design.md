@@ -183,6 +183,25 @@ Decision (user): **accept and document** the Firefox limit — in direct mode Fi
 and TURN/UDP 3478, and fails only on networks that allow nothing but HTTPS. No domain, no wildcard DNS. Still to
 confirm on the server: WebKit with the Let's Encrypt IP certificate, LiveKit advertising `turns:<ip>:443`.
 
+### Rollout findings (2026-10-14, server `direct`, 2.31.51.201)
+
+- Let's Encrypt IP certificate issued through `edge` (YE2, 160 h); WebKit and Chromium accept it.
+- Ansible's `uri` module offers no ALPN → lands on TURN and times out: the deploy's final check uses curl.
+- A `proxy_set_header` inside `edge`'s `/hubs/` location dropped the server-level `Host` → api 400: all headers at
+  server level.
+- **Forced-relay calls failed in LiveKit mode — pre-existing, beta included** (never tested before). Two causes, both
+  fixed: (1) LiveKit behind Docker's port mapping couldn't hear its own TURN relay at the public IP (hairpin) → LiveKit
+  on the host network (api/edge reach it via the `livekit` bridge gateway 172.30.0.1, `--bind` for 7880, ufw for its
+  ports); (2) on the host network LiveKit opened ICE sockets on Docker's bridge addresses too and sometimes answered
+  the relay from one (tcpdump: checks to `2.31.51.201:7882`, answers from `172.21.0.1:7882`), which the relay drops →
+  `rtc.ips.includes: [<public IP>/32]`.
+- Recreating only the api left `web`'s nginx with the api's old address (now `edge`'s) → redirect loop:
+  `depends_on: api: restart: true`. `livekit.yaml`, like `edge.conf`, is a single-file mount → restart on change.
+- After the fixes, from a fresh LiveKit start (twice): guests forced to `turns:<ip>:443` relay over TLS through the
+  ALPN split (Chromium `relay/tls`; WebKit reports `udp` for a `turns:` relay), forced UDP TURN works, 3-person codec
+  rejoins, files (20 MB at 2.5–4.7 Mbps over the operator's home line), mixed Chromium + WebKit all pass. Outside scan:
+  22 (operator only), 80, 443, 7881 open; 7880 and 5349 filtered.
+
 Also dropped during implementation: the `444` default server (the site is addressed by IP; the api's `AllowedHosts`
 already rejects foreign hosts).
 
