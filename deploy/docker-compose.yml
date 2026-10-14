@@ -152,7 +152,7 @@ services:
 
   tempo:
     <<: *hardening
-    image: grafana/tempo:2.10.8
+    image: grafana/tempo:3.1.0
     command: ["-config.file=/etc/tempo/config.yaml"]
     volumes:
       - ./observability/tempo.yaml:/etc/tempo/config.yaml:ro
