@@ -70,7 +70,7 @@ Browser ──HTTPS/WSS──▶ Cloudflare Tunnel ──▶ nginx ──▶ .NE
    └── encrypted media (WebRTC; Cloudflare TURN fallback) ──▶ Cloudflare Realtime SFU ◀──┘
 ```
 
-**LiveKit mode** (a server with a public IP, e.g. Hetzner; this is how the beta runs): media goes to a self-hosted
+**LiveKit mode** (a server with a public IP, e.g. Hetzner): media goes to a self-hosted
 LiveKit SFU on the same server and never touches Cloudflare. LiveKit's own signaling is relayed by the api over
 SignalR, so its signaling/API port is never public; only its media and TURN ports are open.
 
@@ -211,7 +211,8 @@ Three modes, chosen per deployment with `MEDIA_MODE` and `INGRESS_MODE`:
   ([`docs/deployment-hetzner.md`](docs/deployment-hetzner.md#direct-mode-no-cloudflare-no-domain)).
 - [x] Infrastructure as code for Hetzner: GitHub Actions publishes the images to GHCR, Terraform creates a firewalled
   server, Ansible hardens it and runs the stack in either mode
-  ([`docs/deployment-hetzner.md`](docs/deployment-hetzner.md)). The beta runs this way: Hetzner cpx42, LiveKit mode.
+  ([`docs/deployment-hetzner.md`](docs/deployment-hetzner.md)). A beta ran this way (Hetzner cpx42, LiveKit mode) until
+  2026-10-15.
 - [x] Security audits of the app and the live servers: 2026-10-11 (all findings fixed or mitigated) and 2026-10-14
   (direct mode: no Critical/High; one Medium and three Low, all fixed) ([`docs/security/audits/`](docs/security/audits/README.md)).
 
