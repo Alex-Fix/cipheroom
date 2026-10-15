@@ -41,6 +41,8 @@ if command -v docker >/dev/null && docker info >/dev/null 2>&1; then
   edge_tls="$(mktemp -d)"
   openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -days 1 -subj /CN=lint \
     -keyout "$edge_tls/privkey.pem" -out "$edge_tls/fullchain.pem" 2>/dev/null
+  # nginx runs as uid 101 in the container: on Linux it must be able to enter the directory (mktemp makes it 700).
+  chmod 755 "$edge_tls"
   chmod 644 "$edge_tls"/*.pem
   docker run --rm -v "$DEPLOY_DIR/nginx/edge.conf:/etc/nginx/nginx.conf:ro" -v "$edge_tls:/tls:ro" --entrypoint nginx "$edge_image" -t -q \
     || die "deploy/nginx/edge.conf is invalid"
