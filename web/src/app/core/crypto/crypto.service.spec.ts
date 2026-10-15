@@ -22,6 +22,9 @@ import { HOST_KEY_STORE, MemoryHostKeyStore } from './host-key-store';
 import { DEVICE_KEY_STORE, MemoryDeviceKeyStore } from './device-key-store';
 import { createDeviceKey } from './device-key';
 import { verifyIdentity } from './identity';
+import { realTick, trackWebCrypto, webCryptoIdle } from '../../shared/testing/webcrypto-tracker';
+// WebCrypto slower than the event loop, as on a busy CI runner: the specs must not depend on how fast it is.
+const SLOW = 20;
 
 /** Records what the service hands the frame worker. */
 class FakeFrames {
@@ -223,21 +226,18 @@ class FakeServer {
   }
 }
 
-/** One real event-loop turn (setTimeout is faked): lets WebCrypto, which runs off-thread, finish. */
-const realTick = () =>
-  new Promise<void>((resolve) =>
-    (globalThis as unknown as { setImmediate: (f: () => void) => void }).setImmediate(resolve),
-  );
-
 /** Runs effects, timers and the async crypto until everything settled. */
 async function settle(ms = 0) {
-  // Small steps: timers scheduled after async crypto (e.g. the key switch) must still fire within `ms`.
+  // Small steps: timers scheduled after async crypto (e.g. the key switch) must still fire within `ms`. Before the
+  // fake clock moves, the real WebCrypto in flight must finish: its continuations schedule those timers.
   for (let elapsed = 0, i = 0; elapsed < ms || i < 20; i++) {
     TestBed.tick();
+    await webCryptoIdle();
     const step = Math.min(25, Math.max(ms - elapsed, 0));
     await vi.advanceTimersByTimeAsync(step);
     elapsed += step;
     for (let t = 0; t < 10; t++) await realTick();
+    await webCryptoIdle();
   }
 }
 
@@ -267,14 +267,17 @@ const receiveKeys = (c: Client, from: string) =>
 
 describe('CryptoService', () => {
   let server: FakeServer;
+  let untrackWebCrypto: () => void;
 
   beforeEach(async () => {
+    untrackWebCrypto = trackWebCrypto({ slow: SLOW });
     server = await FakeServer.create();
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     vi.stubGlobal('RTCRtpScriptTransform', class {});
   });
 
   afterEach(() => {
+    untrackWebCrypto();
     vi.useRealTimers();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
