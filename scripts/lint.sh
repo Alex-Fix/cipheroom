@@ -61,6 +61,9 @@ else
 fi
 if command -v ansible-playbook >/dev/null; then
   info "ansible"
+  # The pinned collections (community.general, ansible.posix) — a bare ansible-core, as on CI runners, lacks them.
+  (cd "$DEPLOY_DIR/ansible" && ansible-galaxy collection install -r requirements.yml >/dev/null) \
+    || die "couldn't install deploy/ansible/requirements.yml"
   (cd "$DEPLOY_DIR/ansible" && ansible-playbook -i inventory.example.ini site.yml --syntax-check >/dev/null) \
     || die "deploy/ansible/site.yml has syntax errors"
   if command -v ansible-lint >/dev/null; then
