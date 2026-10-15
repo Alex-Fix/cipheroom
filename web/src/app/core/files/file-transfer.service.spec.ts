@@ -17,6 +17,9 @@ import {
   mergeRanges,
   missingRanges,
 } from './file-transfer.service';
+import { trackWebCrypto, webCryptoIdle } from '../../shared/testing/webcrypto-tracker';
+// WebCrypto slower than the event loop, as on a busy CI runner: the specs must not depend on how fast it is.
+const SLOW = 20;
 
 const ROOM = 'room-1';
 
@@ -95,7 +98,10 @@ describe('FileTransferService', () => {
   let people: Person[];
   let seq: number;
 
+  let untrackWebCrypto: () => void;
+
   beforeEach(() => {
+    untrackWebCrypto = trackWebCrypto({ slow: SLOW });
     // Only timers are fake: WebCrypto and the relays finish on the real event loop (setImmediate).
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
     sfu = new FakeSfu();
@@ -103,7 +109,10 @@ describe('FileTransferService', () => {
     seq = 0;
   });
 
-  afterEach(() => vi.useRealTimers());
+  afterEach(() => {
+    untrackWebCrypto();
+    vi.useRealTimers();
+  });
 
   function person(id: string): Person {
     const p = { id, listeners: [], sent: [], participants: signal<ParticipantDto[]>([]), usage: signal<UsageDto | undefined>(undefined) } as unknown as Person;
@@ -149,7 +158,10 @@ describe('FileTransferService', () => {
   /** Lets WebCrypto (real, so not on fake timers) and the microtask relays finish. */
   async function settle(until: () => boolean, ms = BATCH_MS + 3000) {
     for (let i = 0; i < 400 && !until(); i++) {
+      // The real WebCrypto in flight finishes before the fake clock moves (its continuations schedule the timers).
+      await webCryptoIdle();
       for (let j = 0; j < 5; j++) await new Promise((r) => (globalThis as unknown as { setImmediate: (f: () => void) => void }).setImmediate(() => r(undefined)));
+      await webCryptoIdle();
       await run(ms / 40);
     }
   }
