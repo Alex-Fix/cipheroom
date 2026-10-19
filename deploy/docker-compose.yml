@@ -90,7 +90,7 @@ services:
   livekit:
     <<: *hardening
     user: "10002:10002"
-    image: livekit/livekit-server:v1.13.9
+    image: livekit/livekit-server:v1.13.10
     network_mode: host
     command: ["--config", "/etc/livekit.yaml", "--node-ip", "${LIVEKIT_NODE_IP:-127.0.0.1}", "--bind", "127.0.0.1", "--bind", "172.30.0.1"]
     environment:
@@ -135,7 +135,7 @@ services:
 
   cloudflared:
     <<: *hardening
-    image: cloudflare/cloudflared:2026.10.0
+    image: cloudflare/cloudflared:2026.10.1
     command: tunnel --no-autoupdate run
     environment:
       TUNNEL_TOKEN: ${TUNNEL_TOKEN:-}
@@ -150,7 +150,7 @@ services:
 
   otel-collector:
     <<: *hardening
-    image: otel/opentelemetry-collector-contrib:0.162.0
+    image: otel/opentelemetry-collector-contrib:0.163.1
     command: ["--config=/etc/otelcol/config.yaml"]
     volumes:
       - ./observability/otel-collector.yaml:/etc/otelcol/config.yaml:ro
@@ -202,7 +202,7 @@ services:
 
   grafana:
     <<: *hardening
-    image: grafana/grafana:13.2.3
+    image: grafana/grafana:13.2.4
     environment:
       GF_SERVER_ROOT_URL: https://${PUBLIC_HOST:-localhost}/grafana/
       GF_SERVER_SERVE_FROM_SUB_PATH: "true"
